@@ -4,17 +4,17 @@
 
 ## Concept
 
-<!-- Written by the Team before the code: your own choice, a few sentences per answer. Everything else in the Submission follows from it. -->
+Первоначальные ответы команды от 13 октября 2026 года, записанные до разработки собственного решения. Замысел уточняется; незаполненные решения ниже не считаются выбранными командой.
 
-**Enterprise:** <!-- Which mining enterprise, or which part of it, the twin represents. -->
+**Enterprise:** Подземная рудная шахта, например медная. Основной акцент — устойчивость выработок и доступность выходов. Конкретное реальное предприятие пока не выбрано.
 
-**Users:** <!-- Who uses the twin. -->
+**Users:** Диспетчер смены: видит опасные участки и людей, сравнивает варианты остановки работ и вывода персонала.
 
-**Decision:** <!-- Which decision the twin helps them make. -->
+**Decision:** Помогать диспетчеру смены сравнивать варианты остановки работ и вывода персонала при опасности, в том числе при возможных обрушениях. Учитывать устойчивость выработок и доступность выходов.
 
-**Why this choice:** <!-- Why this enterprise, these users and this decision. -->
+**Why this choice:** Команда выбрала безопасность подземной шахты и хочет создать полезного для отрасли цифрового двойника с отличиями от существующих в Казахстане решений. Отсутствие аналогов пока не установлено и не заявляется как подтверждённый факт.
 
-**Real or fictional:** <!-- A real object: name it and give the sources of its numbers. A fictional one: which real objects it resembles and where its numbers come from. A real object with sourced numbers scores higher. -->
+**Real or fictional:** «Пока что возьмём нереальные данные, а близкие, которые можно найти в открытых источниках». Планируются синтетические данные с обоснованием по открытым источникам. Конкретный реальный аналог шахты, числовые параметры и их источники пока не выбраны.
 
 ## Team
 
