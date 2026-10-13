@@ -26,6 +26,12 @@
 
 ## Mine
 
+Первое автономное расчётное ядро находится в `team/sim/`: условная сеть из 12
+выработок на двух подземных горизонтах, два выхода, два рабочих участка, два
+синтетических датчика и шесть условных работников. Топология одна для расчёта
+маршрутов и атрибутов будущих двойников. Создание объектов в работающей платформе
+пока не проверено.
+
 <!-- Which part of a mining enterprise the Submission represents (open pit, underground mine, processing plant…), which objects are twins in OpenEgiz, how they are related, and where they are defined in the code. -->
 
 ## Modules and What-if Scenarios
@@ -38,9 +44,26 @@
 
 ## What works and what does not
 
+На 13 октября 2026 года локально проверено расчётное ядро Python: маршруты,
+движение, перекрытие прохода, потеря датчика, прогноз трёх действий из одного
+состояния, исполнение выбранного действия, архив и сохранение команд после
+перезапуска. Команда проверки: `python3 -m unittest team.sim.test_model -v`.
+Автономный эксперимент: `python3 -m team.sim --preset p-instability --option withdraw_all`.
+
+Модель формирует JSON двойников и конверты MQTT, но сетевой сервис публикации,
+bootstrap, прокси интерфейса и экспорт истории ещё не реализованы. Сквозная
+цепочка MQTT → Ditto → интерфейс не испытана: локальный Docker Engine недоступен.
+Интерфейс разрабатывается отдельно и с моделью пока не соединён. Это состояние
+разработки, а не заявление о готовом конкурсном стенде.
+
 <!-- What has been verified, what is unfinished, which bugs are known. -->
 
 ## Data and Assumptions
+
+Числа первой версии в `team/sim/topology.py` — выбранные настройки демонстрации,
+не промышленные измерения и не нормативы. Их происхождение и ограничения
+перечислены в `team/sim/README.md`. Обзор открытых источников в
+`team/research/safety-sources.md` пока не является калибровкой этих параметров.
 
 <!--
 - Synthetic and real data.
@@ -54,6 +77,11 @@ Confidential data of organizations and personal data are prohibited.
 <!-- Address on the Stand, dashboard or scene; what it shows. -->
 
 ## Limitations
+
+Нет физического прогноза обрушений. Синтетический индекс нестабильности не является
+вероятностью аварии. Пока не моделируются пропускная способность путей, очереди,
+уклон и усталость при движении, шахтные подъёмники, сейсмика и резервирование
+датчиков. Расчёт не предназначен для принятия решений на действующей шахте.
 
 ## Presentation
 
