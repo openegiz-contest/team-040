@@ -34,11 +34,16 @@ class ComparisonTests(unittest.TestCase):
         self.assertIsNotNone(local["target_out_s"])
         self.assertNotIn("last_out_s", local["actual"])
 
-    def test_closure_scope_and_blocked_people_are_disclosed(self):
+    def test_closures_only_withdraw_affected_zone(self):
         for preset in ("p-detour", "p-trapped"):
             scenario = self.scenarios[preset]
-            self.assertEqual(scenario["scope"], ["zone-a", "zone-b"])
-            self.assertEqual(scenario["rows"][1]["actual"], scenario["rows"][2]["actual"])
+            self.assertEqual(scenario["scope"], ["zone-a"])
+            local, full = scenario["rows"][1:]
+            self.assertEqual(local["zones"]["zone-b"]["production_rate"], 30)
+            self.assertEqual(local["actual"]["downtime_s"], 900)
+            self.assertEqual(full["actual"]["downtime_s"], 1800)
+        self.assertEqual(self.scenarios["p-detour"]["rows"][1]["actual"]["out"], 3)
+        self.assertEqual(self.scenarios["p-trapped"]["rows"][1]["actual"]["out"], 0)
         for row in self.scenarios["p-trapped"]["rows"]:
             self.assertEqual(row["actual"]["no_route"], 3)
             self.assertFalse(row["actual"]["all_out"])

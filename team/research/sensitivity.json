@@ -2,17 +2,18 @@
   "synthetic": true,
   "platform_verified": false,
   "model_version": "0.1",
+  "scope_policy_version": 2,
   "scenario": "p-instability",
   "one_factor": "walking_speed_m_s",
   "results": [
     {
       "walking_speed_m_s": 0.5,
-      "comparison_key": "9eb8b2f54831a822b736c4ada2a50d1d74c942606605f48d261955c5a9e26809",
+      "comparison_key": "38cce15ee74a0fd971f8c508cb42e6f3a4d96125d3f34c54fb53aae36b56fb18",
       "forecast_horizon_s": 900,
       "forecasts": {
         "observe": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "9eb8b2f54831a822b736c4ada2a50d1d74c942606605f48d261955c5a9e26809",
+          "comparison_key": "38cce15ee74a0fd971f8c508cb42e6f3a4d96125d3f34c54fb53aae36b56fb18",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -27,7 +28,7 @@
         },
         "stop_withdraw_zone": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "9eb8b2f54831a822b736c4ada2a50d1d74c942606605f48d261955c5a9e26809",
+          "comparison_key": "38cce15ee74a0fd971f8c508cb42e6f3a4d96125d3f34c54fb53aae36b56fb18",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -42,7 +43,7 @@
         },
         "withdraw_all": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "9eb8b2f54831a822b736c4ada2a50d1d74c942606605f48d261955c5a9e26809",
+          "comparison_key": "38cce15ee74a0fd971f8c508cb42e6f3a4d96125d3f34c54fb53aae36b56fb18",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -69,12 +70,12 @@
     },
     {
       "walking_speed_m_s": 0.75,
-      "comparison_key": "20e47a674bdb958c1c58d46d5d7910af555d569e3aa48b25b4ecda95fddae35f",
+      "comparison_key": "cb6f3860912ccbc6ebc20ae8f261c09782bd1f7a92b35830aec32b60812dfcc6",
       "forecast_horizon_s": 900,
       "forecasts": {
         "observe": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "20e47a674bdb958c1c58d46d5d7910af555d569e3aa48b25b4ecda95fddae35f",
+          "comparison_key": "cb6f3860912ccbc6ebc20ae8f261c09782bd1f7a92b35830aec32b60812dfcc6",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -89,7 +90,7 @@
         },
         "stop_withdraw_zone": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "20e47a674bdb958c1c58d46d5d7910af555d569e3aa48b25b4ecda95fddae35f",
+          "comparison_key": "cb6f3860912ccbc6ebc20ae8f261c09782bd1f7a92b35830aec32b60812dfcc6",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -104,7 +105,7 @@
         },
         "withdraw_all": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "20e47a674bdb958c1c58d46d5d7910af555d569e3aa48b25b4ecda95fddae35f",
+          "comparison_key": "cb6f3860912ccbc6ebc20ae8f261c09782bd1f7a92b35830aec32b60812dfcc6",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -131,12 +132,12 @@
     },
     {
       "walking_speed_m_s": 1.0,
-      "comparison_key": "4c9659ba58bdeb822504c50df14a3111040a91143510bcb05039ec9f656e0ee1",
+      "comparison_key": "0a9721e17b8107ce64c2247506680df923a20c32396d155801c8d69e70994bcd",
       "forecast_horizon_s": 900,
       "forecasts": {
         "observe": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "4c9659ba58bdeb822504c50df14a3111040a91143510bcb05039ec9f656e0ee1",
+          "comparison_key": "0a9721e17b8107ce64c2247506680df923a20c32396d155801c8d69e70994bcd",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -151,7 +152,7 @@
         },
         "stop_withdraw_zone": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "4c9659ba58bdeb822504c50df14a3111040a91143510bcb05039ec9f656e0ee1",
+          "comparison_key": "0a9721e17b8107ce64c2247506680df923a20c32396d155801c8d69e70994bcd",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -166,7 +167,7 @@
         },
         "withdraw_all": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "4c9659ba58bdeb822504c50df14a3111040a91143510bcb05039ec9f656e0ee1",
+          "comparison_key": "0a9721e17b8107ce64c2247506680df923a20c32396d155801c8d69e70994bcd",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -193,12 +194,12 @@
     },
     {
       "walking_speed_m_s": 1.25,
-      "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+      "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
       "forecast_horizon_s": 900,
       "forecasts": {
         "observe": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+          "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -213,7 +214,7 @@
         },
         "stop_withdraw_zone": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+          "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",
@@ -228,7 +229,7 @@
         },
         "withdraw_all": {
           "decision_id": "run-0002-d1",
-          "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+          "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
           "forecast_tick": 60,
           "forecast_horizon_s": 900,
           "forecast_quality": "full",

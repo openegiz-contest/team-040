@@ -5,7 +5,7 @@ import copy
 import json
 from pathlib import Path
 
-from .model import Mine, fingerprint
+from .model import Mine, fingerprint, SCOPE_POLICY_VERSION
 from .topology import MODEL_VERSION, TOPOLOGY_VERSION
 
 OPTIONS = ("observe", "stop_withdraw_zone", "withdraw_all")
@@ -76,12 +76,14 @@ def experiment():
         scenarios.append(dict(preset=preset, label=label, decision_tick=checkpoint.tick,
             event_tick=next(p["at_s"] for p in checkpoint.attributes["mine"]["presets"] if p["id"] == preset),
             scope=checkpoint.incident["scope"], causes=checkpoint.incident["causes"],
+            scope_reasons=checkpoint.incident["scope_reasons"],
             cohort=checkpoint.cohort, checkpoint_hash=unchanged, comparison_key=checkpoint.comparison_key,
             initial_routes=initial_routes,
             decision_routes={k: {f: copy.deepcopy(w.get(f)) for f in
                 ("route", "egress_exit", "egress_length_m", "egress_status", "egress_reason")} for k, w in checkpoint.workers.items()},
             horizon_s=horizon, rows=rows))
     return dict(schema_version=1, synthetic=True, platform_verified=False,
+                scope_policy_version=SCOPE_POLICY_VERSION,
                 model_version=MODEL_VERSION, topology_version=TOPOLOGY_VERSION,
                 parameters=checkpoint.parameters, scenarios=scenarios)
 

@@ -10,6 +10,8 @@ from .journal import observe
 from .parameters import validate
 from .topology import MODEL_VERSION, PARAMETERS, build_attributes
 
+SCOPE_POLICY_VERSION = 2
+
 
 def fingerprint(value):
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -156,6 +158,36 @@ class Mine:
                       ["hazard:" + k for k, z in self.zones.items() if z["hazard_state"] == "danger"] +
                       ["data_lost:" + k for k, z in self.zones.items() if z["data_quality"] != "fresh"])
 
+    def _affected_scope(self, causes):
+        """Find affected home zones using current positions and closure-free routes.
+
+        Reopen only closed workings in a reference graph; keep hazards/exits intact.
+        Actual routing always uses the closed graph. A lost route, a detour or a
+        changed exit is relevant when a closed edge was on the reference path.
+        """
+        reasons = {}
+        for key in sorted(self.zones):
+            direct = [c for c in causes if c in ("hazard:" + key, "data_lost:" + key)]
+            if direct:
+                reasons[key] = [dict(reason="zone_state", causes=direct)]
+        closed = {k for k, w in self.workings.items() if w["passability"] == "closed"}
+        reference = {k: dict(w, passability="open") if k in closed else w for k, w in self.workings.items()}
+        if closed:
+            for key, worker in sorted(self.workers.items()):
+                if worker["status"] == "out":
+                    continue
+                baseline = route(self.attributes, reference, self.zones, self.exits, worker)
+                blocked = sorted(closed.intersection(baseline["route"]))
+                current_closed = worker["at_working"] in closed
+                if current_closed or blocked:
+                    zone = self.attributes[key]["home_zone"]
+                    reasons.setdefault(zone, []).append(dict(worker=key,
+                        reason="current_working_closed" if current_closed else "reference_route_closed",
+                        closed_workings=sorted(set(blocked) | ({worker["at_working"]} if current_closed else set())),
+                        reference_route=baseline["route"], actual_route=worker["route"],
+                        actual_egress_status=worker["egress_status"]))
+        return sorted(reasons), reasons
+
     def _open_decision(self):
         causes = self._causes()
         if not causes:
@@ -170,22 +202,23 @@ class Mine:
         self.last_out_s = None
         self.exposure = self.unknown_exposure = 0
         self.cohort = sorted(k for k, w in self.workers.items() if w["status"] != "out")
-        affected = sorted(k for k in self.zones if any(c.endswith(":" + k) for c in causes))
-        for key, w in self.workers.items():
-            if w["status"] != "out" and (w["egress_status"] == "none" or any(
-                    c.startswith("passage_closed:") for c in causes)):
-                affected.append(self.attributes[key]["home_zone"])
-        affected = sorted(set(affected))
+        affected, scope_reasons = self._affected_scope(causes)
         self.incident = dict(state="active", trigger=causes[0].split(":")[0], causes=causes,
-                             zone=affected[0] if affected else "zone-a", scope=affected,
+                             scope=affected,
+                             scope_policy_version=SCOPE_POLICY_VERSION, scope_reasons=scope_reasons,
                              opened_at_tick=self.tick, decision_id=f"{self.run}-d{self.decision_counter}")
-        self.comparison_key = fingerprint(dict(model=MODEL_VERSION, parameters=self.parameters,
+        if affected:
+            self.incident["zone"] = affected[0]
+        self.comparison_key = fingerprint(dict(model=MODEL_VERSION, scope_policy=SCOPE_POLICY_VERSION,
+            scope=affected, parameters=self.parameters,
             topology=self.attributes, seed=self.seed, tick=self.tick, workings=self.workings,
             zones=self.zones, sensors=self.sensors, workers=self.workers, exits=self.exits,
             cohort=self.cohort, conditions=sorted(self.conditions), schedule=self.schedule))
         self.comparable = True
         self._event("decision.opened", "incident", "Варианты рассчитаны из одного состояния",
                     details=dict(causes=causes, decision_id=self.incident["decision_id"],
+                                 scope=affected, scope_reasons=scope_reasons,
+                                 scope_policy_version=SCOPE_POLICY_VERSION,
                                  comparison_key=self.comparison_key))
         self.forecasts = self.forecast()
 

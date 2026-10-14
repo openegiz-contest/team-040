@@ -2,7 +2,7 @@
 
 import json
 
-from .model import Mine
+from .model import Mine, SCOPE_POLICY_VERSION
 from .topology import MODEL_VERSION
 
 
@@ -24,6 +24,7 @@ def experiment():
                          forecast_horizon_s=mine.parameters["forecast_horizon_s"],
                          forecasts=predictions, actual_withdraw_all=actual))
     return dict(synthetic=True, platform_verified=False, model_version=MODEL_VERSION,
+                scope_policy_version=SCOPE_POLICY_VERSION,
                 scenario="p-instability", one_factor="walking_speed_m_s", results=rows)
 
 

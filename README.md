@@ -45,10 +45,12 @@ python3 -m unittest team.sim.test_journal team.sim.test_parameters -v
 python3 -m team.sim.sensitivity
 python3 -m team.sim.comparison --check team/research/comparison.json
 python3 -m unittest team.sim.test_comparison -v
+python3 -m unittest team.sim.test_scope -v
 make smoke
 python3 -m team.smoke
 python3 -m team.restart_smoke
 python3 -m team.edge_smoke
+python3 -m team.scope_smoke
 make logs S=team-simulator
 make down
 ```
@@ -59,8 +61,9 @@ make down
 можно выполнять через `py -3`.
 
 Таблица 12 автономных прогонов и объяснения:
-[сравнение действий](team/research/comparison.md). Отчёт отдельно отмечает, что
-при перекрытии текущая модель включает оба участка в область локального вывода.
+[сравнение действий](team/research/comparison.md). При перекрытии локальный вывод
+затрагивает участки работников, чьи справочные маршруты или текущие выработки
+перекрыты; общий путь может затронуть несколько участков.
 
 `team.restart_smoke` после полного smoke перезапускает только симулятор команды и
 проверяет сохранение прогона и дедупликацию повторного reset. Дополнительные

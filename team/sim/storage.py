@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 
-from .model import Mine
+from .model import Mine, SCOPE_POLICY_VERSION
 from .topology import MODEL_VERSION
 from .journal import capture
 from .parameters import registry
@@ -27,6 +27,11 @@ class Store:
             if not hasattr(self.model, "_journal_state"):
                 self.model._journal_state = capture(self.model)
             self.model.attributes["mine"]["parameter_registry"] = registry(self.model.parameters)
+            # Re-offer only an unexecuted decision under the new scope policy.
+            # A fresh decision_id rejects commands made against the old offers.
+            if (self.model.pause_reason == "decision" and self.model.incident["state"] == "active"
+                    and self.model.incident.get("scope_policy_version", 1) != SCOPE_POLICY_VERSION):
+                self.model._open_decision()
         else:
             self.model = Mine()
 
