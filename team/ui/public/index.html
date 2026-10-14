@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Диспетчер смены — цифровой двойник рудника (синтетические данные)</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/scheme.css">
+<link rel="stylesheet" href="css/panels.css">
+</head>
+<body data-boot="loading" data-link="ok" data-publications="unknown" data-snapshot="none" data-commands="blocked"
+      data-view="scheme" data-right="card" data-journal="collapsed">
+<noscript><p class="noscript">Интерфейсу нужен JavaScript. Синтетические данные. Расчёт модели, не сведения о реальной шахте</p></noscript>
+<div class="app" id="app">
+  <header class="topbar" id="statusbar"></header>
+  <section class="incident" id="incident"></section>
+  <div class="banners" id="banners"></div>
+
+  <aside class="left" id="left">
+    <section class="group group--stand" id="conditions" data-testid="conditions-panel"></section>
+    <section class="group group--dispatch" id="actions" data-testid="actions-panel"></section>
+    <section class="group group--pending" id="pending"></section>
+    <section class="group group--reset" id="reset"></section>
+  </aside>
+
+  <main class="centre" id="centre">
+    <div class="centre__bar">
+      <div class="tabs" id="tabs"></div>
+      <div class="centre__controls" id="scheme-controls"></div>
+    </div>
+    <div class="old-data" id="old-data" hidden></div>
+    <div class="centre__body">
+      <section class="view view--scheme" id="view-scheme" data-view="scheme">
+        <div class="scheme" id="scheme" data-testid="scheme"></div>
+        <div class="legend" id="legend" data-testid="legend"></div>
+      </section>
+      <section class="view view--list" id="view-list" data-view="list" data-testid="list" hidden></section>
+      <section class="view view--runs" id="view-runs" data-view="runs" hidden></section>
+    </div>
+  </main>
+
+  <aside class="right" id="right">
+    <div class="right__tabs" id="right-tabs"></div>
+    <section class="right__part right__part--decision" id="decision" data-testid="decision-panel"></section>
+    <section class="right__part right__part--card" id="card" data-testid="card"></section>
+  </aside>
+
+  <footer class="journal" id="journal-region">
+    <div class="journal__panel">
+      <div class="journal__bar" id="journal-bar"></div>
+      <div class="journal__body" id="journal" data-testid="journal"></div>
+    </div>
+  </footer>
+</div>
+<div id="dialog-root"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+ "_fixture":{
+  "contract_version":1,
+  "description":"Пустой стенд: двойник рудника и все остальные двойники не найдены, GET возвращает 404 с телом ошибки в стиле Ditto.",
+  "notice":"Контрактная фикстура для тестов UI. Числа придуманы для тестов и не являются измерениями стенда.",
+  "scenario":"empty"
+ },
+ "archive":[],
+ "attribute_sets":{},
+ "clock":{
+  "event_fields":["forecast_tick","last_known_hazard_tick","opened_at_tick"],
+  "follow_fields":["index_at_tick","measured_at_sim_s","measured_at_tick"],
+  "record_lists":{"causes":["tick"],"commands":["sim_time_s","tick"],"events":["sim_time_s","tick"]},
+  "tick_step":10
+ },
+ "format":1,
+ "namespace":"team040.mine",
+ "publication":{"first_revision":52140,"first_seq":48211},
+ "states":{}
+}
