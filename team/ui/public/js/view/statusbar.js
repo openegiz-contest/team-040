@@ -1,11 +1,15 @@
 // The top bar: one calm line of key figures. The mark and the permanent
-// notice; model time and run; the people counters the model published; the
-// link to the platform with the age of the data; the stand button with the
-// chalk tags of the active conditions. Nothing here is counted by the page.
+// notice; model time and run; the people counters the model published, under
+// one caption «Люди»; the link to the platform with the age of the data; the
+// stand button with the chalk tags of the active conditions. Nothing here is
+// counted by the page. A counter whose published value changed crossfades
+// from the old number to the new one (200 ms) and keeps a fading underline
+// for a second (motion.js); never an intermediate number, never on load.
 
 import {h, reconcile, s, setAttrs, setGlyph, setText} from '../dom.js';
 import {showsOldData} from '../link.js';
 import {labelOf} from '../model.js';
+import {EASE, MS, motionAllowed, play} from '../motion.js';
 
 const LINK_GLYPH = {ok: 'ok', degraded: 'attention', stale: 'clock', unavailable: 'danger'};
 
@@ -48,14 +52,14 @@ function figure(className, testId) {
   const state = h('span', {class: 'figure__state'});
   const node = h('span', {class: `figure ${className}`, 'data-testid': testId}, cap, ' ', value, sep, sub, sep2, state);
   /** caption, main value, a secondary part, and a state that the compact layout keeps when it drops the secondary part */
-  const set = (caption, main, rest = '', last = '') => {
+  const set = (caption, main, rest = '', last = '', title = '') => {
     setText(cap, caption);
     setText(value, main);
     setText(sep, rest ? ' · ' : '');
     setText(sub, rest);
     setText(sep2, rest && last ? ' · ' : '');
     setText(state, last);
-    setAttrs(node, {title: [caption, main, rest, last].filter(Boolean).join(' ')});
+    setAttrs(node, {title: title || [caption, main, rest, last].filter(Boolean).join(' ')});
   };
   return {node, set};
 }
@@ -73,20 +77,40 @@ export function mount(root, ctx) {
   // ---- model time and run ----------------------------------------------------
   const oldTag = h('span', {class: 'old-tag', hidden: true, text: UI.status.oldTag});
   const modelTime = figure('figure--time', 'status-model-time');
-  const run = figure('figure--run', 'status-run');
-  const time = h('div', {class: 'topbar__cluster topbar__time'}, oldTag, ' ', modelTime.node, ' ', run.node);
+  const runFigure = figure('figure--run', 'status-run');
+  const time = h('div', {class: 'topbar__cluster topbar__time'}, oldTag, ' ', modelTime.node, ' ', runFigure.node);
 
   // ---- people ------------------------------------------------------------------
   const people = PEOPLE.map(([id, field, caption, sign]) => {
     const value = h('b', {class: 'figure__value', 'data-testid': `incident-${id}`});
+    // The value and what its change leaves for a moment: the old number fading out over it, an underline.
+    const mark = h('span', {class: 'figure__mark', 'aria-hidden': 'true'});
+    const slot = h('span', {class: 'figure__slot'}, value, mark);
     const node = h('span', {class: 'figure figure--people', 'data-figure': id},
-      h('span', {class: 'figure__cap', text: UI.incident[caption]}), ' ', value, sign ? peopleSign(sign) : null);
-    return {field, sign, value, node};
+      h('span', {class: 'figure__cap', text: UI.incident[caption]}), ' ', slot, sign ? peopleSign(sign) : null);
+    return {field, sign, value, slot, mark, node};
   });
   const peopleGroup = h('div', {
     class: 'topbar__cluster topbar__people', role: 'group', 'aria-label': UI.incident.peopleTitle, title: UI.incident.peopleTitle,
-  }, people.slice(0, 2).map((item) => [item.node, ' ']), h('span', {class: 'topbar__rule', 'aria-hidden': 'true'}),
-  people.slice(2).map((item) => [' ', item.node]));
+  }, h('span', {class: 'topbar__people-cap', text: UI.incident.people}), ' ',
+  h('span', {class: 'topbar__people-row'},
+    people.slice(0, 2).map((item) => [item.node, ' ']), h('span', {class: 'topbar__rule', 'aria-hidden': 'true'}),
+    people.slice(2).map((item) => [' ', item.node])));
+
+  /** A new published value: the old number crossfades into the new one and an underline fades out. Never on the first value. */
+  function changed(item, before) {
+    const ghost = h('span', {class: 'figure__ghost', 'aria-hidden': 'true', text: before});
+    item.slot.append(ghost);
+    const out = play(ghost, [{opacity: 1}, {opacity: 0}], {duration: MS.digits, easing: EASE});
+    if (!out) {
+      ghost.remove();
+      return;
+    }
+    out.finished.then(() => ghost.remove(), () => ghost.remove());
+    play(item.value, [{opacity: 0}, {opacity: 1}], {duration: MS.digits, easing: EASE});
+    play(item.mark, [{opacity: 1}, {opacity: 0}], {duration: MS.underline, easing: 'ease-out'});
+  }
+  let shownRun = null;
 
   // ---- link --------------------------------------------------------------------
   const linkGlyph = h('span', {class: 'status__glyph'});
@@ -149,15 +173,25 @@ export function mount(root, ctx) {
     // The tick this view shows: a view that stopped following the state is told apart from the others.
     setAttrs(modelTime.node, {'data-tick': snapshot && model ? snapshot.tick : null});
     const values = model && model.shift ? model.shift.values : {};
+    // Motion only for a change within one run of a current snapshot: not the first value, not a new run, not old data.
+    const run = snapshot && model && model.hasSnapshot ? snapshot.run : null;
+    const animate = run !== null && run === shownRun && motionAllowed(store.getState());
+    shownRun = run;
     for (const item of people) {
       const value = values[item.field];
       const published = typeof value === 'number';
-      setText(item.value, published ? text.num(value) : text.DASH);
-      setAttrs(item.node, {class: ['figure', 'figure--people', item.sign && published && value > 0 && `is-alert is-alert--${item.sign}`]});
+      const before = item.value.textContent;
+      const words = published ? text.num(value) : text.DASH;
+      setText(item.value, words);
+      if (animate && published && before !== words && before !== '' && before !== text.DASH) changed(item, before);
+      setAttrs(item.node, {
+        class: ['figure', 'figure--people', item.sign && published && value > 0 && `is-alert is-alert--${item.sign}`],
+        'data-value': published ? value : null,
+      });
     }
     if (!snapshot || !model) {
       modelTime.set(`${UI.status.model}:`, UI.status.noData);
-      run.set(`${UI.status.run}:`, UI.status.noData);
+      runFigure.set(`${UI.status.run}:`, UI.status.noData);
       reconcile(conditionsList, [], () => '', () => null);
       setText(conditionsNone, UI.status.noData);
       standCount.hidden = true;
@@ -165,10 +199,11 @@ export function mount(root, ctx) {
     }
     const pause = snapshot.pauseReason !== 'none' && text.isKnown('pauseReason', snapshot.pauseReason)
       ? ` ${text.VOCAB.pauseReason[snapshot.pauseReason]}` : '';
-    modelTime.set(UI.status.model, text.modelTime(snapshot.simTimeS),
-      `${text.tickTime(null, snapshot.tick)} · ${UI.status.speed(values.speedup)}`, `${text.label('runState', snapshot.runState)}${pause}`);
+    // The tick and the seed are for the curious: in the titles, not in the line.
+    modelTime.set(UI.status.model, text.modelTime(snapshot.simTimeS), UI.status.speed(values.speedup),
+      `${text.label('runState', snapshot.runState)}${pause}`, UI.status.timeTitle(snapshot.tick));
     setAttrs(modelTime.node, {'data-run-state': snapshot.runState});
-    run.set(UI.status.run, snapshot.run, `${UI.status.seed} ${text.num(values.seed)}`);
+    runFigure.set(UI.status.run, snapshot.run, '', '', UI.status.runTitle(snapshot.run, text.num(values.seed)));
     reconcile(conditionsList, model.conditions, (condition) => condition.raw,
       () => h('span', {class: 'chip chip--stand'}),
       (chip, condition) => setAttrs(chip, {

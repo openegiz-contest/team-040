@@ -115,7 +115,8 @@ export function mount(root, ctx) {
   const resetWhy = h('p', {class: 'note note--why', hidden: true});
   const resetHint = h('p', {class: 'note'});
   const reset = commandButton({
-    class: 'btn btn--danger btn--block', 'data-testid': 'btn-reset', 'data-command-type': 'run.reset', text: UI.reset.button,
+    // A neutral outline: red is hazard-only, and the reset asks first.
+    class: 'btn btn--reset btn--block', 'data-testid': 'btn-reset', 'data-command-type': 'run.reset', text: UI.reset.button,
   }, async () => {
     if (await confirmEndOfRun((run) => ({title: UI.reset.dialogTitle, message: UI.reset.dialogText(run)}))) ctx.sendCommand('run.reset');
   });

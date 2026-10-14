@@ -5,7 +5,7 @@
 
 import {canRetry, isUnresolved} from '../commands.js';
 import {h, reconcile, setAttrs, setGlyph, setText} from '../dom.js';
-import {labelOf} from '../model.js';
+import {CONDITION_COMMANDS, labelOf} from '../model.js';
 
 const PHASE_GLYPH = {
   sending: 'clock', sent: 'clock', applied: 'ok', rejected: 'blocked', no_ack: 'attention',
@@ -40,6 +40,24 @@ export function targetLabel(state, type, target) {
 /** "Остановить участок: Участок Б"; a preset is named by its label. */
 export function commandTitle(text, state, type, target) {
   return text.commandText(type, target, (name) => targetLabel(state, type, name));
+}
+
+/** A command of the stand (a condition of the experiment, a preset, the reset): not a decision of the dispatcher. */
+export function isStandCommand(type) {
+  return typeof type === 'string' && (type.startsWith('condition.') || type === 'run.start_preset' || type === 'run.reset');
+}
+
+/**
+ * The title of a sent command. A condition of the stand is said as the condition it sets or lifts:
+ * «Условие стенда: В-07 закрыта», «Условие стенда снято: В-07 закрыта»; every other command by its name.
+ */
+export function sentTitle(text, state, type, target) {
+  for (const [kind, commands] of Object.entries(CONDITION_COMMANDS)) {
+    if (type !== commands.set && type !== commands.undo) continue;
+    const words = text.conditionText({kind, target, raw: `${kind}:${target}`}, (name) => targetLabel(state, type, name));
+    return type === commands.set ? text.UI.pending.standOn(words) : text.UI.pending.standOff(words);
+  }
+  return commandTitle(text, state, type, target);
 }
 
 /**
@@ -120,8 +138,12 @@ export function mount(root, ctx) {
     const retry = commandButton({class: 'btn btn--small', 'data-testid': 'btn-retry', text: UI.pending.retry},
       () => ctx.retryCommand(entry.id));
     const dismiss = h('button', {class: 'btn btn--small', type: 'button', 'data-testid': 'btn-dismiss', on: {click: () => leave(entry)}});
-    return h('li', {class: 'pending', 'data-testid': 'pending', tabindex: -1},
+    // A command of the stand carries the chalk «стенд» tag: it sets the experiment, it decides nothing.
+    const stand = isStandCommand(entry.type);
+    return h('li', {class: ['pending', stand && 'pending--stand'], 'data-testid': 'pending', 'data-origin': stand ? 'stand' : 'dispatcher', tabindex: -1},
       h('p', {class: 'pending__head'},
+        stand ? h('span', {class: 'stand-tag pending__tag', 'data-testid': 'pending-stand-tag', text: UI.stand.tag}) : null,
+        stand ? ' ' : null,
         h('strong', {class: 'pending__what'}), ' ',
         h('span', {class: 'pending__id mono', title: entry.id, text: text.shortCommandId(entry.id)})),
       h('p', {class: 'pending__state'}, h('span', {class: 'pending__glyph'}), h('span', {class: 'pending__text'})),
@@ -137,7 +159,7 @@ export function mount(root, ctx) {
       'data-command-id': entry.id, 'data-command-type': entry.type, 'data-command-target': entry.target,
       'data-phase': entry.phase,
     });
-    setText(node.querySelector('.pending__what'), commandTitle(text, state, entry.type, entry.target));
+    setText(node.querySelector('.pending__what'), sentTitle(text, state, entry.type, entry.target));
     setText(node.querySelector('.pending__text'), words);
     setGlyph(node.querySelector('.pending__glyph'), PHASE_GLYPH[entry.phase] || 'unknown');
     const focused = document.activeElement;

@@ -12,7 +12,7 @@
 // data-quality, data-renderer, data-explode, data-rendering, data-levels,
 // data-workings, data-workers-drawn, data-camera, data-fallback, data-frames.
 
-import {h, reconcile, setAttrs, setText} from '../dom.js';
+import {h, reconcile, s, setAttrs, setText} from '../dom.js';
 import {thingsOfKind} from '../model.js';
 import {STAGE} from '../text3d.js';
 
@@ -23,6 +23,19 @@ const SOFTWARE = /swiftshader|llvmpipe|softpipe|software|basic render/i;
 const EXPLODE_DEFAULT = 0.8;
 const MIRRORED = ['data-rendering', 'data-levels', 'data-workings', 'data-workers-drawn', 'data-camera', 'data-frames',
   'data-tweens', 'data-routes', 'data-first-frame-ms', 'data-decor'];
+
+/** Icons of the HUD (16 px, stroked): the row folds to them while the dock is unfolded over a small stage. */
+const ICONS = {
+  overview: 'M2.5 8.2L8 3l5.5 5.2M4.2 6.8V13h7.6V6.8',
+  levels: 'M8 2.2l5.8 2.6L8 7.4 2.2 4.8zM2.2 8.2L8 10.8l5.8-2.6M2.2 11.4L8 14l5.8-2.6',
+  explode: 'M8 1.6v3.6M6.2 3.2L8 1.4l1.8 1.8M8 14.4v-3.6M6.2 12.8L8 14.6l1.8-1.8M2.5 8h11',
+  settings: 'M2.5 4.5h11M2.5 8h11M2.5 11.5h11M5.5 3v3M10.5 6.5v3M7 10v3',
+};
+
+function icon(name) {
+  return s('svg', {class: 'hud__icon', viewBox: '0 0 16 16', width: 16, height: 16, 'aria-hidden': 'true', focusable: 'false'},
+    s('path', {d: ICONS[name]}));
+}
 
 function readPrefs() {
   try {
@@ -89,9 +102,10 @@ export function mount(root, ctx) {
     });
   }
   const modeGroup = h('div', {class: 'seg', role: 'group', 'aria-label': STAGE.modeGroup}, modeButtons['3d'], modeButtons.scheme);
-  const overviewButton = h('button', {type: 'button', class: 'hud__btn', 'data-testid': 'stage-overview', text: STAGE.overview,
-    on: {click: () => (instance ? instance.overview(true) : null)}});
-  const levelSelect = h('select', {class: 'hud__select', 'data-testid': 'stage-level', 'aria-label': STAGE.levels});
+  const overviewButton = h('button', {type: 'button', class: 'hud__btn', 'data-testid': 'stage-overview', title: STAGE.overview,
+    'aria-label': STAGE.overview, on: {click: () => (instance ? instance.overview(true) : null)}},
+  icon('overview'), h('span', {class: 'hud__text', text: STAGE.overview}));
+  const levelSelect = h('select', {class: 'hud__select', 'data-testid': 'stage-level', 'aria-label': STAGE.levels, title: STAGE.levels});
   levelSelect.addEventListener('change', () => {
     const value = levelSelect.value;
     levelSelect.value = '';
@@ -100,8 +114,12 @@ export function mount(root, ctx) {
   const explodeInput = h('input', {type: 'range', min: 0, max: 100, step: 1, class: 'hud__range', id: 'stage-explode',
     'data-testid': 'stage-explode', title: STAGE.explodeHint});
   explodeInput.addEventListener('input', () => applyExplode(Number(explodeInput.value) / 100, false));
-  const explodeField = h('label', {class: 'hud__field', for: 'stage-explode', title: STAGE.explodeHint},
+  const explodeField = h('label', {class: 'hud__field hud__field--explode', for: 'stage-explode', title: STAGE.explodeHint},
     h('span', {class: 'hud__caption', text: STAGE.explode}), explodeInput);
+  // Folded HUD: the spread of the slabs as one button, as the key E.
+  const explodeToggle = h('button', {type: 'button', class: 'hud__btn hud__btn--fold', 'data-testid': 'stage-explode-toggle',
+    title: STAGE.explodeHint, 'aria-label': STAGE.explodeToggle, on: {click: () => toggleExplode()}}, icon('explode'));
+  const levelField = h('span', {class: 'hud__level'}, icon('levels'), levelSelect);
   const qualitySelect = h('select', {class: 'hud__select', id: 'stage-quality', 'data-testid': 'stage-quality', title: STAGE.qualityHint},
     h('option', {value: 'high'}), h('option', {value: 'low'}));
   qualitySelect.addEventListener('change', () => {
@@ -111,10 +129,11 @@ export function mount(root, ctx) {
   });
   const qualityField = h('label', {class: 'hud__field', for: 'stage-quality'}, h('span', {class: 'hud__caption', text: STAGE.quality}), qualitySelect);
   const keys = h('details', {class: 'hud__keys', 'data-testid': 'stage-settings'},
-    h('summary', {class: 'hud__btn', text: STAGE.settings}),
+    h('summary', {class: 'hud__btn', title: STAGE.settings, 'aria-label': STAGE.settings}, icon('settings'),
+      h('span', {class: 'hud__text', text: STAGE.settings})),
     h('div', {class: 'hud__keys-body'}, qualityField, h('p', {class: 'hud__keys-title', text: STAGE.keysTitle}),
       h('dl', null, STAGE.keyList.map(([keyName, what]) => [h('dt', {text: keyName}), h('dd', {text: what})]))));
-  const tools = h('div', {class: 'hud__tools'}, levelSelect, explodeField, overviewButton, keys);
+  const tools = h('div', {class: 'hud__tools'}, levelField, explodeField, explodeToggle, overviewButton, keys);
   const rowMain = h('div', {class: 'hud__row'}, modeGroup, tools);
   const status = h('p', {class: 'hud__status', 'data-testid': 'stage-status', hidden: true});
   hud.append(rowMain, status);
@@ -342,7 +361,7 @@ export function mount(root, ctx) {
   // ---- store ---------------------------------------------------------------------------
 
   store.watch((state) => [state.ui.stageMode, state.ui.quality, state.ui.explode], () => apply());
-  store.watch((state) => [state.model, state.attributes, state.pending, state.ui.selected, state.link, state.boot], (_, state) => {
+  store.watch((state) => [state.model, state.attributes, state.pending, state.ui.selected, state.ui.hoverOption, state.link, state.boot], (_, state) => {
     if (instance) instance.update(state);
   });
   store.watch((state) => state.attributes, (_, state) => updateLevels(state));

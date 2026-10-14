@@ -20,7 +20,7 @@ const CELLS = [
   'worker:ok', 'worker:none', 'worker:unknown', 'ring:danger', 'ring:selected', 'ring:hover',
   'sensor:fresh', 'sensor:stale', 'sensor:lost', 'sensor:unknown', 'exit:available', 'exit:unavailable', 'exit:unknown',
   'sign:attention', 'sign:danger', 'sign:unknown', 'sign:lastDanger', 'sign:pending', 'sign:blocked', 'sign:stopped',
-  'sign:leaving', 'sign:question', 'ring:pending',
+  'sign:leaving', 'sign:question', 'ring:pending', 'ring:scope',
 ];
 
 export const CELL_INDEX = Object.fromEntries(CELLS.map((name, index) => [name, index]));
@@ -95,11 +95,19 @@ function drawCell(g, name) {
       ring(g, 26, 'rgba(17, 19, 22, 0.95)', 9);
       ring(g, 26, TOKEN.danger, 5);
     } else if (state === 'selected') {
-      ring(g, 27, TOKEN.copper, 5);
+      // Selection: a chalk-white double ring on a dark band, outside the red ring of a danger zone.
+      ring(g, 26.5, 'rgba(17, 19, 22, 0.9)', 10);
+      ring(g, 29.5, TOKEN.select, 2.6);
+      ring(g, 23.5, TOKEN.select, 2.6);
     } else if (state === 'hover') {
       ring(g, 27, 'rgba(232, 227, 218, 0.9)', 3);
+    } else if (state === 'scope') {
+      // In the scope of the hovered decision option: one wide ring of the action steel.
+      ring(g, 27.5, 'rgba(17, 19, 22, 0.9)', 9);
+      ring(g, 27.5, TOKEN.action, 5);
     } else {
-      ring(g, 27, TOKEN.copper, 4, [7, 5]);
+      // A command of this page not yet confirmed: the chalk of the scheme, dashed.
+      ring(g, 27, TOKEN.chalk, 4, [7, 5]);
     }
     return;
   }
@@ -166,8 +174,8 @@ function drawCell(g, name) {
     if (state === 'unknown') ring(g, 12.5, TOKEN.unknown, 2.6, [4, 3]);
     outline(g, PATH.question, 2.2, {stroke: TOKEN.unknown, width: 3});
   } else if (state === 'pending') {
-    ring(g, 13, TOKEN.copper, 2.6, [5, 4]);
-    outline(g, PATH.clock, 2.4, {stroke: TOKEN.copper, width: 3});
+    ring(g, 13, TOKEN.chalk, 2.6, [5, 4]);
+    outline(g, PATH.clock, 2.4, {stroke: TOKEN.chalk, width: 3});
   } else if (state === 'blocked') {
     ring(g, 12, TOKEN.dust1, 3);
     line(g, -7, 0, 7, 0, TOKEN.dust1, 4.5);

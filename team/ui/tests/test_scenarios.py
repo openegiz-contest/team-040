@@ -53,7 +53,7 @@ import unittest
 from browser_support import OUTPUT_DIR, PUBLIC_DIR, BrowserTestCase, MockServer, read_png, wait_until
 from screenshots import (
     CLOSE, EXECUTE, RESET, REWRITE_SHIFT, STATES_PATCH, WORKING_SELECT, choose, close_working, execute_option, set_stand,
-    show_right, wait_decision,
+    settle, show_right, wait_decision,
 )
 
 NS = "team040.mine"
@@ -271,7 +271,8 @@ class ScenarioTestCase(BrowserTestCase):
     # ---- views -----------------------------------------------------------
 
     def show(self, view):
-        """Open a view by its tab."""
+        """Open a view by its tab (once the panels stand still: the strip may be unfolding, clarity pass M2)."""
+        settle(self.page)
         self.page.click(f'[data-testid="tab-{view}"]')
         self.page.wait_for(f"document.body.dataset.view === '{view}'", timeout=3.0)
 
@@ -291,6 +292,7 @@ class ScenarioTestCase(BrowserTestCase):
         if self.body().get("dock") == "open" and self.page.evaluate(
                 "getComputedStyle(document.getElementById('decision-dock')).position") == "absolute":
             self.page.click('[data-testid="dock-toggle"]')
+            settle(self.page)    # it folds over 200 ms (clarity pass, M3)
         self.page.click(self.scheme(name), force=True)
         self.page.wait_for(f"location.hash.includes('{name}')", timeout=3.0, message=f"{name} is selected")
 
@@ -403,9 +405,11 @@ class NormalFrameTest(ScenarioTestCase):
         self.assertEqual(self.text('[data-testid="status-notice"]'), "Синтетические данные. Расчёт модели, не сведения о реальной шахте")
         self.assertEqual(self.text('[data-testid="status-link"]'), "Платформа: связь есть")
         self.assertRegex(self.text('[data-testid="status-age"]'), r"^данные [0-2] с назад$")
-        self.assertRegex(self.text('[data-testid="status-model-time"]'), r"^Модель \d\d:\d\d:\d\d · тик \d+ · ×10 · модель идёт$")
+        # Time, not ticks; the seed in the title of the run (clarity pass, A7, A8).
+        self.assertRegex(self.text('[data-testid="status-model-time"]'), r"^Модель \d\d:\d\d:\d\d · ×10 · модель идёт$")
         self.assertEqual(plain(self.page.evaluate("document.querySelector('[data-testid=\"status-run\"]').textContent")),
-                         "Прогон run-0005 · seed 42")
+                         "Прогон run-0005")
+        self.assertEqual(self.attr('[data-testid="status-run"]', "title"), "Прогон run-0005; seed 42")
         self.assertEqual(self.text('[data-testid="status-conditions"]'), "Условия стенда: нет")
 
         # No incident and no banner: the situation strip gives its room to the stage; the people figures of the
@@ -440,7 +444,7 @@ class NormalFrameTest(ScenarioTestCase):
         self.assertIn("Вертикаль не в масштабе", self.text("#scheme .scheme__note"))
 
         # Legend, card, journal.
-        self.assertEqual(self.texts('[data-testid="legend"] .legend__title'), ["Опасность:", "Знание:", "Достижимость:", "Выход:"])
+        self.assertEqual(self.texts('[data-testid="legend"] .legend__title'), ["Опасность:", "Данные:", "Достижимость:", "Выход:"])
         summary = self.card()
         for words in ("Сводка смены", "всего работников 14", "вышло 0", "Ствол: выход доступен (модель); вышло 0",
                       "Участок Г: внимание; работает; приказа о выводе нет; 3 работника", "Условия стенда нет"):
@@ -556,7 +560,7 @@ class PassageClosedTest(ScenarioTestCase):
         tags = plain(" | ".join(self.page.evaluate("[...document.querySelectorAll('#scheme .tag')].map((tag) => tag.textContent)")))
         self.assertIn("В-12 · проход закрыт", tags)
         self.assertEqual(self.text('[data-testid="status-conditions"]'), "Условия стенда: В-12 закрыта")
-        self.assertIn("Инцидент: Участок Б — закрыт проход (В-12)", self.text('[data-testid="incident-strip"]'))
+        self.assertIn("Участок Б — закрыт проход В-12", self.text('[data-testid="incident-strip"]'))
         self.assertEqual(self.counters(), {"in-danger": "0", "no-route": "0", "unknown": "0", "out": "0", "total": "14"})
         self.assertTrue(self.wait_banner("paused_decision", 3.0)["text"].startswith("Модель на паузе для выбора действия."))
 
@@ -571,12 +575,12 @@ class PassageClosedTest(ScenarioTestCase):
 
         # The decision panel: three offered options with the forecast of the model.
         panel = self.decision()
-        self.assertIn("Прогноз модели на 900 секунд для заданного сценария", panel)
+        self.assertRegex(panel, r"Прогноз модели на 15 мин · рассчитан в 00:20:\d0")
         self.assertEqual(self.count(f'{DECISION} th[data-state="offered"]'), 3)
-        self.assertEqual((self.metric("option-withdraw-all", "forecast_all_out"), self.metric("option-withdraw-all", "forecast_last_out_s")),
-                         ("да", "9 мин 40 с"))
-        self.assertEqual((self.metric("option-stop-withdraw", "forecast_out"), self.metric("option-stop-withdraw", "forecast_all_out"),
-                          self.metric("option-stop-withdraw", "forecast_last_out_s")), ("4", "не все вышли", "нет: не все вышли"))
+        # «все вышли» is one row with its time (clarity pass, A3).
+        self.assertEqual(self.metric("option-withdraw-all", "forecast_all_out"), "да, за 9 мин 40 с")
+        self.assertEqual((self.metric("option-stop-withdraw", "forecast_out"), self.metric("option-stop-withdraw", "forecast_all_out")),
+                         ("4", "нет"))
 
         # One command, one effect, one journal entry with the identifier of the command.
         posts = self.wait_commands(1)
@@ -617,7 +621,9 @@ class PassageClosedTest(ScenarioTestCase):
 
         # The number of the strip is the number of the model, and the list shows as many rows.
         self.assertEqual(self.counters(), {"in-danger": "0", "no-route": "2", "unknown": "0", "out": "0", "total": "14"})
-        self.assertIn("Инцидент: Участок В — закрыт проход (В-07)", self.text('[data-testid="incident-strip"]'))
+        self.assertIn("Участок В — закрыт проход В-07", self.text('[data-testid="incident-strip"]'))
+        self.assertIn("Р-07, Р-08: нет расчётного маршрута · ни один вариант модели их не выводит",
+                      self.text('[data-testid="situation-step-3"]'))
 
         # The decision panel says what the model cannot do.
         self.assertEqual(self.body()["dock"], "collapsed", "an incident brings the decision dock; at 1280x720 its bar lies over the stage")
@@ -627,8 +633,7 @@ class PassageClosedTest(ScenarioTestCase):
         self.assertEqual(self.text('[data-testid="decision-nobody-left"]'), "Ни один вариант модели не выводит этих работников")
         for option in ("option-observe", "option-stop-withdraw", "option-withdraw-all"):
             self.assertEqual(self.metric(option, "forecast_no_route"), "2", option)
-            self.assertEqual(self.metric(option, "forecast_all_out"), "не все вышли", option)
-            self.assertEqual(self.metric(option, "forecast_last_out_s"), "нет: не все вышли", option)
+            self.assertEqual(self.metric(option, "forecast_all_out"), "нет", option)
 
         # A worker in a normal zone without a route: the two axes stay apart, on the scheme, in the card and in the list.
         self.select_on_scheme("worker-07")
@@ -667,12 +672,12 @@ class SensorLostTest(ScenarioTestCase):
 
         # Scheme: the tag of the zone in words, the dashed danger outline, the crossed sensor.
         label = self.attr(self.scheme("zone-c"), "aria-label")
-        for words in ("Участок В: состояние неизвестно", "данные потеряны", "последнее известное: опасно (тик 810)",
+        for words in ("Участок В: состояние неизвестно", "данные потеряны", "последнее известное: опасно в 00:13:30",
                       "новый вход запрещён моделью"):
             self.assertIn(words, label)
         self.assertTrue(self.visible(self.scheme("zone-c")), "the tag of the zone is on the screen")
         tag = plain(self.page.evaluate(f"document.querySelector('{self.scheme('zone-c')}').textContent"))
-        self.assertIn("последнее известное: опасно (тик 810)", tag)
+        self.assertIn("последнее известное: опасно в 00:13:30", tag)
         self.assertEqual(self.page.evaluate(f"[...document.querySelectorAll('{self.scheme('zone-c')} [data-sign]')].map((node) => node.dataset.sign)"),
                          ["unknown", "lastDanger", "blocked"])
         for name in ("w-20", "w-21"):
@@ -696,21 +701,22 @@ class SensorLostTest(ScenarioTestCase):
         badges = self.texts(f"{CARD} [data-testid='card-badges'] .badge")
         self.assertEqual(badges[:2], ["состояние неизвестно", "данные потеряны"])
         lead = self.texts(f"{CARD} [data-testid='card-lead'] span")
-        self.assertEqual(lead[0], "последнее известное: опасно (тик 810)")
+        self.assertRegex(lead[0], r"^последнее известное: опасно в 00:13:30 \(\d+ мин назад\)$")
         self.assertIn("новый вход запрещён моделью", lead)
         self.assertIn("причина состояния: данные датчика потеряны: датчик Э-05", lead)
         self.select_on_scheme("sens-ext-05")
         card = self.card()
         self.assertIn("данные потеряны", card)
         self.assertIn("нет связи", card)
-        self.assertRegex(card, r"Последнее измерение \d\d:\d\d:\d\d модельного времени")
+        self.assertRegex(card, r"Последнее измерение в \d\d:\d\d:\d\d \(\d+ мин назад\) по времени модели")
 
         # List: unknown now and danger before are two separate marks of one cell.
         self.show("list")
         cells = self.cells("zone-c")
-        self.assertEqual((cells[3], cells[4]), ("состояние неизвестно последнее известное: опасно (тик 810)", "данные потеряны"))
+        self.assertRegex(cells[3], r"^состояние неизвестно последнее известное: опасно в 00:13:30 \(\d+ мин назад\)$")
+        self.assertEqual(cells[4], "данные потеряны")
         self.assertIn("новый вход запрещён моделью", cells[5])
-        self.assertEqual(self.cells("w-20")[3], "состояние неизвестно последнее известное: опасно (тик 810)")
+        self.assertRegex(self.cells("w-20")[3], r"^состояние неизвестно последнее известное: опасно в 00:13:30 \(\d+ мин назад\)$")
         self.assertEqual(self.cells("sens-ext-05")[4], "данные потеряны; нет связи")
         self.assertNotIn("норма", " ".join(self.cells("zone-c")), "the zone is nowhere called normal")
         self.assertEqual(self.cells("worker-07")[3], "участок: состояние неизвестно")
@@ -904,9 +910,10 @@ class UnexpectedFormTest(ScenarioTestCase):
             ["42", "42 (неизвестное условие)", None],
             ["null", "null (неизвестное условие)", None],
         ], "an undo button only where the condition is known")
-        self.assertEqual(self.text('[data-testid="incident-strip"] .incident__title'), "Инцидент: Участок Б — закрыт проход (В-07)")
+        # Step 1 of the strip: the zone and what happened to it (clarity pass, A4); the moment by the model clock (A8).
+        self.assertEqual(self.text('[data-testid="situation-step-1"] .step__line'), "Участок Б — закрыт проход В-07")
         show_right(self.page, "decision")
-        self.assertEqual(self.texts(f"{DECISION} .decision__causes li"), ["закрыт проход: В-07, тик 1200"])
+        self.assertEqual(self.texts(f"{DECISION} .decision__causes li"), ["закрыт проход: В-07, в 00:20:00"])
         self.show("list")
         self.assertIn("закрыт проход (В-07)", self.cells("incident")[6])
         self.assertEqual(self.page.evaluate("document.querySelectorAll('[data-testid=\"list\"] tbody tr').length"), 75)
@@ -1236,7 +1243,7 @@ class CommandsTest(ScenarioTestCase):
         close_working(self.page, "w-12")
         waiting = self.wait_pending("w-12", "sent", 3.0)
         sent_at = time.monotonic()
-        self.assertEqual(waiting["what"], "Закрыть выработку: В-12")
+        self.assertEqual(waiting["what"], "Условие стенда: В-12 закрыта", "a condition of the stand, not a command (clarity pass, A6)")
         self.assertRegex(waiting["text"], r"^Команда отправлена, не подтверждена \(\d с\)$")
         self.assertRegex(waiting["id"], r"^c-[0-9a-f]{32}$")
         self.assertEqual(self.text("#pending .panel__title"), "Отправленные команды")
@@ -1448,13 +1455,13 @@ class ResultsTest(ScenarioTestCase):
         fact = f'{DECISION} [data-testid="decision-fact"][data-option="option-withdraw-all"]'
         self.assertEqual(self.text(fact + " .decision__alert"),
                          "Вывод не завершён: 2 работника без расчётного маршрута. Это за пределами того, что решает модель")
-        self.assertEqual(self.text(fact + ' td[data-metric="actual_all_out"]'), "не все вышли")
-        self.assertEqual(self.text(fact + ' td[data-metric="actual_last_out_s"]'), "нет: не все вышли")
+        # «все вышли — нет», and the time has no row of its own (clarity pass, A3).
+        self.assertEqual(self.text(fact + ' td[data-metric="actual_all_out"]'), "нет")
         self.assertEqual(self.text(fact + ' td[data-metric="actual_out"]'), "12")
         self.assertEqual(self.text(fact + ' td[data-metric="actual_no_route"]'), "2")
         # Forecast and fact are two columns under two headings; for this run neither holds a time, for any option.
         self.assertEqual(self.texts(fact + " thead th")[1:], ["прогноз модели", "факт прогона"])
-        times = self.page.evaluate("""[...document.querySelectorAll('#decision td[data-metric$="last_out_s"]')].map((cell) => cell.textContent)""")
+        times = self.page.evaluate("""[...document.querySelectorAll('#decision td[data-metric$="all_out"]')].map((cell) => cell.textContent)""")
         self.assertEqual(len(times), 5, "the fact, its forecast, and the forecast of each of the three options")
         for value in times:
             self.assertNotRegex(value, r"\d", f"a time is shown for a withdrawal that is not complete: {value!r}")
@@ -1701,8 +1708,9 @@ class KeyboardTest(ScenarioTestCase):
         without_ring = [item for item in reached if not item["keyboard"] or item["ring"] == "none"]
         self.assertEqual(without_ring, [], "every stop shows the focus")
         commands = {(item["command"], item["target"]) for item in reached if item["command"]}
-        for command in (("run.start_preset", "p-detour"), ("condition.open_working", "w-12"), ("action.stop_zone", "zone-a"),
-                        ("action.withdraw_zone", "zone-a"), ("action.resume_zone", "zone-a"), ("run.reset", None)):
+        # The dispatcher's actions follow the incident's zone, Участок Б (clarity pass, A1).
+        for command in (("run.start_preset", "p-detour"), ("condition.open_working", "w-12"), ("action.stop_zone", "zone-b"),
+                        ("action.withdraw_zone", "zone-b"), ("action.resume_zone", "zone-b"), ("run.reset", None)):
             self.assertIn(command, commands)
         self.assertEqual(len([1 for item in reached if item["thing"] and item["tag"] == "g"]), self.count("#scheme [data-thing-id]"),
                          "every object of the scheme")
@@ -1895,7 +1903,8 @@ class ColourIndependenceTest(ScenarioTestCase):
         self.assertEqual(self.counters()["in-danger"], "4")
         self.show("list")
         self.assertEqual(self.cells("zone-b")[3], "опасно")
-        self.assertEqual(self.cells("zone-a")[3:5], ["состояние неизвестно последнее известное: внимание (тик 1100)", "данные устарели"])
+        self.assertRegex(self.cells("zone-a")[3], r"^состояние неизвестно последнее известное: внимание в 00:18:20 \(\d+ (?:с|мин) назад\)$")
+        self.assertEqual(self.cells("zone-a")[4], "данные устарели")
         self.assertIn("маршрут не рассчитан", self.cells("worker-11")[5])
         self.assertEqual(self.cells("exit-raise")[5], "выход недоступен")
         self.assertEqual(self.cells("worker-03")[3], "участок: опасно")
@@ -2052,7 +2061,7 @@ class LayoutTest(ScenarioTestCase):
         self.wait_drawn()
         self.assertFalse(self.visible('[data-testid="status-run"]'))
         self.assertEqual(plain(self.page.evaluate("document.querySelector('[data-testid=\"status-run\"]').textContent")),
-                         "Прогон run-0005 · seed 42", "the run is still in the document")
+                         "Прогон run-0005", "the run is still in the document")
 
         # The dock: its bar over the stage, the options unfolded on request («к вариантам» of the strip), the stage keeps its size.
         stage = """(() => { const rect = document.getElementById('stage').getBoundingClientRect(); return [rect.width, rect.height]; })()"""
@@ -2063,6 +2072,7 @@ class LayoutTest(ScenarioTestCase):
         self.assertEqual(self.page.evaluate("document.getElementById('decision').getClientRects().length"), 0)
         self.page.click('[data-testid="situation-show-4"]')
         self.page.wait_for("document.body.dataset.dock === 'open'", timeout=2.0)
+        settle(self.page)    # it unfolds over 200 ms (clarity pass, M3)
         self.assertTrue(self.visible("#decision"))
         self.assertEqual(self.page.evaluate(stage), before, "the dock lies over the stage; the stage does not shrink")
         self.assertTrue(self.visible(f"{CARD} .card__head"))
@@ -2618,7 +2628,8 @@ class Checklist3dTest(Stage3dScenarioCase):
         zones = {name: labels[thing(name)] for name in ("zone-a", "zone-b", "zone-c", "zone-d")}
         self.assertEqual({name: item["hazard"] for name, item in zones.items()},
                          {"zone-a": "normal", "zone-b": "normal", "zone-c": "normal", "zone-d": "attention"})
-        self.assertEqual(zones["zone-d"]["lines"][0], "Участок Г: внимание")
+        # The 3D zone tag adds the published count of its people (clarity pass, A10).
+        self.assertEqual(zones["zone-d"]["lines"][0], "Участок Г: внимание · 3 чел.")
         self.assertEqual(zones["zone-d"]["signs"], ["attention"], "attention has its triangle, not only a colour")
         self.assertEqual([sign for sign in zones["zone-a"]["signs"] if sign in HAZARD_SIGNS], [], "a normal zone has no hazard sign")
         self.assertTrue(all(item["state"] == "available" for item in by_kind["exit"]))
@@ -2712,8 +2723,10 @@ class Checklist3dTest(Stage3dScenarioCase):
         labels = self.labels()
         zone = labels[thing("zone-c")]
         self.assertEqual((zone["hazard"], zone["quality"], zone["lastKnownHazard"]), ("unknown", "lost", "danger"))
-        self.assertEqual(zone["lines"], ["Участок В: состояние неизвестно", "последнее известное: опасно (тик 810)",
-                                         "данные потеряны", "новый вход запрещён моделью"])
+        # The moment of the last assessment by the model clock (clarity pass, A8); U2 may add the count of people.
+        self.assertTrue(zone["lines"][0].startswith("Участок В: состояние неизвестно"), zone["lines"])
+        self.assertTrue(zone["lines"][1].startswith("последнее известное: опасно в 00:13:30"), zone["lines"])
+        self.assertEqual(zone["lines"][2:], ["данные потеряны", "новый вход запрещён моделью"])
         self.assertEqual(zone["signs"][:2], ["unknown", "lastDanger"], "unknown and the past danger by their signs")
         self.assertIn("blocked", zone["signs"])
         self.assertIn("s3-label--unknown", zone["cls"], "unknown is never drawn like normal")
@@ -2732,7 +2745,7 @@ class Checklist3dTest(Stage3dScenarioCase):
                            message="«показать» moves the camera")
         self.wait_idle()
         shown = self.wait_label_shown("zone-c")
-        self.assertIn("последнее известное: опасно (тик 810)", shown["lines"])
+        self.assertTrue(any(line.startswith("последнее известное: опасно в 00:13:30") for line in shown["lines"]), shown["lines"])
         self.assert_labels_match_the_list(self.labels())
 
     def test_problem_zone_tags_are_in_sight_in_the_overview(self):
@@ -2757,7 +2770,7 @@ class Checklist3dTest(Stage3dScenarioCase):
         self.open3d("danger_zone")
         self.wait_body(12.0, runState="paused")
         zone = self.wait_label("zone-d", "node.dataset.hazard === 'danger'")
-        self.assertEqual((zone["quality"], zone["lines"]), ("fresh", ["Участок Г: опасно", "новый вход запрещён моделью"]))
+        self.assertEqual((zone["quality"], zone["lines"]), ("fresh", ["Участок Г: опасно · 3 чел.", "новый вход запрещён моделью"]))
         self.assertIn("s3-label--danger", zone["cls"])
         self.assertEqual(zone["signs"][0], "danger", "danger has its octagon, not only a colour")
         self.wait_idle()

@@ -22,11 +22,14 @@ const HAZARD_BADGE = {normal: 'ok', attention: 'attention', danger: 'danger', un
 
 const plain = (text) => ({text});
 
-function hazardCell(text, thing) {
+function hazardCell(text, thing, nowS) {
   const cell = {text: text.hazardText(thing.hazard), badge: HAZARD_BADGE[thing.hazard.state]};
   // The last assessment before the data were lost keeps its own mark: a past danger must stay visible.
-  const lastKnown = text.lastKnownText(thing.values);
-  if (lastKnown) cell.note = {text: lastKnown, badge: HAZARD_BADGE[knownHazard(thing.values.last_known_hazard_state)]};
+  const lastKnown = text.lastKnownText(thing.values, nowS);
+  if (lastKnown) {
+    cell.note = {text: lastKnown, badge: HAZARD_BADGE[knownHazard(thing.values.last_known_hazard_state)]};
+    cell.title = `${cell.text}; ${lastKnown} (${text.lastKnownTitle(thing.values)})`;
+  }
   return cell;
 }
 
@@ -72,7 +75,10 @@ function rowCells(text, model, thing, snapshot) {
   const kind = plain(text.label('kind', thing.kind));
   const code = plain(thing.label);
   const place = plain(text.placeText(placeOf(model, thing)));
-  const modelTime = plain(text.tickTime(values.sim_time_s, values.tick));
+  // The moment by the model clock; the tick is in the title.
+  const now = snapshot ? snapshot.simTimeS : undefined;
+  const modelTime = {text: text.modelTime(values.sim_time_s), title: text.tickWords(values.tick) || undefined};
+  if (typeof values.sim_time_s !== 'number') modelTime.text = text.DASH;
   const platformTime = plain(thing.hasState && snapshot ? text.utcTime(snapshot.modifiedMs) : text.DASH);
   let hazard = DASH;
   let knowledge = DASH;
@@ -84,7 +90,7 @@ function rowCells(text, model, thing, snapshot) {
   } else if (thing.kind === 'level') {
     place.text = typeof attrs.elevation_m === 'number' ? `${text.fieldLabel('elevation_m')} ${text.quantity(attrs.elevation_m, 'm')}` : text.DASH;
   } else if (thing.kind === 'working') {
-    hazard = hazardCell(text, thing);
+    hazard = hazardCell(text, thing, now);
     knowledge = knowledgeCell(text, values.data_quality);
     const restriction = values.routing_restriction && values.routing_restriction !== 'allowed'
       ? text.label('restriction', values.routing_restriction) : '';
@@ -99,7 +105,7 @@ function rowCells(text, model, thing, snapshot) {
       typeof attrs.length_m === 'number' ? `${text.fieldLabel('length_m')} ${text.quantity(attrs.length_m, 'm')}` : '',
     ]);
   } else if (thing.kind === 'zone') {
-    hazard = hazardCell(text, thing);
+    hazard = hazardCell(text, thing, now);
     knowledge = knowledgeCell(text, values.data_quality);
     const restriction = values.routing_restriction && values.routing_restriction !== 'allowed'
       ? text.label('restriction', values.routing_restriction) : '';
@@ -126,7 +132,8 @@ function rowCells(text, model, thing, snapshot) {
       typeof values.rate === 'number' ? text.quantity(values.rate, units.rate) : '',
       typeof values.events_count === 'number' ? text.counted(values.events_count, text.FORMS.event) : '',
     ]);
-    modelTime.text = `${text.UI.list.measured} ${text.tickTime(values.measured_at_sim_s, values.measured_at_tick)}`;
+    modelTime.text = `${text.UI.list.measured} ${typeof values.measured_at_sim_s === 'number' ? text.clockAgo(values.measured_at_sim_s, now) : text.DASH}`;
+    modelTime.title = text.tickWords(values.measured_at_tick) || undefined;
   } else if (thing.kind === 'worker') {
     if (values.location_hazard !== undefined) {
       hazard = {

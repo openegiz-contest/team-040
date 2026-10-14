@@ -7,6 +7,12 @@
 // The three axes stay apart: hazard is the band of a working and the frame of
 // a zone, knowledge is the sensor mark and the dashed or bare line, and
 // reachability is the shape of a worker marker, the barrier and the exit.
+//
+// Selection is a chalk-white double outline. A worker without a computed route
+// is labelled unmistakably: the crossed-square sign first, bold words, a 2 px
+// frame, and his label is never left out. The option the user points at in the
+// decision dock (ui.hoverOption) lights the zones of its published scope and the
+// people now in them; the light fades in and out (150 ms, scheme.css).
 
 import {unresolvedFor} from '../commands.js';
 import {h, onActivate, reconcile, s, setAttrs, setText} from '../dom.js';
@@ -27,7 +33,7 @@ const LINE_H = 13;
 const PAD_X = 4;
 const PAD_Y = 2;
 /** How far the focus frame of a zone tag stands off its box. */
-const FOCUS_GAP = 5;
+const FOCUS_GAP = 7;
 const PATTERNS = 'sch';
 /** Thickness of a slab in the axonometric view, px: its sawn front and side faces. Not to scale. */
 const SLAB_PX = 10;
@@ -56,7 +62,7 @@ export function mount(root, ctx) {
   ctx.roots.schemeControls.append(
     h('span', {class: 'field', id: 'projection-label', text: UI.scheme.projection}),
     h('div', {class: 'tabs', role: 'group', 'aria-labelledby': 'projection-label'}, buttons.axo, buttons.plan),
-    h('label', {class: 'field', for: 'level-select', text: UI.scheme.level}),
+    h('label', {class: 'visually-hidden', for: 'level-select', text: UI.scheme.level}),
     select,
   );
 
@@ -355,6 +361,13 @@ export function mount(root, ctx) {
     const name = (local) => labelOf(model, local);
     const isPending = (thing) => unresolvedFor(state.pending, thing.name).length > 0;
     const isSelected = (thing) => thing.thingId === ui.selected;
+    const now = state.snapshot ? state.snapshot.simTimeS : undefined;
+    // The zones of the option pointed at in the decision dock: its published scope, nothing derived.
+    const option = ui.hoverOption ? model.things[ui.hoverOption] : null;
+    const scope = new Set(option && option.kind === 'option' && Array.isArray(option.values.scope)
+      ? option.values.scope.filter((zone) => typeof zone === 'string') : []);
+    const inScope = (worker) => scope.size > 0 && typeof worker.values.at_working === 'string'
+      && Boolean(zoneOfWorking(model, worker.values.at_working)) && scope.has(zoneOfWorking(model, worker.values.at_working).name);
     const placer = geo.createPlacer(size.w, size.h, scene.samples);
     /** Label requests in order of importance: {key, lines, signs, cls, candidates(w, h), zone?, glide?}. */
     const specs = [];
@@ -407,7 +420,7 @@ export function mount(root, ctx) {
       const marked = model.hasSnapshot && !look.bare && (hazard.state === 'danger' || hazard.state === 'unknown');
       if (marked && !likeZone) {
         words.push(text.hazardText(hazard));
-        if (look.lastDanger) words.push(text.lastKnownText(values));
+        if (look.lastDanger) words.push(text.lastKnownText(values, now));
       }
       if (look.restricted) words.push(text.label('restriction', 'blocked'));
       if (pending) words.push(UI.scheme.pending);
@@ -487,20 +500,25 @@ export function mount(root, ctx) {
       const code = (chosen || front).label;
       const status = front.values.egress_status;
       const reach = status === 'ok' ? '' : text.label('egress', status);
+      const stranded = status === 'none';
       if (members.length === 1) {
         lines.push({text: code, bold: true});
-        if (reach) lines.push({text: reach});
+        if (reach) lines.push({text: reach, bold: stranded});
         if (front.values.pos_quality !== undefined && front.values.pos_quality !== 'fresh') {
           lines.push({text: text.label('posQuality', front.values.pos_quality)});
         }
       } else {
         lines.push({text: chosen ? `${code} ${UI.scheme.grouped(members.length)}` : UI.scheme.grouped(members.length), bold: true});
-        if (reach) lines.push({text: `${text.num(members.filter((worker) => reachRank(worker) === worst).length)} · ${reach}`});
+        if (reach) {
+          lines.push({text: `${text.num(members.filter((worker) => reachRank(worker) === worst).length)} · ${reach}`, bold: stranded});
+        }
       }
       const boxed = Boolean(reach) || lines.length > 1;
+      // No computed route: the crossed square first and the most important label of the picture (rank 0, placed first;
+      // every label is placed, none is ever dropped).
       specs.push({
-        key: `${front.thingId}:label`, lines, signs: [], rank: boxed ? 2 : 6, glide: true,
-        cls: boxed ? ['tag--box', status === 'none' && 'tag--closed', status !== 'none' && 'tag--unknown'] : 'tag--plain',
+        key: `${front.thingId}:label`, lines, signs: stranded ? ['noroute'] : [], rank: stranded ? 0 : (boxed ? 2 : 6), glide: true,
+        cls: boxed ? ['tag--box', stranded && 'tag--closed tag--noroute', !stranded && 'tag--unknown'] : 'tag--plain',
         candidates: (w, h) => geo.around(at.point, w, h, boxed ? 15 : 10),
       });
     }
@@ -512,16 +530,17 @@ export function mount(root, ctx) {
       return {thing: zone, items};
     }).filter((entry) => entry.items.length > 0);
     reconcile(layer.halos, zones, (entry) => entry.thing.thingId, (entry) => {
-      const g = s('g', null, s('path', {class: 'halo__rim'}), s('path', {class: 'halo__pad'}));
+      // Under the rim of its hazard, a wider rim lit only for the option pointed at: the hazard rim stays in sight.
+      const g = s('g', null, s('path', {class: 'halo__scope'}), s('path', {class: 'halo__rim'}), s('path', {class: 'halo__pad'}));
       g.addEventListener('click', () => ctx.select(entry.thing.thingId));
       return g;
     }, (g, entry) => {
       const zone = entry.thing;
       const d = entry.items.map((item) => item.shape.line).join('');
-      setAttrs(g.firstChild, {d});
-      setAttrs(g.lastChild, {d});
-      setAttrs(g, {class: ['halo', `halo--${zone.hazard.state}`, isSelected(zone) && 'is-selected',
-        zone.hazard.state === 'unknown' && zone.values.last_known_hazard_state === 'danger' && 'halo--last-danger']});
+      for (const path of g.children) setAttrs(path, {d});
+      setAttrs(g, {class: ['halo', `halo--${zone.hazard.state}`, isSelected(zone) && 'is-selected', scope.has(zone.name) && 'is-in-scope',
+        zone.hazard.state === 'unknown' && zone.values.last_known_hazard_state === 'danger' && 'halo--last-danger'],
+      'data-in-scope': scope.has(zone.name) ? 'true' : null});
     });
     for (const {thing: zone, items} of zones) {
       const {values, hazard} = zone;
@@ -534,7 +553,7 @@ export function mount(root, ctx) {
       if (values.withdrawal_state !== undefined && values.withdrawal_state !== 'none') lines.push({text: text.label('withdrawal', values.withdrawal_state)});
       if (values.data_quality === 'stale') lines.push({text: UI.scheme.byStaleData});
       else if (values.data_quality !== undefined && values.data_quality !== 'fresh') lines.push({text: text.label('quality', values.data_quality)});
-      const lastKnown = text.lastKnownText(values);
+      const lastKnown = text.lastKnownText(values, now);
       if (lastKnown) lines.push({text: lastKnown, bold: values.last_known_hazard_state === 'danger'});
       if (values.routing_restriction !== undefined && values.routing_restriction !== 'allowed') {
         lines.push({text: text.label('restriction', values.routing_restriction)});
@@ -616,7 +635,7 @@ export function mount(root, ctx) {
     }
 
     reconcile(layer.zones, specs.filter((spec) => spec.zone), (spec) => spec.key,
-      (spec) => createObject(spec.zone, [...createTag().children, focusFrame(0, 0, 0, 0)]), (g, spec) => {
+      (spec) => createObject(spec.zone, [...createTag().children, s('rect', {class: 'tag__sel', rx: 3}), focusFrame(0, 0, 0, 0)]), (g, spec) => {
         const zone = spec.zone;
         setAttrs(g, {
           ...stateAttributes(zone, spec.pending),
@@ -624,6 +643,8 @@ export function mount(root, ctx) {
           'aria-label': spec.lines.map((line) => line.text).join('; '),
         });
         updateTag(g, spec);
+        // The outer line of the double selection outline, inside the focus frame.
+        setAttrs(g.lastChild.previousSibling, {x: -3, y: -3, width: spec.box.w + 6, height: spec.box.h + 6});
         setAttrs(g.lastChild, {x: -FOCUS_GAP, y: -FOCUS_GAP, width: spec.box.w + 2 * FOCUS_GAP, height: spec.box.h + 2 * FOCUS_GAP});
       });
 
@@ -667,8 +688,9 @@ export function mount(root, ctx) {
       setAttrs(g, {
         ...stateAttributes(thing, isPending(thing)),
         class: ['obj', 'worker', 'move-transition', isSelected(thing) && 'is-selected', !front && 'is-merged',
-          moving && heading !== 0 && 'is-going', !text.isKnown('workerStatus', values.status) && 'is-odd'],
+          moving && heading !== 0 && 'is-going', !text.isKnown('workerStatus', values.status) && 'is-odd', inScope(thing) && 'is-in-scope'],
         'data-group': count > 1 ? count : null,
+        'data-in-scope': inScope(thing) ? 'true' : null,
         'aria-label': `${thing.label}: ${where.join('; ')}`,
       });
       g.style.transform = `translate(${Math.round(at.point[0])}px, ${Math.round(at.point[1])}px)`;
@@ -737,5 +759,5 @@ export function mount(root, ctx) {
   }).observe(root);
 
   store.watch((state) => [state.model, state.attributes, state.pending, state.ui.selected, state.ui.projection,
-    state.ui.level, state.link.snapshot, state.link.invalid && state.link.invalid.code, state.boot], render);
+    state.ui.level, state.ui.hoverOption, state.link.snapshot, state.link.invalid && state.link.invalid.code, state.boot], render);
 }

@@ -7,7 +7,7 @@
 import {unresolvedFor} from '../commands.js';
 import * as geo from '../geometry.js';
 import {showsOldData} from '../link.js';
-import {incidentOf, isUnderground, routeOf, thingsOfKind, workersInZone, zoneOfWorking} from '../model.js';
+import {incidentOf, isUnderground, routeOf, thingByName, thingsOfKind, workersInZone, zoneOfWorking} from '../model.js';
 
 const str = (value) => (typeof value === 'string' && value !== '' ? value : null);
 
@@ -32,6 +32,9 @@ export function describe(state, layout) {
     exits: {},
     routes: [],
     routeReason: 'selection',
+    // The published scope of the decision option under the pointer or chosen (ui.hoverOption): its zones and
+    // the people whose published position is inside them now. Empty without such an option.
+    scope: {option: null, zones: [], workers: []},
   };
   if (!model || !layout) return {view, signature: JSON.stringify(view)};
 
@@ -124,7 +127,48 @@ export function describe(state, layout) {
       });
     if (pieces.length > 0) view.routes.push({worker: worker.name, thingId: worker.thingId, pieces});
   }
+  view.scope = scopeOf(model, ui, view);
   return {view, signature: JSON.stringify(view)};
+}
+
+/** The zones of the hovered or chosen option's published `scope`, and the people now in them. */
+function scopeOf(model, ui, view) {
+  const id = ui && typeof ui.hoverOption === 'string' ? ui.hoverOption : null;
+  const option = id ? (model.things[id] || thingByName(model, id)) : null;
+  if (!option || option.kind !== 'option') return {option: null, zones: [], workers: []};
+  const zones = (Array.isArray(option.values.scope) ? option.values.scope : []).filter((name) => typeof name === 'string' && view.zones[name]);
+  const inside = new Set(zones.flatMap((name) => view.zones[name].workings));
+  const workers = Object.keys(view.workers).filter((name) => view.workers[name].at && inside.has(view.workers[name].at)).sort();
+  return {option: option.thingId, zones, workers};
+}
+
+/**
+ * What changed between two published states that the scene explains with a short transition (clarity spec B):
+ * the displayed hazard of a zone or a working (M6; a change to «unknown» is a loss of knowledge, M9), a passage
+ * that became closed (M8), a sensor whose data stopped being fresh (M9). Both views must hold a full snapshot of
+ * the same run; the caller decides whether motion is allowed at all.
+ * @returns {{zones: Map<string, 'hazard'|'knowledge'>, workings: Map<string, 'hazard'|'knowledge'>, closed: Set<string>,
+ *            sensors: Map<string, string>}} sensors: name -> the quality shown before
+ */
+export function changesBetween(before, after) {
+  const out = {zones: new Map(), workings: new Map(), closed: new Set(), sensors: new Map()};
+  if (!before || !after || !before.hasSnapshot || !after.hasSnapshot || before.run !== after.run) return out;
+  const kindOf = (a, b) => (b.hazard === 'unknown' && a.hazard !== 'unknown' ? 'knowledge' : 'hazard');
+  for (const [name, zone] of Object.entries(after.zones)) {
+    const was = before.zones[name];
+    if (was && (was.hazard !== zone.hazard || was.lastKnown !== zone.lastKnown)) out.zones.set(name, kindOf(was, zone));
+  }
+  for (const [name, working] of Object.entries(after.workings)) {
+    const was = before.workings[name];
+    if (!was) continue;
+    if (was.hazard !== working.hazard || was.lastKnown !== working.lastKnown) out.workings.set(name, kindOf(was, working));
+    if (working.passability === 'closed' && was.passability !== 'closed') out.closed.add(name);
+  }
+  for (const [name, sensor] of Object.entries(after.sensors)) {
+    const was = before.sensors[name];
+    if (was && was.quality === 'fresh' && (sensor.quality === 'stale' || sensor.quality === 'lost')) out.sensors.set(name, was.quality);
+  }
+  return out;
 }
 
 /**

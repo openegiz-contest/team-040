@@ -7,15 +7,32 @@
 // solid, each with its caption. A time until everyone is out is written only
 // when the model says that everyone is out (CONTRACT.md, section 6). Nothing
 // here ranks the options.
+//
+// The table of options reads as an answer (clarity pass, A3): the horizon and
+// the moment of the forecast by the model clock above it, one line that the
+// model recommends nothing, then the rows in the order of the question (people
+// in danger at the end, is everyone out and when, how many out, without a
+// route, exposures and downtime in minutes), and the people bar last as the
+// visual summary. Pointing at an option, or choosing it, tells the stage which
+// zones it acts on (ctx.hoverOption, C).
 
 import {h, reconcile, s, setAttrs, setGlyph, setText} from '../dom.js';
 import {QUESTION} from '../icons.js';
 import {causesOf, incidentOf, labelOf, thingsOfKind} from '../model.js';
 import {blockNote, commandButton, guard, showBlock, standing} from './pending.js';
 
-/** The result metrics in reading order: is everyone out, then people, then exposure, then cost. */
+/** The result metrics in reading order of the archive of runs: is everyone out, then people, then exposure, then cost. */
 export const METRIC_ORDER = ['all_out', 'last_out_s', 'out', 'in_danger', 'danger_exposure_person_s',
   'unknown_exposure_person_s', 'no_route', 'downtime_s'];
+
+/**
+ * The rows of the table of options and of the fact of an executed option, in the order of the question:
+ * who is in danger at the end, is everyone out (with the time, one row), how many are out, who has no route,
+ * then the exposures and the downtime. `last_out_s` has no row of its own: it is the time of «все вышли».
+ */
+export const DECISION_ROWS = ['in_danger', 'all_out', 'out', 'no_route', 'danger_exposure_person_s',
+  'unknown_exposure_person_s', 'downtime_s'];
+const PER_MINUTE = new Set(['danger_exposure_person_s', 'unknown_exposure_person_s', 'downtime_s']);
 
 const capitalize = (words) => (words ? words[0].toUpperCase() + words.slice(1) : words);
 
@@ -55,6 +72,33 @@ export function metricCell(text, twin, prefix, metric, interrupted = false) {
   if (metric === 'no_route') return plain(text.num(value), value > 0 ? 'blocked' : null);
   if (metric === 'out') return plain(text.num(value));
   return plain(text.quantity(value, twin.units[field]));
+}
+
+/**
+ * One row of the table of options. «все вышли» is «да, за 9 мин 40 с» only next to a published
+ * `all_out = true` with its time, «да» without the time, «нет» when the model says not everyone is out.
+ * Exposures and downtime are written in minutes; `title` keeps the published value and its unit.
+ * @returns {{text: string, badge: (string|null), title: string}}
+ */
+export function decisionCell(text, twin, prefix, metric) {
+  const D = text.UI.decision;
+  const field = prefix + metric;
+  const value = twin.values[field];
+  if (metric === 'all_out') {
+    const last = twin.values[`${prefix}last_out_s`];
+    if (value === true) {
+      return typeof last === 'number' && Number.isFinite(last) && last >= 0
+        ? {text: D.allOutYesIn(last), badge: null, title: `${text.fieldLabel(`${prefix}last_out_s`)}: ${text.quantity(last, 's')}`}
+        : {text: D.allOutYes, badge: null, title: ''};
+    }
+    if (value === false) return {text: D.allOutNot, badge: 'attention', title: D.allOutNo};
+    return value === undefined ? {text: text.DASH, badge: null, title: ''} : {text: text.unknownCode(value), badge: 'unknown', title: ''};
+  }
+  if (PER_MINUTE.has(metric)) {
+    const shown = text.perMinute(value, twin.units[field]);
+    return {text: shown.text, badge: null, title: shown.title};
+  }
+  return {...metricCell(text, twin, prefix, metric), title: ''};
 }
 
 /** The class of a value: forecast (outlined) or fact (solid), and its mark. */
@@ -169,7 +213,8 @@ export function peoplePatterns(prefix) {
 }
 
 /**
- * The people of a series in words: «вышли 12 из 14 · 2 без маршрута».
+ * The people of a series in words: «вышли 12 из 14 · 10 ещё под землёй», or without a published size of
+ * the common group «вышли 0 · для 2 чел. выход не рассчитан».
  * @param {Object} text
  * @param {People} people
  */
@@ -205,21 +250,22 @@ export function peopleWords(text, people) {
  */
 
 /**
- * A table of the result metrics: one row per metric, one column per series,
- * a row of people bars above the metrics.
+ * A table of the result metrics: one row per metric of DECISION_ROWS, one column per series,
+ * the row of people bars under the metrics as their visual summary.
  * @param {Object} text
  * @param {Object<string, *>} attrs attributes of the table
  * @param {{lead?: {label: string, words: (column: Column) => string}, people: string, prefix: string,
  *          barWidth: number, onPick?: (key: string) => void}} options
- * @returns {{table: HTMLTableElement, update: (columns: Column[], metrics: (boolean|undefined)) => void}}
+ * @returns {{table: HTMLTableElement, update: (columns: Column[], metrics: (boolean|undefined), people: (string|undefined)) => void}}
  */
 function metricsTable(text, attrs, options) {
   const {lead = null, onPick = null} = options;
   const head = h('tr');
   const leadRow = lead ? h('tr', {'data-row': 'lead'}) : null;
   const peopleRow = h('tr', {'data-row': 'people'});
-  const rows = METRIC_ORDER.map((metric) => h('tr', {'data-metric-row': metric}));
-  const table = h('table', {class: 'metrics', ...attrs}, h('thead', null, head), h('tbody', null, leadRow, peopleRow, rows));
+  const rows = DECISION_ROWS.map((metric) => h('tr', {'data-metric-row': metric}));
+  const table = h('table', {class: 'metrics', ...attrs}, h('thead', null, head), h('tbody', null, leadRow, rows, peopleRow));
+  let peopleLabel = options.people;
   const bars = new WeakMap();
   const key = (column) => (column ? column.key : '');
   const chosenClass = (column) => (column.pick && column.pick.checked ? 'is-chosen' : null);
@@ -264,18 +310,27 @@ function metricsTable(text, attrs, options) {
   }
 
   function updatePeople(td, column) {
-    if (!column) return;
+    if (!column) {
+      setText(td, peopleLabel);
+      return;
+    }
     const shown = column.published && column.people;
     const words = shown ? peopleWords(text, column.people) : text.DASH;
     if (shown) bars.get(td).update(column.people, series(column), words);
     td.firstChild.style.display = shown ? '' : 'none';
     setText(td.lastChild, words);
+    setAttrs(td.lastChild, {title: words});
     setAttrs(td, {'data-option': column.twin.name, 'data-series': series(column), class: ['metrics__people', chosenClass(column)]});
   }
 
-  /** @param {Column[]} columns @param {boolean} [metrics] false: the metric rows are not shown at all */
-  function update(columns, metrics = true) {
+  /**
+   * @param {Column[]} columns
+   * @param {boolean} [metrics] false: the metric rows are not shown at all
+   * @param {string} [people] the heading of the row of people bars
+   */
+  function update(columns, metrics = true, people = options.people) {
     const all = [null, ...columns];
+    peopleLabel = people;
     reconcile(head, all, key, createHead, updateHead);
     if (lead) {
       reconcile(leadRow, all, key, (column) => (column ? h('td') : h('th', {scope: 'row', text: lead.label})),
@@ -283,16 +338,16 @@ function metricsTable(text, attrs, options) {
     }
     peopleRow.hidden = !metrics;
     reconcile(peopleRow, metrics ? all : [], key, createPeople, updatePeople);
-    METRIC_ORDER.forEach((metric, index) => {
+    DECISION_ROWS.forEach((metric, index) => {
       rows[index].hidden = !metrics;
       reconcile(rows[index], metrics ? all : [], key,
         (column) => (column ? h('td', null, h('span'))
           : h('th', {scope: 'row'}, text.metricLabel(metric), metric === 'in_danger' ? ` ${text.UI.decision.atEnd}` : null)),
         (td, column) => {
           if (!column) return;
-          const cell = column.published ? metricCell(text, column.twin, column.prefix, metric) : {text: text.DASH, badge: null};
+          const cell = column.published ? decisionCell(text, column.twin, column.prefix, metric) : {text: text.DASH, badge: null, title: ''};
           setText(td.firstChild, cell.text);
-          setAttrs(td.firstChild, {class: valueClass(series(column), cell.text === text.DASH ? 'none' : cell.badge)});
+          setAttrs(td.firstChild, {class: valueClass(series(column), cell.text === text.DASH ? 'none' : cell.badge), title: cell.title || null});
           setAttrs(td, {'data-metric': column.prefix + metric, 'data-option': column.twin.name, class: chosenClass(column)});
         });
     });
@@ -339,6 +394,7 @@ export function mount(root, ctx) {
   const pause = h('p', {class: 'decision__pause', 'data-testid': 'decision-pause', hidden: true},
     pauseGlyph, h('span', {text: capitalize(`${text.VOCAB.runState.paused} ${text.VOCAB.pauseReason.decision}`)}));
   const captions = h('ul', {class: 'decision__captions', 'data-testid': 'decision-caption'});
+  const advice = h('p', {class: 'decision__advice', 'data-testid': 'decision-advice', text: D.noRecommendation});
   // Why the dock is open (state and causes of the incident) and the pause: the top of the side column, so that
   // the table of options starts at the top of the dock and the stage keeps its height.
   const head = h('div', {class: 'decision__head'}, stateText, causes, where, pause);
@@ -387,12 +443,45 @@ export function mount(root, ctx) {
       render();
     },
   });
+
+  // ---- the option pointed at: ui.hoverOption (C) ---------------------------------------
+  // Hover or keyboard focus on a column names its option; leaving it falls back to the chosen option.
+  let hovered = null;
+  function pointAt(name) {
+    const {model} = store.getState();
+    const option = model && name ? model.byName[name] : null;
+    const chosenOption = model && chosen ? model.byName[chosen] : null;
+    const shown = option || chosenOption;
+    const id = shown && shown.kind === 'option' ? shown.thingId : null;
+    if (store.getState().ui.hoverOption !== id) ctx.hoverOption(id);
+  }
+  const columnOf = (target) => {
+    const cell = target && target.closest ? target.closest('[data-option], [data-column]') : null;
+    return cell ? (cell.getAttribute('data-option') || cell.getAttribute('data-column')) : null;
+  };
+  const enter = (event) => {
+    const name = columnOf(event.target);
+    if (name === hovered) return;
+    hovered = name;
+    pointAt(hovered);
+  };
+  const leave = () => {
+    hovered = null;
+    pointAt(null);
+  };
+  optionsTable.table.addEventListener('mouseover', enter);
+  optionsTable.table.addEventListener('focusin', enter);
+  optionsTable.table.addEventListener('mouseleave', leave);
+  optionsTable.table.addEventListener('focusout', (event) => {
+    if (!optionsTable.table.contains(event.relatedTarget)) leave();
+  });
   // Said above the numbers: without one key for all options the columns are not a comparison.
   const keysDiffer = h('p', {class: 'decision__alert', 'data-testid': 'decision-keys-differ', hidden: true});
   const noForecast = h('p', {class: 'decision__alert', 'data-testid': 'decision-no-forecast', text: D.notPublished, hidden: true});
   const nobodyLeft = h('p', {class: 'decision__alert', 'data-testid': 'decision-nobody-left', text: D.nobodyLeft, hidden: true});
+  // The table of options reads as an answer: what the numbers are (horizon, moment), that the model ranks nothing.
   const forecast = h('section', {class: 'decision__forecast', 'data-testid': 'decision-forecast'},
-    keysDiffer, optionsTable.table, noForecast);
+    h('div', {class: 'decision__heading'}, captions, advice), keysDiffer, optionsTable.table, noForecast);
   const noPath = h('p', {class: 'decision__alert', 'data-testid': 'decision-no-path', hidden: true});
 
   const block = blockNote();
@@ -426,15 +515,17 @@ export function mount(root, ctx) {
     // The options and their numbers on the left; on the right why the dock is open, what the model cannot do
     // (next to the numbers it is about), what the numbers are, and the launch.
     h('div', {class: 'decision__main'}, forecast,
-      h('div', {class: 'decision__side'}, head, noPath, nobodyLeft, captions, facts, runBox, more)));
+      h('div', {class: 'decision__side'}, head, noPath, nobodyLeft, facts, runBox, more)));
 
   /** The caption of a group of options whose forecast has the same horizon, tick and quality. */
   function updateCaption(node, [, options], several) {
     const {forecast_horizon_s: horizon, forecast_tick: tick, forecast_quality: quality} = options[0].values;
     let words = typeof horizon === 'number' ? D.forecastFor(horizon) : capitalize(D.forecast);
-    if (typeof tick === 'number') words += `, ${D.forecastTick(tick)}`;
+    const at = text.tickSeconds(tick);
+    if (at !== null) words += ` · ${D.forecastTick(text.modelTime(at))}`;
     if (several) words += ` (${options.map((option) => option.label).join(', ')})`;
     setText(node.firstChild, words);
+    setAttrs(node, {title: D.forecastTitle(horizon, tick) || null});
     const mark = node.lastChild;
     const shown = qualityMark(quality);
     mark.hidden = shown.words === '';
@@ -455,6 +546,8 @@ export function mount(root, ctx) {
       setAttrs(root, {'data-empty-note': incidentState === 'none' ? D.noIncident : D.noData});
       setText(summary, '');
       chosen = null;
+      hovered = null;
+      if (store.getState().ui.hoverOption !== null) ctx.hoverOption(null);
       return;
     }
     const name = (local) => labelOf(model, local);
@@ -469,8 +562,10 @@ export function mount(root, ctx) {
     reconcile(causes, shown, (cause, index) => index, () => h('li'), (node, cause) => {
       const parts = [text.label('incidentTrigger', cause.trigger)];
       if (typeof cause.subject === 'string') parts[0] += `: ${name(cause.subject)}`;
-      if (typeof cause.tick === 'number') parts.push(D.tick(cause.tick));
+      const at = text.tickSeconds(cause.tick);
+      if (at !== null) parts.push(D.at(text.modelTime(at)));
       setText(node, parts.join(', '));
+      setAttrs(node, {title: typeof cause.tick === 'number' ? D.tick(cause.tick) : null});
     });
     const place = [];
     if (typeof values.zone === 'string') place.push(`${text.fieldLabel('zone')}: ${name(values.zone)}`);
@@ -527,6 +622,10 @@ export function mount(root, ctx) {
     reconcile(captions, [...groups], ([key]) => key, () => h('li', null, h('span'), ' ', h('span')),
       (node, entry) => updateCaption(node, entry, groups.size > 1));
     noForecast.hidden = published.length > 0;
+    advice.hidden = published.length === 0;
+    // «люди через 15 мин» when every published forecast has one horizon.
+    const horizons = [...new Set(published.map((option) => option.values.forecast_horizon_s))];
+    const peopleLabel = horizons.length === 1 && typeof horizons[0] === 'number' ? D.peopleIn(horizons[0]) : D.people;
     optionsTable.update(options.map((option) => {
       const has = published.includes(option);
       return {
@@ -537,7 +636,7 @@ export function mount(root, ctx) {
         pick: offered.length > 0 ? {checked: option === chosenOption, disabled: !offered.includes(option)} : undefined,
         people: peopleOf(option.values, 'forecast_', total),
       };
-    }), published.length > 0);
+    }), published.length > 0, peopleLabel);
     nobodyLeft.hidden = !(published.length > 0 && published.every((option) => option.values.forecast_no_route > 0));
     // The note on the size of the group explains the bars: without a number of the model there are none.
     groupNote.hidden = published.length === 0 && executed.length === 0;
@@ -556,6 +655,8 @@ export function mount(root, ctx) {
 
     const running = options.find((option) => option.values.state === 'executing');
     const fact = executed[executed.length - 1];
+    // The zones of the option pointed at, or else of the chosen one, for the stage and the scheme.
+    pointAt(hovered);
     let line = D.summaryStates;
     if (offered.length > 0) line = chosenOption ? D.summaryChosen(optionName(chosenOption)) : D.summaryOffered(offered.length);
     else if (running) line = D.summaryExecuting(optionName(running));

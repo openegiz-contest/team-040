@@ -13,7 +13,7 @@
    folds to its bar and unfolds over the stage, the strip is one line of chips.
    Never hidden: the notice, link state and data age, the people figures,
    incident step 1, the legend chip, the separation of the stand controls
-   (drawer, chalk) from the dispatcher actions (right column, copper).
+   (drawer, chalk) from the dispatcher actions (right column, light steel).
 
    Stage corners (for the stage module and the legend):
      top-left      the stand drawer when open; nothing else
@@ -65,7 +65,12 @@ html, body { height: 100%; overflow: hidden; }
 .topbar__cluster { border-left: 1px solid var(--line); }
 .topbar__brand { flex: none; gap: var(--sp-3); padding-left: 0; }
 .topbar__time { flex: none; }
-.topbar__people { flex: none; gap: var(--sp-3); }
+/* «ЛЮДИ» over one row of the five counters of the model. */
+.topbar__people { flex: none; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
+.topbar__people-cap {
+  font-size: 10.5px; font-weight: 600; line-height: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--dust-2);
+}
+.topbar__people-row { display: flex; align-items: center; gap: var(--sp-3); }
 .topbar__link { flex: none; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
 .topbar__stand { flex: 1 1 auto; min-width: 104px; justify-content: flex-end; gap: var(--sp-3); border-left: 0; padding-right: 0; }
 .topbar__rule { align-self: stretch; margin: 12px 0; border-left: 1px solid var(--line); }
@@ -152,22 +157,34 @@ html, body { height: 100%; overflow: hidden; }
 .figure--time[data-run-state="paused"] .figure__state,
 .figure--time[data-run-state="resetting"] .figure__state { color: var(--dust-1); }
 
+/* A counter reads «в опасных зонах 3»: its caption, then the value, then the sign of its axis when above zero. */
 .figure--people {
   display: grid;
   grid-template-columns: auto auto auto;
   align-items: center;
-  column-gap: 6px;
+  column-gap: 5px;
 }
-.figure--people .figure__value { grid-column: 2; grid-row: 1; min-width: 1.2ch; text-align: right; }
+.figure--people .figure__slot { grid-column: 2; grid-row: 1; }
+.figure--people .figure__value { min-width: 1.2ch; text-align: right; }
 .figure--people .figure__cap {
-  grid-column: 3; grid-row: 1;
+  grid-column: 1; grid-row: 1;
   max-width: 90px;
   white-space: normal;
+  text-align: right;
   line-height: 13px;
   letter-spacing: .02em;
 }
+/* The value and what a change leaves for a moment: the old number fading out over it, and an underline. */
+.figure__slot { position: relative; display: inline-flex; align-items: baseline; }
+.figure__ghost {
+  position: absolute; inset: 0;
+  font-family: var(--font-mono); font-size: inherit; font-weight: 500;
+  pointer-events: none; opacity: 0;
+}
+.figure--people .figure__ghost { font-size: 24px; line-height: 30px; text-align: right; }
+.figure__mark { position: absolute; left: 0; right: 0; bottom: 1px; height: 2px; background: var(--dust-1); opacity: 0; pointer-events: none; }
 .figure__sign {
-  grid-column: 1; grid-row: 1;
+  grid-column: 3; grid-row: 1;
   align-self: center;
   display: none;
   width: 16px; height: 16px;
@@ -179,7 +196,10 @@ html, body { height: 100%; overflow: hidden; }
 .figure--people.is-alert--danger .figure__value, .figure--people.is-alert--danger .figure__sign { color: var(--danger-ink); }
 .figure--people.is-alert--noroute .figure__value, .figure--people.is-alert--noroute .figure__sign { color: var(--noroute); }
 .figure--people.is-alert--noroute .figure__value { font-weight: 600; }
-.figure--people.is-alert--unknown .figure__value, .figure--people.is-alert--unknown .figure__sign { color: var(--unknown); font-style: italic; }
+/* Unknown above zero is never quieter than a zero: full weight, the dashed frame of the unknown and its «?». */
+.figure--people.is-alert--unknown .figure__value { color: var(--dust-1); font-weight: 600; }
+.figure--people.is-alert--unknown .figure__slot { padding: 0 4px; border: 1px dashed var(--unknown); border-radius: 2px; background: var(--hatch-unknown); }
+.figure--people.is-alert--unknown .figure__sign { color: var(--unknown); }
 .figure--people.is-alert .figure__cap { color: var(--dust-1); }
 
 .status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -270,6 +290,7 @@ html, body { height: 100%; overflow: hidden; }
   height: 100%;
   padding: 0 var(--sp-2);
 }
+/* Step 1 has about twice the room of the others; every step may take two lines. */
 .step {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -280,8 +301,8 @@ html, body { height: 100%; overflow: hidden; }
   min-width: 0;
   padding: 6px var(--sp-3);
 }
-.step--1 { flex: 0 1 auto; max-width: 46%; }
-.step__head { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.step--1 { flex: 1.8 1 0; }
+.step__head { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 .step__num {
   flex: none;
   display: inline-grid; place-items: center;
@@ -293,19 +314,26 @@ html, body { height: 100%; overflow: hidden; }
   line-height: 1;
 }
 .step__label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dust-2); }
-.step__note { overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--dust-2); }
 .step__body {
-  grid-column: 1; grid-row: 2;
+  grid-column: 1 / -1; grid-row: 2;
   min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: var(--fs-secondary);
+  line-height: 17px;
   color: var(--dust-1);
 }
-.step__body--title { display: flex; align-items: center; gap: 6px; }
-.incident__glyph { flex: none; display: inline-flex; color: var(--dust-1); }
-.incident__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-.step__meta { flex: none; color: var(--dust-2); font-size: var(--fs-caption); }
-.step__show { grid-column: 2; grid-row: 2; align-self: baseline; font-size: var(--fs-caption); white-space: nowrap; }
+/* Two lines at most: the first statement may take both, the second follows when there is room; the whole
+   sentence is the title of the step. */
+.step__lines { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-width: 0; overflow: hidden; }
+.step__line { display: block; min-width: 0; }
+.step__line--more { color: var(--dust-2); }
+.step__body--title { display: flex; align-items: flex-start; gap: 6px; }
+.step__body--title .step__lines { flex: 1 1 auto; }
+.step--1 .step__line:first-of-type { font-weight: 600; }
+.incident__glyph { flex: none; display: inline-flex; padding-top: 1px; color: var(--dust-1); }
+.incident__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.step__meta { flex: none; color: var(--dust-2); font-size: var(--fs-caption); white-space: nowrap; }
+/* «показать» on the line of the step's name: the words of the step get the whole width. */
+.step__show { grid-column: 2; grid-row: 1; align-self: center; font-size: var(--fs-caption); white-space: nowrap; }
 .step__arrow { flex: none; align-self: center; width: 14px; height: 1px; background: var(--stone-1); position: relative; }
 .step__arrow::after {
   content: ""; position: absolute; right: 0; top: -3px;
@@ -313,8 +341,8 @@ html, body { height: 100%; overflow: hidden; }
   border-top: 1px solid var(--stone-2); border-right: 1px solid var(--stone-2);
   transform: rotate(45deg);
 }
-/* The open incident is a call for a decision, not a hazard: a copper base line under step 1. */
-.incident__strip[data-incident-state="active"] .step--1 { border-bottom: 2px solid var(--copper); }
+/* The open incident is a call for a decision, not a hazard: a light steel base line under step 1. */
+.incident__strip[data-incident-state="active"] .step--1 { border-bottom: 2px solid var(--action); }
 .incident__strip[data-incident-state="active"] .step--4 .step__body { color: var(--dust-1); }
 
 /* ---- centre column ------------------------------------------------------------ */
@@ -393,12 +421,12 @@ body[data-old-data] .topbar__time, body[data-old-data] .topbar__people { backgro
 .stage__hud { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
 .stage__hud > * { pointer-events: auto; }
 
-/* The legend chip: bottom-left corner of the stage, above the folded dock bar in the compact layout. */
+/* The legend chip: bottom-left corner of the stage, above the folded dock bar in the compact layout. The
+   full legend unfolds upward from the chip as a narrow column along the left edge (scheme.css), so that it
+   leaves the middle of the stage, where an incident is framed, free; the mine does not move for it. */
 .legend {
   position: absolute; left: var(--sp-3); bottom: calc(var(--dock-cover, 0px) + var(--sp-3)); z-index: 5;
   max-width: calc(100% - 2 * var(--sp-3) - 180px);
-  max-height: 50%;
-  overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--ink-1);
@@ -425,14 +453,16 @@ body[data-stand="open"] .legend { left: calc(var(--w-stand) + var(--sp-3)); max-
   visibility: hidden;
   transform: translateX(-16px);
   opacity: 0;
-  transition: transform 180ms var(--ease), opacity 180ms var(--ease), visibility 0s linear 180ms;
+  transition: transform 200ms var(--ease), opacity 200ms var(--ease), visibility 0s linear 200ms;
 }
 .stand[data-open="true"] {
   visibility: visible;
   transform: none;
   opacity: 1;
-  transition: transform 180ms var(--ease), opacity 180ms var(--ease), visibility 0s;
+  transition: transform 200ms var(--ease), opacity 200ms var(--ease), visibility 0s;
 }
+/* Over old data nothing moves: the drawer opens and closes at once. */
+body[data-old-data] .stand, body:not([data-link="ok"]) .stand { transition: none; }
 .stand__head {
   flex: none;
   display: flex; align-items: flex-start; gap: var(--sp-2);
@@ -470,6 +500,8 @@ body[data-stand="open"] .legend { left: calc(var(--w-stand) + var(--sp-3)); max-
 .dock__toggle { flex: none; margin-left: auto; }
 .dock__body { flex: 1 1 auto; min-height: 0; overflow: auto; border-top: 1px solid var(--line); }
 body[data-dock="collapsed"] .dock__body { display: none; }
+/* While it folds (200 ms, view/dock.js) the body is still drawn. */
+body[data-dock="collapsed"] .dock[data-folding] .dock__body { display: block; }
 
 /* ---- right column --------------------------------------------------------------------- */
 
@@ -530,14 +562,14 @@ body[data-journal="open"] .journal__body { overflow-y: auto; }
   }
 
   .topbar { padding: 0 var(--sp-3) 0 var(--sp-2); }
-  .topbar__brand, .topbar__cluster { gap: var(--sp-3); padding: 0 9px; }
+  .topbar__brand, .topbar__cluster { gap: var(--sp-3); padding: 0 7px; }
   .topbar__brand { padding-left: 0; gap: var(--sp-2); }
   .brand__name { display: none; }
   .notice { width: 152px; letter-spacing: 0; white-space: normal; }
   .notice > span { display: inline; }
   .mark { width: 24px; height: 24px; }
   .topbar__people { gap: 7px; }
-  .figure--people { column-gap: 4px; }
+  .figure--people { column-gap: 3px; }
   .topbar__stand { padding-right: 0; gap: var(--sp-2); }
   .figure__value { font-size: 20px; line-height: 24px; }
   .figure__cap { font-size: 10.5px; letter-spacing: .02em; }
@@ -547,7 +579,10 @@ body[data-journal="open"] .journal__body { overflow-y: auto; }
   .figure--time .figure__value { grid-row: 2; }
   .figure--time .figure__sub { display: none; }
   .figure--time .figure__state { grid-row: 2; align-self: center; max-width: 124px; white-space: normal; font-size: 11px; line-height: 13px; }
-  .figure--people .figure__cap { max-width: 70px; font-size: 10.5px; line-height: 12px; letter-spacing: 0; }
+  .figure--people .figure__cap { max-width: 84px; font-size: 10px; line-height: 11px; letter-spacing: 0; }
+  .figure--people .figure__ghost { font-size: 20px; line-height: 24px; }
+  .topbar__people-cap { font-size: 10px; line-height: 11px; }
+  .topbar__people-row { gap: 6px; }
   .status--link[data-link="stale"], .status--link[data-link="unavailable"] { padding: 0 3px; }
   .status__reason, .status__who { display: none; }
 
@@ -555,16 +590,22 @@ body[data-journal="open"] .journal__body { overflow-y: auto; }
   .topbar__line--sub .topbar__dot, .topbar__line--sub .status--publications:not([data-publications="stopped"]) { display: none; }
   .old-tag { max-width: 70px; font-size: 10px; line-height: 11px; }
   .status--conditions { max-width: 150px; }
-  .banner--info { max-width: 200px; }
+  .banner--info { max-width: 196px; margin-block: 4px; padding-block: 2px; line-height: 1.25; }
+  /* With the steps of an incident the pause is said twice already (the top bar and step 4): the words of the
+     steps get the room. */
+  .situation:has(.incident__strip[data-open]) .banner--info { display: none; }
   .banner--info .banner__text { display: none; }
 
-  /* One line of compact steps; «показать маршруты» says «показать» (its full words are its accessible name). */
-  .step { padding: 4px var(--sp-2); }
-  .step--1 { max-width: 42%; }
+  /* Compact steps; «показать маршруты» says «показать» (its full words are its accessible name). */
+  /* Two lines of words under the name of the step: the strip stays as low as a one-line strip with a heading. */
+  .step { padding: 2px var(--sp-2); }
+  .step--1 { flex: 1.4 1 0; }
+  .step__head { line-height: 14px; }
+  .step__num { width: 15px; height: 15px; font-size: 10px; }
+  .step__body { font-size: var(--fs-caption); line-height: 14px; }
   .step__show-more { display: none; }
   /* Beside the open drawer the HUD fills the top of the narrow stage: the tabs stand under it. */
   body[data-view="scheme"][data-stand="open"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .centre__bar { top: 52px; }
-  .step__note { display: none; }
   .step__label { font-size: 10.5px; letter-spacing: .04em; }
 
   /* The dock folds to its bar at the bottom of the stage and unfolds over the stage. Over the list and the
@@ -572,7 +613,7 @@ body[data-journal="open"] .journal__body { overflow-y: auto; }
   body[data-view="scheme"] .dock {
     position: absolute; left: 0; right: 0; bottom: 0; z-index: 15;
     max-height: 58%;
-    border-top: 1px solid var(--copper);
+    border-top: 1px solid var(--action);
   }
 
   .right__card { min-height: 116px; }

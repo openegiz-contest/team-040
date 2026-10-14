@@ -66,6 +66,9 @@ DRAWN_3D = (READY + " && (() => { const s = document.querySelector('#stage').dat
             " return s.stageMode === '3d' && Number(s.frames) > 0 && s.measuredMs !== undefined && s.rendering === 'idle'"
             " && Number(s.levels) > 0; })()")
 STAGE_IDLE = "document.querySelector('#stage').dataset.rendering !== 'active'"
+# No motion of the panels is running (the strip unfolding, the dock folding, a crossfade; motion.js): a press
+# lands where the control stands. Transitions of the stylesheet (the glide of the markers) are not waited for.
+SETTLED = "document.getAnimations().every((animation) => animation instanceof CSSTransition)"
 
 
 # Test-side rewrite of the answers of the mock, in the browser, before any script of the page: the
@@ -159,10 +162,16 @@ def close_working(page, working):
     set_stand(page, False)
 
 
+def settle(page, timeout=3.0):
+    """Wait until no motion of the panels runs (they take 150-450 ms, clarity pass section B)."""
+    page.wait_for(SETTLED, timeout=timeout, message="the motion of the panels has ended")
+
+
 def wait_decision(page, timeout=10.0):
     page.wait_for("document.body.dataset.runState === 'paused'"
                   " && !!document.querySelector('[data-testid=\"decision-options\"] th[data-state=\"offered\"]')",
                   timeout=timeout, message="the decision point")
+    settle(page)
 
 
 def show_right(page, part):
@@ -175,6 +184,7 @@ def show_right(page, part):
           const toggle = document.querySelector('[data-testid="dock-toggle"]');
           if (toggle && toggle.getClientRects().length > 0 && toggle.getAttribute('aria-expanded') === 'false') toggle.click();
         })()""")
+        settle(page)
     elif part == "card":
         page.evaluate("""(() => {
           const more = document.querySelector('[data-testid="card-more"]');
@@ -228,9 +238,12 @@ def select(page, mode, name):
             page.click(f'#stage-3d .s3-label[data-thing-id="{zone}"]')
             page.click('[data-testid="card-focus"]', timeout=3.0)
             page.wait_for(STAGE_IDLE, timeout=10.0)
-            page.wait_for(f"!document.querySelector({json.dumps(label)}).hasAttribute('data-culled')", timeout=5.0,
-                          message=f"the label of {name} is placed")
-        page.click(label, timeout=3.0)
+        if page.evaluate(f"(() => {{ const node = document.querySelector({json.dumps(label)});"
+                         " return !node || node.hasAttribute('data-culled'); })()"):
+            # A crowded small stage may still have no room for this worker's label: select it like the list does.
+            page.evaluate(f"(async () => {{ (await import('/js/main.js')).app.ctx.select({json.dumps(thing_id)}); }})()")
+        else:
+            page.click(label, timeout=3.0)
     page.wait_for(f"location.hash.includes({json.dumps('sel=' + thing_id)})", timeout=3.0, message=f"{name} is selected")
 
 
@@ -242,6 +255,7 @@ def shot_danger_zone(page, mock, mode):
     """Участок Г in danger with three people in it; the decision point with the dock."""
     open_stage(page, mock, "danger_zone", mode)
     page.wait_for("document.body.dataset.runState === 'paused'", timeout=15.0, message="the decision point")
+    settle(page)
 
 
 def shot_detour_route(page, mock, mode):
@@ -272,6 +286,31 @@ def shot_options_compared(page, mock, mode):
     """The decision point of `detour`: the three options side by side in the unfolded dock."""
     open_stage(page, mock, "paused_heartbeat", mode)
     show_right(page, "decision")
+
+
+def shot_paused_selected(page, mock, mode):
+    """The decision point of `detour` with Р-03 selected: his card and his route beside the options."""
+    open_stage(page, mock, "paused_heartbeat", mode)
+    # Selected the way the card's links and the list do it: the shot is about the card and the route beside the options.
+    page.evaluate("(async () => (await import('/js/main.js')).app.ctx.select('team040.mine:worker-03'))()")
+    page.wait_for("location.hash.includes('sel=team040.mine:worker-03')", timeout=3.0)
+
+
+def shot_option_hovered(page, mock, mode):
+    """Участок Г in danger, the dock unfolded and the pointer on «Вариант 2»: the zones of its scope and their people lit."""
+    shot_danger_zone(page, mock, mode)
+    show_right(page, "decision")
+    time.sleep(0.3)
+    page.evaluate("""document.querySelector('[data-testid="decision-options"] th[data-column="option-stop-withdraw"]')
+      .dispatchEvent(new MouseEvent('mouseover', {bubbles: true}))""")
+    page.wait_for("(async () => (await import('/js/main.js')).app.store.getState().ui.hoverOption !== null)()", timeout=3.0)
+
+
+def shot_strip_show(page, mock, mode):
+    """Step 1 «показать» of the strip: the incident's zone selected (card, actions) and framed by the stage."""
+    shot_danger_zone(page, mock, mode)
+    page.click('[data-testid="situation-show-1"]')
+    page.wait_for("location.hash.includes('sel=team040.mine:zone-d')", timeout=3.0)
 
 
 def shot_stand_drawer(page, mock, mode):
@@ -387,6 +426,9 @@ SHOTS = (
     ("no-path", shot_no_path, BOTH),
     ("sensor-lost-after-danger", shot_sensor_lost, BOTH),
     ("options-compared", shot_options_compared, BOTH),
+    ("paused-selected", shot_paused_selected, BOTH),
+    ("option-hovered", shot_option_hovered, BOTH),
+    ("strip-show", shot_strip_show, BOTH),
     ("stand-drawer", shot_stand_drawer, BOTH),
     ("platform-unavailable", shot_platform_unavailable, BOTH),
     ("withdrawal-in-progress", shot_withdrawal_in_progress, BOTH),

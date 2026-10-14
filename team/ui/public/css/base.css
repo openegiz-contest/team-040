@@ -4,9 +4,16 @@
    Tokens, type, controls and state badges shared by every region and by the
    3D module (js/scene3d/palette.js mirrors the colour tokens). Flat graphite
    planes separated by hairlines and spacing; no gradients, glow, blur or
-   shadows. Copper is "what you act on", never a state. Hazard colours mean
-   hazard only, and a state is never told by colour alone: every badge also
-   has its own outline, pattern or sign, and its words. */
+   shadows. Hazard colours mean hazard only, and a state is never told by
+   colour alone: every badge also has its own outline, pattern or sign, and
+   its words.
+
+   Colour roles (clarity pass, A9): selection = chalk-white double outline
+   (--selection); primary action = solid light steel with dark ink
+   (--action, --action-strong); copper only for the brand mark, the active
+   tab underline and the keyboard focus ring; the reset is a neutral outline
+   (it asks first). Amber and red stay hazard-only. Every pair is WCAG AA:
+   --action on --ink-0 9.5:1, --selection on --ink-1 15.2:1. */
 
 :root {
   /* ---- colour tokens (redesign spec 1.1) ---- */
@@ -19,8 +26,14 @@
   --dust-2: #B8B1A5;
   /* Muted text: AA (4.5:1) only on --ink-0. On panels captions use --dust-2. */
   --dust-3: #847D72;
+  /* Copper: brand mark, active tab underline, keyboard focus ring. Nothing else. */
   --copper: #C8834F;
   --copper-strong: #E39A62;
+  /* Selection: a chalk-white double outline (the 3D work light uses the same white). */
+  --selection: #F2EFE9;
+  /* Primary action: the dispatcher's decision buttons and «Запустить вариант…», dark ink text. */
+  --action: #AEBBC7;
+  --action-strong: #C9D3DC;
   --verdigris: #5FA89E;
   --steel: #7E8B97;
   --stone-1: #57534D;
@@ -102,15 +115,15 @@
   --c-info: var(--steel);
   --c-info-bg: var(--ink-2);
   --c-info-border: var(--steel);
-  --c-accent: var(--copper);
+  --c-accent: var(--action);
   --c-focus: var(--copper);
-  --c-selected-bg: var(--copper-tint);
+  --c-selected-bg: var(--ink-2);
   --c-stand: var(--chalk);
   --c-stand-bg: transparent;
   --c-stand-border: var(--chalk);
-  --c-dispatch: var(--copper);
-  --c-dispatch-bg: var(--copper-tint);
-  --c-dispatch-border: var(--copper);
+  --c-dispatch: var(--action);
+  --c-dispatch-bg: var(--ink-2);
+  --c-dispatch-border: var(--action);
   --fs-xs: 11px;
   --fs-s: 12px;
   --fs-m: 13px;
@@ -190,12 +203,14 @@ body[data-old-data] .move-transition { transition: none; }
 
 /* ---- buttons: three families that are never confused ---------------------
    .btn             neutral control (cancel, close, retry)
-   .btn--dispatch   DISPATCHER ACTION: solid copper fill, dark text — "decide"
+   .btn--dispatch   DISPATCHER ACTION: solid light steel fill, dark text — "decide"
    .btn--primary    the same family, for the confirming button of a decision
+   .btn--secondary  a dispatcher action while another one is the decision asked for: steel outline
+   .btn--reset      the full reset: a neutral outline (it asks for a confirmation first)
    .btn--stand      STAND / SCENARIO control: chalk dashed outline, never filled,
                     label prefixed by the small «стенд» tag (.stand-tag) — "simulate"
    .btn--nav / .tab / .seg   navigation and view: quiet text buttons, segmented
-   .btn--danger     destructive (full reset): red outline, confirmation required */
+   .btn--danger     kept for a destructive control outside the reset; red is hazard-only */
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
@@ -218,12 +233,18 @@ body[data-old-data] .move-transition { transition: none; }
 .btn--block { display: flex; width: 100%; }
 
 .btn--dispatch, .btn--primary {
-  border-color: var(--copper);
-  background: var(--copper);
+  border-color: var(--action);
+  background: var(--action);
   color: var(--ink-0);
   font-weight: 600;
 }
-.btn--dispatch:hover, .btn--primary:hover { border-color: var(--copper-strong); background: var(--copper-strong); }
+.btn--dispatch:hover, .btn--primary:hover { border-color: var(--action-strong); background: var(--action-strong); }
+/* Secondary: the same family, outlined, while the screen asks for another decision. */
+.btn--dispatch.btn--secondary { border-color: var(--action); background: transparent; color: var(--action); }
+.btn--dispatch.btn--secondary:hover { border-color: var(--action-strong); background: var(--ink-3); color: var(--action-strong); }
+
+.btn--reset { border: 1px solid var(--dust-2); background: transparent; color: var(--dust-1); }
+.btn--reset:hover { border-color: var(--dust-1); background: var(--ink-3); }
 
 .btn--stand {
   border: 1px dashed var(--chalk);
@@ -245,16 +266,16 @@ body[data-old-data] .move-transition { transition: none; }
   min-height: 0; padding: 0;
   border: 0; border-radius: 0;
   background: none;
-  color: var(--copper);
+  color: var(--action);
   font-weight: 500;
   text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
 }
-.btn--link:hover { background: none; color: var(--copper-strong); }
+.btn--link:hover { background: none; color: var(--action-strong); }
 
 /* Off, but still in the Tab order (aria-disabled): dotted outline and plain weight, not only a paler colour. */
 .btn:disabled, .btn[aria-disabled="true"],
 .btn--dispatch[aria-disabled="true"], .btn--primary[aria-disabled="true"],
-.btn--stand[aria-disabled="true"], .btn--danger[aria-disabled="true"] {
+.btn--stand[aria-disabled="true"], .btn--danger[aria-disabled="true"], .btn--reset[aria-disabled="true"] {
   border-style: dotted;
   border-color: var(--stone-1);
   background: transparent;
@@ -318,10 +339,10 @@ body[data-old-data] .move-transition { transition: none; }
 .range::-webkit-slider-thumb {
   appearance: none;
   width: 14px; height: 14px; margin-top: -6px;
-  border: 2px solid var(--copper); border-radius: 50%;
+  border: 2px solid var(--action); border-radius: 50%;
   background: var(--ink-0);
 }
-.range::-moz-range-thumb { width: 10px; height: 10px; border: 2px solid var(--copper); border-radius: 50%; background: var(--ink-0); }
+.range::-moz-range-thumb { width: 10px; height: 10px; border: 2px solid var(--action); border-radius: 50%; background: var(--ink-0); }
 .range:focus-visible { outline-offset: 0; }
 
 /* ---- navigation: tabs and segmented control ------------------------------- */
@@ -363,7 +384,7 @@ body[data-old-data] .move-transition { transition: none; }
               | --danger (red, cross-hatch, double outline, octagon) | --unknown (fog hatch, dashed, «?»)
    knowledge: --fresh (plain) | --stale (dashed, clock) | --lost (dotted, crossed)
    reach:     --route (verdigris solid) | --noroute (white crossed square) | --blocked (closed passage)
-   commands:  --pending (copper dashed, clock) | --info
+   commands:  --pending (dashed, clock) | --info
    Older names kept for the views: --ok = --normal. */
 
 .badge {
@@ -388,7 +409,7 @@ body[data-old-data] .move-transition { transition: none; }
 .badge--route { border-color: var(--verdigris); color: var(--verdigris); }
 .badge--noroute { border: 1px solid var(--noroute); background: var(--ink-0); color: var(--noroute); font-weight: 600; }
 .badge--blocked { border: 1px solid var(--dust-1); background: var(--dust-1); color: var(--ink-0); font-weight: 600; }
-.badge--pending { border: 1px dashed var(--copper); color: var(--copper); }
+.badge--pending { border: 1px dashed var(--dust-1); color: var(--dust-1); }
 .badge--info { border: 1px solid var(--steel); color: var(--dust-1); }
 
 /* Chips: small tags. A stand chip is chalk mark-up: dashed, never filled. */
@@ -457,8 +478,8 @@ body[data-old-data] .move-transition { transition: none; }
 .table tbody tr:hover { background: var(--ink-2); }
 .table .row { cursor: pointer; }
 .table .row:focus-visible { outline-offset: -2px; }
-/* The selected row: a copper bar on the left and a heavier weight, not only a tint. */
-.table .row.is-selected { background: var(--copper-tint); }
+/* The selected row: a chalk-white double outline and a heavier weight, not only a tint. */
+.table .row.is-selected { background: var(--ink-2); outline: 3px double var(--selection); outline-offset: -3px; }
 .table .row.is-selected td { font-weight: 600; }
 
 /* ---- key-value lists ------------------------------------------------------ */
@@ -479,6 +500,7 @@ body[data-old-data] .move-transition { transition: none; }
   *, *::before, *::after {
     transition-duration: 0s !important;
     transition-delay: 0s !important;
+    animation-duration: 0s !important;
     scroll-behavior: auto !important;
   }
   .move-transition { transition: none; }

@@ -1,6 +1,9 @@
-// Colours of the scene: the tokens of base.css (redesign spec 1.1) and the
-// tones of the stone model derived from them. Hazard colours mean hazard only;
-// copper is "what you act on"; verdigris is a computed route or an available exit.
+// Colours of the scene: the tokens of base.css (redesign spec 1.1 and the
+// colour roles of the clarity pass) and the tones of the stone model derived
+// from them. Hazard colours mean hazard only; selection is a chalk-white double
+// ring with the warm work light; the light steel of the primary action marks
+// what a decision option would act on; verdigris is a computed route or an
+// available exit. Copper is not used in the scene.
 
 export const TOKEN = {
   ink0: '#111316',
@@ -24,6 +27,10 @@ export const TOKEN = {
   noroute: '#F2EFE9',
   chalk: '#D7D1C3',
   lightWarm: '#FFD7A1',
+  /** Selection: the chalk-white double ring. */
+  select: '#F2EFE9',
+  /** The primary action (--action): the zones and people a hovered decision option covers. */
+  action: '#AEBBC7',
 };
 
 /** Tones of the model, all from the stone and ink tokens. */

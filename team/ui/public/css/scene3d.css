@@ -1,7 +1,9 @@
 /* The 3D stage (view/stage.js, js/scene3d/): the canvas, its labels, the
    orientation gizmo, the stage HUD and the notices of the automatic fallback.
-   Flat graphite planes with hairlines; copper marks what you act on; hazard
-   colours only for hazard, always with a sign and words. */
+   Flat graphite planes with hairlines; selection is a chalk-white double
+   outline, the scope of a decision option the light steel of the primary
+   action; copper only for the keyboard focus ring and the current view;
+   hazard colours only for hazard, always with a sign and words. */
 
 /* ---- which picture the stage shows ---- */
 .stage { position: relative; }
@@ -43,6 +45,8 @@ body:has(.stage[data-stage-mode="3d"]) #scheme-controls { display: none; }
 .s3-label__signs:empty { display: none; }
 .s3-label__lines { display: flex; flex-direction: column; }
 .s3-label__line { color: var(--dust-2, #B8B1A5); }
+/* The first line (code and state) stays on one line; the details wrap inside the label instead of running out of it. */
+.s3-label__line + .s3-label__line { white-space: normal; }
 .s3-label__line.is-bold { color: var(--dust-1, #E8E3DA); font-weight: 600; }
 .s3-label__line.is-muted { color: var(--dust-3, #847D72); font-size: 11px; }
 
@@ -65,7 +69,7 @@ body:has(.stage[data-stage-mode="3d"]) #scheme-controls { display: none; }
 .s3-label--noroute { border: 2px solid var(--noroute, #F2EFE9); }
 .s3-label--unknown { border: 1px dashed var(--unknown, #A3A7AD); }
 .s3-label--indanger { border-color: var(--danger, #E0483A); }
-.s3-label--pending { outline: 1px dashed var(--copper, #C8834F); outline-offset: 2px; }
+.s3-label--pending { outline: 1px dashed var(--chalk, #D7D1C3); outline-offset: 2px; }
 .s3-label--worker, .s3-label--sensor, .s3-label--working { font-size: 12px; }
 /* Codes shown by zoom are quieter than the labels of states. */
 .s3-label--working:not(.s3-label--problem):not(.is-selected),
@@ -74,7 +78,29 @@ body:has(.stage[data-stage-mode="3d"]) #scheme-controls { display: none; }
 }
 .s3-label--working:not(.s3-label--problem) .s3-label__line.is-bold { font-weight: 500; }
 .s3-label--decor { font-size: 11px; }
-.s3-label.is-selected { border: 2px solid var(--copper, #C8834F); background: rgba(46, 36, 28, 0.94); }
+/* Selection: the chalk-white double outline (the scene draws the double ring and the warm work light). */
+.s3-label.is-selected { border: 3px double var(--selection, #F2EFE9); background: rgba(17, 19, 22, 0.96); }
+/* In the scope of the decision option under the pointer: the light steel of the primary action.
+   The keyboard focus ring keeps priority over it. */
+.s3-label.is-scope:not(:focus-visible) { outline: 2px solid var(--action, #AEBBC7); outline-offset: 0; }
+/* A passage just closed: its label and leader fade in once with the barricade (M8); labels.js runs that
+   as a single Web Animation, skipped under reduced motion and while the last data are shown. */
+.s3[data-old] .s3-label { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .s3-label { transition: none; }
+}
+
+/* ---- leaders: a displaced label keeps a thin line to its object, under the labels, over the canvas ---- */
+.s3__leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.s3-leader { color: var(--dust-2, #B8B1A5); }
+.s3-leader__casing { stroke: var(--ink-0, #111316); stroke-width: 3; stroke-opacity: 0.45; fill: none; }
+.s3-leader__line { stroke: currentColor; stroke-width: 1; stroke-opacity: 0.85; fill: none; }
+.s3-leader__dot { fill: currentColor; stroke: var(--ink-0, #111316); stroke-width: 1; }
+.s3-leader--danger { color: var(--danger, #E0483A); }
+.s3-leader--attention { color: var(--attention, #E2A43B); }
+.s3-leader--selection { color: var(--selection, #F2EFE9); }
+.s3-leader--unknown { color: var(--unknown, #A3A7AD); }
+.s3-leader--unknown .s3-leader__line { stroke-dasharray: 3 3; }
 
 /* ---- tooltip of a hovered object ---- */
 .s3__tip {
@@ -176,6 +202,12 @@ body[data-view="scheme"]:not([data-old-data]) .s3__gizmo { top: 50px; }
   cursor: pointer; list-style: none;
 }
 .hud__btn::-webkit-details-marker { display: none; }
+.hud__btn { display: inline-flex; align-items: center; gap: 6px; }
+.hud__icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+/* Wide: words; the icons and the one-button spread are for the folded row. */
+.hud__btn > .hud__icon, .hud__level > .hud__icon { display: none; }
+.hud__btn--fold { display: none; }
+.hud__level { display: inline-flex; align-items: center; gap: 4px; color: var(--dust-2, #B8B1A5); }
 .hud__btn:hover { background: var(--ink-2, #1F2328); color: var(--dust-1, #E8E3DA); }
 .hud__btn[hidden] { display: none; }
 .hud__select {
@@ -187,7 +219,7 @@ body[data-view="scheme"]:not([data-old-data]) .s3__gizmo { top: 50px; }
 }
 .hud__field { display: inline-flex; align-items: center; gap: 6px; color: var(--dust-2, #B8B1A5); font: 400 12px/1 var(--font-sans, sans-serif); }
 .hud__caption { color: var(--dust-2, #B8B1A5); }
-.hud__range { width: 84px; accent-color: var(--copper, #C8834F); }
+.hud__range { width: 84px; accent-color: var(--dust-2, #B8B1A5); }
 .hud__keys { position: relative; }
 .hud__keys[hidden] { display: none; }
 .hud__keys[open] > .hud__btn { background: var(--ink-3, #2A2F36); color: var(--dust-1, #E8E3DA); }
@@ -231,4 +263,25 @@ body[data-view="scheme"]:not([data-old-data]) .s3__gizmo { top: 50px; }
 
 @media (max-width: 1400px) {
   .hud__range { width: 64px; }
+}
+
+/* The dock unfolded over a stage narrower than 1600 px: the HUD row folds to icons and the scale box goes,
+   so that the incident framed above the dock keeps the room (clarity spec B, camera). */
+@media (max-width: 1599px) {
+  body[data-dock="open"] .hud__text, body[data-dock="open"] .hud__field--explode { display: none; }
+  body[data-dock="open"] .hud__btn > .hud__icon, body[data-dock="open"] .hud__level > .hud__icon { display: block; }
+  body[data-dock="open"] .hud__btn--fold { display: inline-flex; }
+  body[data-dock="open"] .hud__btn { padding: 0 6px; }
+  body[data-dock="open"] .hud__tools { gap: 2px; }
+  body[data-dock="open"] .seg__item { min-width: 0; padding: 0 8px; }
+  /* The level select becomes an icon button: the icon lies over a select without visible words. */
+  body[data-dock="open"] .hud__level { position: relative; }
+  body[data-dock="open"] .hud__level > .hud__icon { position: absolute; left: 8px; top: 6px; pointer-events: none; color: var(--dust-2, #B8B1A5); }
+  body[data-dock="open"] .hud__level .hud__select {
+    width: 32px; padding: 0; appearance: none; border-color: transparent; background: transparent; color: transparent; cursor: pointer;
+  }
+  body[data-dock="open"] .hud__level .hud__select:hover { background: var(--ink-2, #1F2328); }
+  body[data-dock="open"] .hud__level .hud__select option { color: var(--dust-1, #E8E3DA); background: var(--ink-2, #1F2328); }
+  body[data-dock="open"] .s3__gizmo { padding: 4px; }
+  body[data-dock="open"] .s3__gizmo-text { display: none; }
 }

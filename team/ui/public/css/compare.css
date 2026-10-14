@@ -3,7 +3,7 @@
    outlined and hatched (dashed underline under its numbers, hatched cells in
    the people bar) with the caption «прогноз модели»; a fact is solid (filled
    numbers, filled cells) with «факт прогона». No ranking colours: the options
-   are columns of equal weight; copper only marks the column the dispatcher
+   are columns of equal weight; a chalk-white double outline only marks the column the dispatcher
    chose. Hazard colours appear only where people are in a danger zone.
    Tokens: base.css (spec 1.1). */
 
@@ -80,6 +80,11 @@
 }
 .decision__glyph { display: inline-flex; color: var(--dust-2); }
 
+/* Above the table: what the numbers are (horizon, moment by the model clock; a dashed line = forecast of the
+   model), and that the model recommends none of them. */
+.decision__heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; padding-top: 2px; }
+.decision__heading .decision__captions { color: var(--dust-1); font-size: 13px; font-weight: 600; }
+.decision__advice { color: var(--dust-2); font-size: 12px; }
 /* What the numbers are: a dashed line = forecast of the model. */
 .decision__captions { display: flex; flex-direction: column; gap: 2px; color: var(--dust-2); font-size: 12px; line-height: 1.3; }
 .decision__captions li { padding-left: 22px; text-indent: -22px; }
@@ -122,7 +127,7 @@
 /* ---- the table of options: columns of equal weight ---------------------------- */
 
 .metrics { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
-.metrics th, .metrics td { padding: 1px 8px 0; border-bottom: 1px solid var(--line); line-height: 17px; text-align: left; vertical-align: middle; }
+.metrics th, .metrics td { padding: 1px 8px 0; border-bottom: 1px solid var(--line); line-height: 16px; text-align: left; vertical-align: middle; }
 .metrics tbody tr:last-child > * { border-bottom: 0; }
 .metrics thead th { padding-top: 1px; padding-bottom: 2px; vertical-align: bottom; font-weight: 400; }
 .metrics__corner, .metrics--fact thead th:first-child { width: 28%; color: var(--dust-2); font-size: 11px; font-weight: 600 !important; letter-spacing: .08em; text-transform: uppercase; }
@@ -131,6 +136,9 @@
 .metrics tr[data-row="people"] > * { padding-top: 2px; padding-bottom: 1px; }
 .metrics__people .pb { margin-bottom: 2px; }
 .metrics .pb-words { line-height: 14px; }
+/* Under the bars, the words of the options take one line (the whole sentence is the title of the cell and the
+   name of the bar): the table of options stays whole at 1920x1080 with the summary row last. */
+.metrics tr[data-row="people"] .pb-words { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .metrics .val { font-size: 13px; }
 .metrics .val--fact { padding: 0 5px; }
 .th-pick { display: flex; align-items: center; gap: 8px; }
@@ -151,16 +159,16 @@ th[data-state="executing"] .th-sub + .th-sub, th[data-state="done"] .th-sub + .t
   width: 16px; height: 16px; padding: 3px; border: 1.5px solid var(--dust-2); border-radius: 50%;
   background: transparent; background-clip: content-box; cursor: pointer;
 }
-/* Checked: a copper ring and a copper dot (the content box), a gap of the panel between them. */
-.th-pick input:checked { border-color: var(--copper); background-color: var(--copper); }
+/* Checked: a chalk-white ring and dot (the content box), a gap of the panel between them. */
+.th-pick input:checked { border-color: var(--selection); background-color: var(--selection); }
 .th-pick input:disabled { border-style: dashed; border-color: var(--dust-3); cursor: not-allowed; }
 .th-pick input:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
-/* The chosen column: a copper frame down the column, next to the checked radio and the line above the button.
+/* The chosen column: a chalk-white double frame down the column, next to the checked radio and the line above the button.
    Every cell has the frame's borders in transparent, so choosing moves nothing. */
-.metrics td, .metrics thead th { border-left: 1px solid transparent; border-right: 1px solid transparent; }
-.metrics thead th { border-top: 2px solid transparent; }
-.metrics .is-chosen { background: var(--ink-2); border-left-color: var(--copper); border-right-color: var(--copper); }
-.metrics thead .is-chosen { border-top-color: var(--copper); }
+.metrics td, .metrics thead th { border-left: 3px double transparent; border-right: 3px double transparent; }
+.metrics thead th { border-top: 3px double transparent; }
+.metrics .is-chosen { background: var(--ink-2); border-left-color: var(--selection); border-right-color: var(--selection); }
+.metrics thead .is-chosen { border-top-color: var(--selection); }
 
 /* ---- runs archive --------------------------------------------------------------- */
 
@@ -218,10 +226,11 @@ th[data-state="executing"] .th-sub + .th-sub, th[data-state="done"] .th-sub + .t
 .table--list .row { cursor: pointer; }
 .table--list .row:hover { background: var(--ink-2); }
 .table--list .row:focus-visible { outline: 2px solid var(--copper); outline-offset: -2px; }
-/* The selected row: a copper bar on the left and the word in the code cell, not only a tint. */
+/* The selected row: a chalk-white double outline, not only a tint. */
 .table--list .row.is-selected { background: var(--ink-2); }
 .table--list td:first-child { border-left: 3px solid transparent; }
-.table--list .row.is-selected td:first-child { border-left-color: var(--copper); }
+.table--list .row.is-selected { outline: 3px double var(--selection); outline-offset: -3px; }
+.table--list .row.is-selected td:first-child { border-left: 3px double var(--selection); }
 .table--list td:nth-child(1) { color: var(--dust-2); }
 .table--list td:nth-child(2) { font-family: var(--font-mono); font-weight: 500; white-space: nowrap; }
 .table--list td:nth-child(3) { min-width: 96px; color: var(--dust-2); }

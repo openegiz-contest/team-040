@@ -2,10 +2,12 @@
    a graphite desk. Each level is a slab of stone; the workings are channels
    carved in its top face (dark recess, pale floor). A state is told by shape,
    hatch, line style or a sign first; colour only repeats it. Hazard colours
-   mean hazard and nothing else; copper marks what the user acts on,
-   verdigris the computed routes and available exits, chalk the marks of the
-   stand (a command of this page that is not confirmed yet). No shadows,
-   filters, gradients or animation. Tokens: base.css (spec 1.1). */
+   mean hazard and nothing else; the selection is a chalk-white double
+   outline, copper only the keyboard focus, light steel the zones of the
+   option pointed at in the decision dock, verdigris the computed routes and
+   available exits, chalk the marks of the stand (a command of this page that
+   is not confirmed yet). No shadows, filters, gradients; the only motion is
+   the 150 ms fade of the option's light. Tokens: base.css (spec 1.1). */
 
 /* ---- the picture ---------------------------------------------------------- */
 
@@ -89,8 +91,8 @@
 .sign--blocked circle, .sign--blocked path { stroke: var(--dust-1); }
 .sign--stopped rect, .sign--stopped path, .sign--leaving path { stroke: var(--dust-1); }
 
-/* Selection is the work light: a copper glow line along the channel, solid. */
-.working.is-selected .working__hit { stroke: var(--copper); stroke-opacity: .45; }
+/* Selection: a chalk-white line along each side of the channel (the wider line under the dark walls). */
+.working.is-selected .working__hit { stroke: var(--selection); stroke-width: 19; stroke-linecap: butt; }
 
 /* ---- zones: a marked area of the slab and a tag ------------------------------ */
 
@@ -102,7 +104,12 @@
 .halo--unknown .halo__rim { stroke: var(--unknown); stroke-width: 32; }
 .halo--unknown .halo__pad { stroke: var(--ink-3); }
 .halo--last-danger .halo__rim { stroke: var(--danger); stroke-width: 35; }
-.halo.is-selected .halo__rim { stroke: var(--copper); stroke-width: 35; }
+.halo.is-selected .halo__rim { stroke: var(--selection); stroke-width: 37; }
+/* The zones of the option pointed at in the decision dock: a light steel rim outside the rim of the hazard,
+   fading in and out (150 ms). */
+.halo .halo__scope { stroke: var(--action); stroke-width: 43; stroke-opacity: 0; transition: stroke-opacity 150ms var(--ease); }
+.halo.is-in-scope .halo__scope { stroke-opacity: 1; }
+body[data-old-data] .halo .halo__scope { transition: none; }
 
 .tag .tag__box { fill: var(--ink-1); stroke: var(--line); stroke-width: 1; }
 .tag--plain .tag__box { fill: none; stroke: none; }
@@ -116,7 +123,15 @@
 .tag--unknown .tag__box { fill: var(--ink-2); stroke: var(--unknown); stroke-width: 1.4; stroke-dasharray: 1.5 2.5; }
 .tag--closed .tag__box { stroke: var(--noroute); stroke-width: 2; }
 .tag--pending .tag__box { stroke: var(--chalk); stroke-width: 1.4; stroke-dasharray: 5 3; }
-.zone.tag--selected .tag__box, .tag--selected .tag__box { stroke: var(--copper); stroke-width: 3; stroke-dasharray: none; }
+/* Selected: a chalk-white double outline, the frame of the tag and a second line around it. */
+.zone.tag--selected .tag__box, .tag--selected .tag__box { stroke: var(--selection); stroke-width: 1.6; stroke-dasharray: none; }
+.tag__sel { display: none; fill: none; pointer-events: none; }
+.tag--selected > .tag__sel { display: inline; stroke: var(--selection); stroke-width: 1.6; }
+/* No computed route: a 2 px frame of the white of the crossed square, bold words, the crossed square first. */
+.tag--noroute .tag__box { stroke: var(--noroute); stroke-width: 2; stroke-dasharray: none; }
+.tag--noroute .tag__text { font-weight: 600; }
+.sign--noroute rect { fill: var(--noroute); stroke: var(--noroute); stroke-width: 1.2; }
+.sign--noroute path { stroke: var(--ink-0); stroke-width: 1.4; }
 
 /* ---- knowledge: instrument posts ---------------------------------------------- */
 
@@ -158,10 +173,19 @@
 /* A worker whose status code is not known keeps the shape of its reachability and gets a dotted outline. */
 .worker.is-odd .worker__shape { stroke-dasharray: 1 2.6; }
 /* Other members of a group: the marker of the group is drawn once, by the member with the worst reachability. */
-.worker.is-merged > :not(.worker__hit, .obj__focus) { display: none; }
+.worker.is-merged > :not(.worker__hit, .obj__focus, .obj__sel) { display: none; }
+/* Selected: a chalk-white double outline, the solid `__hit` ring and the outer `obj__sel` ring (icons.js). */
+.obj__sel { display: none; fill: none; pointer-events: none; }
 .worker.is-selected .worker__hit, .sensor.is-selected .sensor__hit, .exit.is-selected .exit__hit {
-  fill: none; stroke: var(--copper); stroke-width: 2.5;
+  fill: none; stroke: var(--selection); stroke-width: 1.6;
 }
+.worker.is-selected > .obj__sel, .sensor.is-selected > .obj__sel, .exit.is-selected > .obj__sel {
+  display: inline; stroke: var(--selection); stroke-width: 1.6;
+}
+/* A person now in a zone of the option pointed at: a light steel ring that fades in and out (150 ms). */
+.worker:not(.is-selected) .worker__hit { stroke: var(--action); stroke-width: 2; stroke-opacity: 0; transition: stroke-opacity 150ms var(--ease); }
+.worker.is-in-scope:not(.is-selected) .worker__hit { stroke-opacity: 1; }
+body[data-old-data] .worker .worker__hit { transition: none; }
 
 .exit .exit__body { fill: var(--ink-1); stroke: var(--dust-1); stroke-width: 1.8; }
 .exit[data-state="available"] .exit__body, .exit[data-state="available"] .exit__arrow { stroke: var(--verdigris); }
@@ -207,23 +231,23 @@
 .legend__caret { flex: none; width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 1.6; }
 .legend__chip[aria-expanded="true"] .legend__caret { transform: rotate(180deg); }
 
+/* Unfolded: one narrow column upward from the chip, along the left edge of the stage; the middle of the stage
+   stays free. Its height is the room above the chip (view/legend.js); what does not fit scrolls inside. */
 .legend__panel {
-  display: grid; grid-template-columns: repeat(4, max-content); gap: 10px 24px; align-items: start;
+  position: absolute; left: -1px; bottom: calc(100% + 6px);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start;
+  width: 300px; max-height: var(--legend-room, 60vh); overflow: auto;
   padding: 12px 16px 14px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--ink-1);
   color: var(--dust-2);
 }
 .legend__panel[hidden] { display: none; }
-/* Unfolded, the panel scrolls on its own inside the box layout.css gives the legend: the chip stays in sight. */
-.legend:has(.legend__panel:not([hidden])) { display: flex; flex-direction: column; }
-.legend__panel { flex: 1 1 auto; min-height: 0; overflow: auto; }
-.legend__chip { flex: none; }
 .legend__heading { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; color: var(--dust-1); font-size: 13px; font-weight: 600; }
 .legend__heading .legend__hint { color: var(--dust-2); font-size: 12px; font-weight: 400; }
-.legend__panel .legend__group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.legend__panel .legend__group { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .legend__panel .legend__title { margin-bottom: 2px; color: var(--dust-2); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-.legend__panel .legend__item { display: flex; align-items: center; gap: 8px; max-width: 290px; color: var(--dust-1); }
-/* The commands go under the exit, in the fourth column. */
-.legend__panel .legend__group:last-child { grid-column: -2; }
+.legend__panel .legend__item { display: flex; align-items: center; gap: 8px; color: var(--dust-1); }
 .legend__panel .legend__item > svg { min-width: 30px; }
 
 /* A working in the legend lies on a piece of its slab, as on the drawing. */
@@ -237,7 +261,7 @@
   .legend__chip .legend__group { gap: 2px; }
   .legend__chip .legend__title { letter-spacing: .02em; }
   .legend__chip .legend__words, .legend__chip .legend__more { display: none; }
-  .legend__panel { grid-template-columns: repeat(2, max-content); gap: 8px 18px; padding: 10px 12px; }
+  .legend__panel { width: 270px; gap: 8px; padding: 10px 12px; font-size: 11.5px; }
   /* Beside the legend chip, never under it: the note wraps into a narrow column at the right. */
   .scheme__note { max-width: 210px; font-size: 11px; }
 }

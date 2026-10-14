@@ -29,6 +29,8 @@ const SIGNS = {
   stopped: [['rect', {x: -6.2, y: -6.2, width: 12.4, height: 12.4}], ['path', {d: 'M-2 -3v6M2 -3v6'}]],
   leaving: [['path', {d: 'M-6.5 0h8.5M-1.5 -3.5l3.5 3.5l-3.5 3.5M6 -6v12'}]],
   question: [['path', {d: QUESTION}]],
+  // No computed route: the white crossed square of the worker marker, first in his label.
+  noroute: [['rect', {x: -5.6, y: -5.6, width: 11.2, height: 11.2}], ['path', {d: 'M-5.6 -5.6l11.2 11.2M-5.6 5.6l11.2 -11.2'}]],
 };
 
 /**
@@ -157,10 +159,16 @@ export function focusFrame(x, y, width, height) {
   return s('rect', {class: 'obj__focus', x, y, width, height});
 }
 
+/** The outer ring of the selection: with the solid `__hit` ring inside it, a chalk-white double outline (scheme.css). */
+function selectionRing(r) {
+  return s('circle', {class: 'obj__sel', r});
+}
+
 /** Children of a worker marker; scheme.css shows the ones that fit `data-egress`, `data-status`, `data-location-hazard`. */
 export function workerMarker() {
   return [
     focusFrame(-14, -14, 28, 28),
+    selectionRing(14.5),
     s('circle', {class: 'worker__hit', r: 11}),
     s('circle', {class: 'worker__danger', r: 10.5}),
     s('path', {class: 'worker__go', d: 'M9 -4.5l5 4.5l-5 4.5'}),
@@ -174,6 +182,7 @@ export function workerMarker() {
 export function sensorMarker() {
   return [
     focusFrame(-13, -13, 26, 26),
+    selectionRing(12.5),
     s('circle', {class: 'sensor__hit', r: 9}),
     s('path', {class: 'sensor__body', d: 'M0 -6L6 0L0 6L-6 0z'}),
     s('circle', {class: 'sensor__dot', r: 1.8}),
@@ -187,6 +196,7 @@ export function sensorMarker() {
 export function exitMarker() {
   return [
     focusFrame(-15, -16, 30, 32),
+    s('rect', {class: 'obj__sel', x: -14.5, y: -15.5, width: 29, height: 31}),
     s('rect', {class: 'exit__hit', x: -11, y: -12, width: 22, height: 24}),
     s('path', {class: 'exit__body', d: 'M0 -10L8.5 -3.5V9h-17V-3.5z'}),
     s('path', {class: 'exit__arrow', d: 'M0 5.5v-9M-3.5 -1l3.5 -3.5l3.5 3.5'}),

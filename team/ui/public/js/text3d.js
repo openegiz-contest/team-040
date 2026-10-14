@@ -15,9 +15,10 @@ export const STAGE = {
   qualityHint: 'Облегчённое: без сглаживания и ламп, проще материалы',
   explode: 'Разнести',
   explodeHint: 'Разнести горизонты: расстояние между плитами (клавиша E)',
+  explodeToggle: 'Разнести или сблизить горизонты (клавиша E)',
   overview: 'Общий вид',
   levels: 'Горизонт',
-  levelPick: 'горизонт…',
+  levelPick: 'Горизонт: все',
   settings: 'Настройки',
   keysTitle: 'Управление камерой',
   keyList: [
@@ -58,6 +59,8 @@ export const SCENE = {
   notToScale: 'толщина плит и ширина выработок условные',
   oldData: 'Показаны последние полученные данные, движение остановлено',
   grouped: (count) => `×${num(count)}`,
+  /** The published number of people of a zone, after its state on its tag. */
+  people: (count) => `${num(count)} чел.`,
   group: (count) => `группа: ${counted(count, FORMS.worker)} на одном отрезке`,
   inDangerZone: 'в опасной зоне',
   noSensors: 'без датчиков',

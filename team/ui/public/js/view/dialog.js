@@ -25,7 +25,7 @@ export function mount(root, ctx) {
         class: 'btn', type: 'button', 'data-testid': 'dialog-cancel', text: options.cancelLabel || UI.dialog.cancel,
       });
       const confirm = h('button', {
-        class: ['btn', options.danger ? 'btn--danger' : 'btn--primary'], type: 'button', 'data-testid': 'dialog-confirm',
+        class: ['btn', options.danger ? 'btn--reset' : 'btn--primary'], type: 'button', 'data-testid': 'dialog-confirm',
         text: options.confirmLabel || UI.dialog.confirm,
       });
       const backdrop = h('div', {class: 'dialog-backdrop'},

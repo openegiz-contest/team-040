@@ -16,6 +16,7 @@ import json
 import re
 import time
 
+from screenshots import settle
 from browser_support import BrowserTestCase, MockServer, wait_until
 
 NS = "team040.mine"
@@ -39,6 +40,8 @@ SENSOR_SELECT = "#condition-sensor_lost"
 ZONE_SELECT = "#action-zone"
 
 NO_DIGIT = re.compile(r"^\D*$")
+# The age of a journal line by the model clock (clarity pass, A8), for lines of a model that goes on.
+AGE = re.compile(r" · (?:сейчас|\d+ с назад|\d+ мин назад|\d+ ч(?: \d+ мин)? назад) ")
 
 # Test-side rewrite of the answers of `shift`, in the browser, before any script of the page: the function
 # a test puts into `window.__rewrite` gets the parsed body and changes it. The page code does not know.
@@ -207,6 +210,7 @@ class PanelsTestCase(BrowserTestCase):
         })()""")
         self.page.wait_for("document.getElementById('decision').getClientRects().length > 0", timeout=3.0,
                            message="the decision dock is unfolded")
+        settle(self.page)
 
     def bar(self, option, series="forecast", scope=DECISION):
         """The people bar of an option as drawn: its data-* counts, its cells by kind and how they are filled."""
@@ -264,7 +268,8 @@ class CommandOutcomesTest(PanelsTestCase):
         self.page.click(CLOSE)
         entry = self.wait_pending("w-12", "sent", 3.0)
         sent_at = time.monotonic()
-        self.assertEqual(entry["what"], "Закрыть выработку: В-12")
+        # A condition of the stand is said as the condition (clarity pass, A6), with the chalk «стенд» tag.
+        self.assertEqual(entry["what"], "Условие стенда: В-12 закрыта")
         self.assertRegex(entry["text"], r"^Команда отправлена, не подтверждена \(\d с\)$")
         self.assertRegex(entry["id"], r"^c-[0-9a-f]{32}$")
         self.assertEqual(entry["shortId"], entry["id"][:10] + "…")
@@ -378,7 +383,9 @@ class CommandOutcomesTest(PanelsTestCase):
 
     def test_applied_without_change_and_a_rejection_with_its_reason(self):
         self.open("commands", "#/list?type=zone")
-        self.assertEqual(self.page.evaluate(f"document.querySelector('{ZONE_SELECT}').value"), "zone-a")
+        # No incident: no zone until the user chooses one (clarity pass, A1).
+        self.assertEqual(self.page.evaluate(f"document.querySelector('{ZONE_SELECT}').value"), "")
+        self.choose(ZONE_SELECT, "zone-a")
         state = '[data-testid="actions-zone-state"]'
         self.assertEqual((self.attribute(state, "data-work-state"), self.attribute(state, "data-withdrawal")), ("stopped", "done"))
 
@@ -437,7 +444,8 @@ class CommandOutcomesTest(PanelsTestCase):
         on = sorted((kind, target) for kind, target, off in before if not off)
         self.assertEqual(on, sorted([
             ("run.start_preset", "p-detour"), ("run.start_preset", "p-no-path"), ("condition.open_working", "w-12"),
-            ("action.stop_zone", "zone-a"), ("action.withdraw_zone", "zone-a"), ("action.execute_option", "option-stop-withdraw"),
+            # The actions follow the incident's zone (clarity pass, A1).
+            ("action.stop_zone", "zone-b"), ("action.withdraw_zone", "zone-b"), ("action.execute_option", "option-stop-withdraw"),
             ("run.reset", ""),
         ]))
         self.assertEqual(self.texts(".block-note"), [])
@@ -546,11 +554,12 @@ class DecisionStatesTest(PanelsTestCase):
         self.unfold_dock()
         panel = f"{DECISION} .decision"
         self.assertEqual(self.attribute(panel, "data-incident-state"), "active")
-        self.assertEqual(self.text(f"{DECISION} .decision__causes"), "закрыт проход: В-12, тик 1210")
+        # Moments by the model clock, ticks in the titles (clarity pass, A8); the header of the table (A3).
+        self.assertEqual(self.text(f"{DECISION} .decision__causes"), "закрыт проход: В-12, в 00:20:10")
+        self.assertEqual(self.attribute(f"{DECISION} .decision__causes li", "title"), "тик\u00a01210")
         self.assertIn("участок: Участок Б", self.text(DECISION))
         self.assertEqual(self.text('[data-testid="decision-pause"]'), "Модель на паузе для выбора действия")
-        self.assertEqual(self.text('[data-testid="decision-caption"]'),
-                         "Прогноз модели на 900 секунд для заданного сценария, рассчитан на тике 1210")
+        self.assertEqual(self.text('[data-testid="decision-caption"]'), "Прогноз модели на 15 мин · рассчитан в 00:20:10")
 
         heads = self.page.evaluate(f"""[...document.querySelectorAll('{DECISION} [data-testid="decision-options"] thead th[data-column]')]
           .map((th) => [th.dataset.column, th.dataset.state, th.textContent.replace(/\\u00a0/g, ' '), th.querySelector('input').disabled])""")
@@ -564,22 +573,24 @@ class DecisionStatesTest(PanelsTestCase):
         self.assertEqual(scope, ["участки", "—", "Участок Б", "все участки"])
 
         # CONTRACT section 6: a time only where everyone is out; counts and exposures are separate rows.
-        self.assertEqual(self.cell("option-withdraw-all", "forecast_all_out"), "да")
-        self.assertEqual(self.cell("option-withdraw-all", "forecast_last_out_s"), "9 мин 40 с")
+        # «все вышли» is one row with its time (clarity pass, A3).
+        self.assertEqual(self.cell("option-withdraw-all", "forecast_all_out"), "да, за 9 мин 40 с")
         for option in ("option-observe", "option-stop-withdraw"):
-            self.assertEqual(self.cell(option, "forecast_all_out"), "не все вышли")
-            self.assertEqual(self.cell(option, "forecast_last_out_s"), "нет: не все вышли")
+            self.assertEqual(self.cell(option, "forecast_all_out"), "нет")
         self.assertEqual([self.cell(option, "forecast_out") for option in ("option-observe", "option-stop-withdraw", "option-withdraw-all")],
                          ["0", "4", "14"])
         self.assertEqual(self.cell("option-stop-withdraw", "forecast_in_danger"), "0")
-        self.assertEqual(self.cell("option-stop-withdraw", "forecast_danger_exposure_person_s"), "0 чел.·с")
-        self.assertEqual(self.cell("option-stop-withdraw", "forecast_unknown_exposure_person_s"), "0 чел.·с")
+        # Exposures and downtime in minutes, a conversion of the published unit (clarity pass, A3).
+        self.assertEqual(self.cell("option-stop-withdraw", "forecast_danger_exposure_person_s"), "0 чел.·мин")
+        self.assertEqual(self.cell("option-stop-withdraw", "forecast_unknown_exposure_person_s"), "0 чел.·мин")
         self.assertEqual(self.cell("option-stop-withdraw", "forecast_no_route"), "0")
-        self.assertEqual(self.cell("option-withdraw-all", "forecast_downtime_s"), "2320 уч.·с")
+        self.assertEqual(self.cell("option-withdraw-all", "forecast_downtime_s"), "38,7 уч.·мин")
         rows = self.texts(f'{DECISION} [data-testid="decision-options"] tbody tr[data-metric-row] > th')
-        self.assertEqual(rows, ["все вышли", "время выхода всех", "вышло", "в опасных зонах на конец расчёта",
+        # The order of the question (clarity pass, A3): danger at the end, everyone out (with the time), out, no route,
+        # exposures, downtime; the people bar after them as the summary.
+        self.assertEqual(rows, ["в опасных зонах на конец расчёта", "все вышли", "вышло", "без расчётного маршрута",
                                 "пребывание в опасных зонах", "пребывание в зонах с неизвестным состоянием",
-                                "без расчётного маршрута", "суммарный простой участков"])
+                                "суммарный простой участков"])
 
         self.assertEqual(self.attribute(panel, "data-decision-id"), "d-0005-01")
         self.assertEqual(self.attribute(panel, "data-comparison"), "shared")
@@ -624,16 +635,18 @@ class DecisionStatesTest(PanelsTestCase):
         self.assertEqual(self.attribute(f"{DECISION} .decision", "data-decision-id"), "d-0005-01")
         self.assertEqual(len(self.texts(f"{DECISION} thead th[data-column]")), 3)
         self.assertTrue(self.is_off(EXECUTE))
+        time.sleep(0.3)    # the dock unfolds over 200 ms (clarity pass, M3)
         self.page.click(f'{DECISION} th[data-column="option-observe"] input')
         self.assertFalse(self.is_off(EXECUTE))
 
     def test_partial_forecast_is_marked(self):
         self.open("partial_forecast", "#/list?type=option")
         caption = self.text('[data-testid="decision-caption"]')
-        self.assertIn("Прогноз модели на 900 секунд для заданного сценария", caption)
+        self.assertIn("Прогноз модели на 15 мин", caption)
         self.assertIn("по неполным данным", caption)
         self.assertEqual(self.attribute('[data-testid="decision-caption"] li', "data-quality"), "partial")
-        self.assertEqual(self.cell("option-withdraw-all", "forecast_last_out_s"), "9 мин 40 с")
+        # «все вышли» carries its time (clarity pass, A3).
+        self.assertEqual(self.cell("option-withdraw-all", "forecast_all_out"), "да, за 9 мин 40 с")
 
     def test_incomplete_withdrawal_is_not_a_success(self):
         self.open("withdrawal_incomplete", "#/list?type=zone")
@@ -643,8 +656,9 @@ class DecisionStatesTest(PanelsTestCase):
         self.assertIn("Вывод не завершён: 2 работника без расчётного маршрута. Это за пределами того, что решает модель",
                       self.text(fact))
         self.assertEqual(self.texts(fact + " thead th"), ["Показатель", "прогноз модели", "факт прогона"])
-        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "не все вышли")
-        self.assertRegex(self.cell("option-withdraw-all", "actual_last_out_s", fact), NO_DIGIT)
+        # «все вышли — нет», and no time at all: the time has no row of its own (clarity pass, A3).
+        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "нет")
+        self.assertFalse(self.exists(f'{fact} td[data-metric="actual_last_out_s"]'))
         self.assertEqual(self.cell("option-withdraw-all", "actual_out", fact), "12")
         self.assertEqual(self.cell("option-withdraw-all", "actual_no_route", fact), "2")
         self.assertEqual(self.cell("option-withdraw-all", "forecast_no_route", fact), "2", "the forecast keeps its own column")
@@ -665,11 +679,11 @@ class DecisionStatesTest(PanelsTestCase):
     def test_every_cause_of_the_incident_is_listed(self):
         self.open("sensor_lost_after_danger", "#/list?type=zone")
         self.assertEqual(self.texts(f"{DECISION} .decision__causes li"),
-                         ["опасность на участке: Участок В, тик 700", "потеряны данные датчиков: Э-05, тик 820"])
+                         ["опасность на участке: Участок В, в 00:11:40", "потеряны данные датчиков: Э-05, в 00:13:40"])
         self.assertEqual(self.attribute(f"{DECISION} .decision", "data-incident-state"), "executing")
         self.assertIsNone(self.text('[data-testid="decision-pause"]'))
         self.assertEqual(self.cell("option-observe", "forecast_in_danger"), "2")
-        self.assertEqual(self.cell("option-observe", "forecast_danger_exposure_person_s"), "1800 чел.·с")
+        self.assertEqual(self.cell("option-observe", "forecast_danger_exposure_person_s"), "30 чел.·мин")
         self.assertEqual(self.attribute(f'{DECISION} th[data-column="option-observe"]', "data-state"), "executing")
         # «исполняется» and twice «недоступен» in the headings: the table still fits the dock at 1280x720.
         self.unfold_dock()
@@ -729,7 +743,7 @@ class DecisionStatesTest(PanelsTestCase):
         }})()""")
         self.assertEqual((shown["text"], shown["hidden"], shown["cls"]), (mark, False, "badge badge--unknown"))
         self.assertGreater(shown["height"], 0, "the mark is on the screen")
-        self.assertEqual(self.cell("option-withdraw-all", "forecast_last_out_s"), "9 мин 40 с", "the numbers stay, with the mark above them")
+        self.assertEqual(self.cell("option-withdraw-all", "forecast_all_out"), "да, за 9 мин 40 с", "the numbers stay, with the mark above them")
         # The list says the same in the row of each option.
         for option in ("option-observe", "option-stop-withdraw", "option-withdraw-all"):
             row = plain(self.page.evaluate(f"document.querySelector('[data-testid=\"list\"] tr[data-thing-id=\"{NS}:{option}\"]').textContent"))
@@ -798,10 +812,13 @@ class JournalAndRunsTest(PanelsTestCase):
         lines = self.lines()
         self.assertEqual([line["seq"] for line in lines], [218, 217, 216, 215, 214, 213, 212])
         by_seq = {line["seq"]: line["text"] for line in lines}
-        self.assertEqual(by_seq[218], "00:20:10 · тик 1210 Р-06: изменён расчётный маршрут — выход Съезд")
-        self.assertEqual(by_seq[214], "00:20:10 · тик 1210 условие задано: «В-12 закрыта» команда c-783b3b20…")
-        self.assertEqual(by_seq[213], "00:00:00 · тик 0 Участок Г: изменилась опасность — внимание")
-        self.assertEqual(by_seq[212], "00:00:00 · тик 0 run-0005: прогон начат")
+        # The moment by the model clock and its age (clarity pass, A8); the model stands still at 00:20:10 here.
+        self.assertEqual(by_seq[218], "00:20:10 · сейчас Р-06: изменён расчётный маршрут — выход Съезд")
+        self.assertEqual(by_seq[214], "00:20:10 · сейчас условие задано: «В-12 закрыта» команда c-783b3b20…")
+        self.assertEqual(by_seq[213], "00:00:00 · 20 мин назад Участок Г: изменилась опасность — внимание")
+        self.assertEqual(by_seq[212], "00:00:00 · 20 мин назад run-0005: прогон начат")
+        self.assertEqual(self.page.evaluate("document.querySelector('[data-testid=\"journal-entry\"][data-seq=\"218\"] .journal-line__time').title"),
+                         "тик\u00a01210", "the tick stays in the title")
         self.assertFalse([line for line in lines if line["gap"]])
         # Condensed journal of the right column: the latest three entries, one line each, inside the region.
         strip = self.page.evaluate("""(() => {
@@ -833,16 +850,16 @@ class JournalAndRunsTest(PanelsTestCase):
     def test_journal_shows_an_unknown_code_as_it_is(self):
         self.open("unknown_enum")
         unknown = next(line for line in self.lines() if line["code"] == "ventilation.changed")
-        self.assertEqual(unknown["text"], "00:15:00 · тик 900 Участок А: ventilation.changed — reduced")
+        self.assertEqual(AGE.sub(" · ", unknown["text"]), "00:15:00 · Участок А: ventilation.changed — reduced")
 
     def test_journal_words_for_command_and_withdrawal_events(self):
         self.open("commands")
-        texts = [line["text"] for line in self.lines()]
-        self.assertIn("00:11:50 · тик 710 Участок А: вывод персонала завершён", texts)
-        self.assertIn("00:06:40 · тик 400 Участок А: команда применена — Вывести персонал участка команда c-2584dcf4…", texts)
-        self.assertIn("00:06:20 · тик 380 Участок А: команда отклонена — недопустимо в текущем состоянии "
+        texts = [AGE.sub(" · ", line["text"]) for line in self.lines()]
+        self.assertIn("00:11:50 · Участок А: вывод персонала завершён", texts)
+        self.assertIn("00:06:40 · Участок А: команда применена — Вывести персонал участка команда c-2584dcf4…", texts)
+        self.assertIn("00:06:20 · Участок А: команда отклонена — недопустимо в текущем состоянии "
                       "(not_allowed_in_state) команда c-e86e3a2d…", texts)
-        self.assertIn("00:09:20 · тик 560 Р-09: работник вышел — выход Съезд", texts)
+        self.assertIn("00:09:20 · Р-09: работник вышел — выход Съезд", texts)
 
     def test_runs_table_groups_comparable_runs_and_marks_the_others(self):
         self.open("normal", "#/runs")
@@ -1017,9 +1034,10 @@ class PeopleBarTest(PanelsTestCase):
         # No option brings everyone out: the size of the group is not published, and nothing is guessed.
         self.assertIsNone(self.attribute('[data-testid="decision-group"]', "data-total"))
         self.assertIn("Размер общей группы модель не публикует", self.text('[data-testid="decision-group"]'))
-        expected = {"option-observe": ("0", {"no_route": 2, "unknown": 1}, "вышли 0 из ? · 2 без маршрута"),
-                    "option-stop-withdraw": ("0", {"no_route": 2, "unknown": 1}, "вышли 0 из ? · 2 без маршрута"),
-                    "option-withdraw-all": ("12", {"out": 12, "no_route": 2, "unknown": 1}, "вышли 12 из ? · 2 без маршрута")}
+        # Without a published group size no «из N» is written (clarity pass, A3).
+        expected = {"option-observe": ("0", {"no_route": 2, "unknown": 1}, "вышли 0 · для 2 чел. выход не рассчитан"),
+                    "option-stop-withdraw": ("0", {"no_route": 2, "unknown": 1}, "вышли 0 · для 2 чел. выход не рассчитан"),
+                    "option-withdraw-all": ("12", {"out": 12, "no_route": 2, "unknown": 1}, "вышли 12 · для 2 чел. выход не рассчитан")}
         for option, (out, cells, words) in expected.items():
             with self.subTest(option=option):
                 bar = self.bar(option, scope='[data-testid="decision-options"]')
@@ -1035,13 +1053,13 @@ class PeopleBarTest(PanelsTestCase):
         self.assertEqual((actual["out"], actual["noRoute"], actual["inDanger"], actual["total"]), ("12", "2", "0", None))
         self.assertEqual(actual["cells"], {"out": 12, "no_route": 2, "unknown": 1})
         self.assertEqual(actual["filled"], ["solid"], "a fact is solid")
-        self.assertEqual(plain(actual["words"]), "вышли 12 из ? · 2 без маршрута")
+        self.assertEqual(plain(actual["words"]), "вышли 12 · для 2 чел. выход не рассчитан")
         forecast = self.bar("option-withdraw-all", series="forecast", scope=fact)
         self.assertEqual((forecast["out"], forecast["noRoute"]), ("12", "2"))
         self.assertEqual(forecast["filled"], ["hatched"], "its forecast beside it stays hatched")
         # The line of the folded dock says the same, and never a time.
         summary = plain(self.text('#decision-summary') or self.text('.decision__summary'))
-        self.assertEqual(summary, "факт прогона, Вариант 3 — Вывести всех: вышли 12 из ? · 2 без маршрута")
+        self.assertEqual(summary, "факт прогона, Вариант 3 — Вывести всех: вышли 12 · для 2 чел. выход не рассчитан")
 
     def test_a_time_only_where_everyone_is_out_and_forecast_apart_from_fact(self):
         self.open("paused_heartbeat")
@@ -1049,14 +1067,15 @@ class PeopleBarTest(PanelsTestCase):
         options = '[data-testid="decision-options"]'
         cells = self.page.evaluate(f"""Object.fromEntries([...document.querySelectorAll('{options} td[data-metric$="last_out_s"], {options} td[data-metric$="all_out"]')]
           .map((td) => [td.dataset.option + ' ' + td.dataset.metric, [td.textContent.replace(/\\u00a0/g, ' '), td.firstChild.className]]))""")
-        self.assertEqual(cells["option-withdraw-all forecast_all_out"][0], "да")
-        self.assertEqual(cells["option-withdraw-all forecast_last_out_s"][0], "9 мин 40 с")
+        # «все вышли» is one row: its time only next to a published `all_out = true` (clarity pass, A3).
+        self.assertEqual(cells["option-withdraw-all forecast_all_out"][0], "да, за 9 мин 40 с")
+        self.assertNotIn("option-withdraw-all forecast_last_out_s", cells)
         for option in ("option-observe", "option-stop-withdraw"):
-            self.assertEqual(cells[f"{option} forecast_all_out"][0], "не все вышли")
-            self.assertEqual(cells[f"{option} forecast_last_out_s"][0], "нет: не все вышли", "no time without everyone out")
+            self.assertEqual(cells[f"{option} forecast_all_out"][0], "нет", "no time without everyone out")
         self.assertTrue(all("val--forecast" in cls and "val--fact" not in cls for _, cls in cells.values()), cells)
-        # Neutral: the options are not ranked.
-        words = plain(self.text(DECISION)).lower()
+        # Neutral: the options are not ranked, and the dock says that the model recommends none of them.
+        self.assertEqual(self.text('[data-testid="decision-advice"]'), "Модель не рекомендует вариант — сравните и выберите")
+        words = plain(self.text(DECISION)).lower().replace("модель не рекомендует вариант", "")
         for word in ("лучш", "рекоменд", "оптимал"):
             self.assertNotIn(word, words)
         self.assertFalse(self.exists(f"{DECISION} [class*='best'], {DECISION} [class*='rank']"))
@@ -1064,8 +1083,8 @@ class PeopleBarTest(PanelsTestCase):
         self.open("withdrawal_incomplete")
         self.unfold_dock()
         fact = '[data-testid="decision-fact"][data-option="option-withdraw-all"]'
-        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "не все вышли")
-        self.assertRegex(self.cell("option-withdraw-all", "actual_last_out_s", fact), NO_DIGIT)
+        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "нет")
+        self.assertFalse(self.exists(f'{fact} td[data-metric="actual_last_out_s"]'))
         classes = self.page.evaluate(f"""[...document.querySelectorAll('{fact} td[data-metric^="actual_"] > span')].map((span) => span.className)""")
         self.assertTrue(classes and all("val--fact" in cls or "val--none" in cls for cls in classes), classes)
 
@@ -1156,8 +1175,9 @@ class KeyboardTest(PanelsTestCase):
 
         # Space on a dispatcher button; then three polls: focus and both selects stay as the user left them.
         self.page.evaluate(f"document.querySelector('{ZONE_SELECT}').focus()")
-        self.page.press("ArrowDown")
-        self.page.press("ArrowDown")
+        # The first option is «— выберите участок —» (clarity pass, A1).
+        for _ in range(3):
+            self.page.press("ArrowDown")
         self.assertEqual(self.page.focus_info()["value"], "zone-c")
         self.page.press("Tab")
         self.page.press("Space")
@@ -1173,6 +1193,7 @@ class KeyboardTest(PanelsTestCase):
 
     def test_the_two_groups_differ_by_heading_frame_and_button_shape(self):
         self.open("normal")
+        self.choose(ZONE_SELECT, "zone-a")
         self.open_stand()
         # Read the settled colours: the dispatcher button fades in from its blocked look when commands unblock.
         self.page.wait_for(f"document.body.dataset.commands === 'enabled' && "
@@ -1200,16 +1221,18 @@ class KeyboardTest(PanelsTestCase):
         self.assertEqual(look["headings"], ["Условия сценария (стенд)", "Действия диспетчера"])
         self.assertEqual(look["subtitles"], ["что происходит с шахтой", "что решает диспетчер"])
         self.assertEqual(look["frames"], [["dashed"], ["solid"]])
-        # Stand: chalk dashed outline, never filled, with the «стенд» tag. Dispatcher: solid copper fill.
+        # Stand: chalk dashed outline, never filled, with the «стенд» tag. Dispatcher: solid light steel fill
+        # (clarity pass, A9: copper is no longer an action colour).
         self.assertEqual([style for style, _ in look["buttons"]], ["dashed", "solid"])
         self.assertEqual(look["buttons"][0][1], "rgba(0, 0, 0, 0)")
-        self.assertRegex(look["buttons"][1][1], r"^rgba?\(200, 131, 79(, 1)?\)$")
+        self.assertRegex(look["buttons"][1][1], r"^rgba?\(174, 187, 199(, 1)?\)$")
         self.assertEqual(look["tags"], ['"стенд"', "none"])
 
     def test_selects_follow_the_selected_object_until_the_user_chooses(self):
         self.open("normal", f"#/list?type=sensor&sel={NS}:sens-ext-05")
         values = f"['{WORKING_SELECT}', '{SENSOR_SELECT}', '#condition-instability', '{ZONE_SELECT}'].map((id) => document.querySelector(id).value)"
-        self.assertEqual(self.page.evaluate(values), ["", "sens-ext-05", "", "zone-a"])
+        # No incident and no choice: no zone (clarity pass, A1).
+        self.assertEqual(self.page.evaluate(values), ["", "sens-ext-05", "", ""])
         self.js(APP + f"app.ctx.select('{NS}:zone-c');")
         self.assertEqual(self.page.evaluate(values), ["", "sens-ext-05", "zone-c", "zone-c"])
         self.assertEqual(self.attribute('[data-testid="actions-zone-state"]', "data-zone"), "zone-c")
@@ -1253,6 +1276,7 @@ class StoriesTest(PanelsTestCase):
         return active
 
     def run_option(self, option, name):
+        settle(self.page)    # the strip and the dock may still be moving (clarity pass, section B)
         self.page.click(f'{DECISION} th[data-column="{option}"] input')
         self.page.click(EXECUTE)
         self.confirm_dialog(["Запустить вариант?", name])
@@ -1265,8 +1289,9 @@ class StoriesTest(PanelsTestCase):
 
     def test_detour_withdraw_all_everyone_is_out_and_the_undo_restores_nothing(self):
         active = self.set_condition_and_reach_decision("detour", "w-12", "В-12")
-        self.assertEqual(self.cell("option-withdraw-all", "forecast_last_out_s"), "9 мин 40 с")
-        self.assertEqual(self.cell("option-stop-withdraw", "forecast_last_out_s"), "нет: не все вышли")
+        # «все вышли» is one row with its time (clarity pass, A3).
+        self.assertEqual(self.cell("option-withdraw-all", "forecast_all_out"), "да, за 9 мин 40 с")
+        self.assertEqual(self.cell("option-stop-withdraw", "forecast_all_out"), "нет")
         self.assertIsNone(self.text('[data-testid="decision-nobody-left"]'))
         self.run_option("option-withdraw-all", "Вариант 3 — Вывести всех")
         head = f'{DECISION} [data-testid="decision-options"] th[data-column="option-withdraw-all"]'
@@ -1276,10 +1301,9 @@ class StoriesTest(PanelsTestCase):
         fact = '[data-testid="decision-fact"][data-option="option-withdraw-all"]'
         self.page.wait_for(f"!!document.querySelector('{fact}')", timeout=15.0)
         self.assertEqual(self.attribute(f"{DECISION} .decision", "data-incident-state"), "done")
-        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "да")
-        self.assertEqual(self.cell("option-withdraw-all", "actual_last_out_s", fact), "9 мин 40 с")
+        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "да, за 9 мин 40 с")
         self.assertEqual(self.cell("option-withdraw-all", "actual_out", fact), "14")
-        self.assertEqual(self.cell("option-withdraw-all", "forecast_last_out_s", fact), "9 мин 40 с")
+        self.assertEqual(self.cell("option-withdraw-all", "forecast_all_out", fact), "да, за 9 мин 40 с")
         self.assertIsNone(self.text(fact + " .decision__alert"))
         # The forecast of the options that were not chosen stays in the table.
         self.assertEqual(self.attribute(f'{DECISION} [data-testid="decision-options"] th[data-column="option-observe"]', "data-state"),
@@ -1298,7 +1322,7 @@ class StoriesTest(PanelsTestCase):
                               self.attribute(state, "data-withdrawal")), (zone, "stopped", "done"))
             self.assertIn("работников на участке 0", self.text(state))
         self.assertFalse(self.is_off(RESUME), "resuming is a separate command of the dispatcher")
-        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "да")
+        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "да, за 9 мин 40 с")
         journal = self.texts('[data-testid="journal"] li')
         self.assertTrue(any("условие отменено: «В-12 закрыта»" in line for line in journal), journal[:5])
         self.assertTrue(any("условие задано: «В-12 закрыта»" in line for line in journal))
@@ -1310,11 +1334,13 @@ class StoriesTest(PanelsTestCase):
         self.run_option("option-stop-withdraw", "Вариант 2 — Остановить участок и вывести персонал. Участки: Участок Б")
         fact = '[data-testid="decision-fact"][data-option="option-stop-withdraw"]'
         self.page.wait_for(f"!!document.querySelector('{fact}')", timeout=15.0)
-        self.assertEqual(self.cell("option-stop-withdraw", "actual_all_out", fact), "не все вышли")
-        self.assertEqual(self.cell("option-stop-withdraw", "actual_last_out_s", fact), "нет: не все вышли")
-        self.assertRegex(self.cell("option-stop-withdraw", "actual_last_out_s", fact), NO_DIGIT)
+        self.assertEqual(self.cell("option-stop-withdraw", "actual_all_out", fact), "нет")
+        self.assertFalse(self.exists(f'{fact} td[data-metric="actual_last_out_s"]'), "no time without everyone out")
         self.assertEqual(self.cell("option-stop-withdraw", "actual_out", fact), "4")
-        self.assertEqual(self.cell("option-stop-withdraw", "actual_downtime_s", fact), "530 уч.·с")
+        # Downtime in minutes, the published zone-seconds in the title (clarity pass, A3).
+        self.assertEqual(self.cell("option-stop-withdraw", "actual_downtime_s", fact), "8,8 уч.·мин")
+        self.assertEqual(plain(self.attribute(f'{fact} td[data-metric="actual_downtime_s"] span', "title")),
+                         "530 уч.·с, опубликовано в участко-секундах")
         # The order for the zone itself is complete; that is the zone's own state, not "everyone is out".
         self.choose(ZONE_SELECT, "zone-b")
         state = '[data-testid="actions-zone-state"]'
@@ -1327,8 +1353,7 @@ class StoriesTest(PanelsTestCase):
         options = ("option-observe", "option-stop-withdraw", "option-withdraw-all")
         self.assertEqual([self.cell(option, "forecast_no_route") for option in options], ["2", "2", "2"])
         for option in options:
-            self.assertEqual(self.cell(option, "forecast_all_out"), "не все вышли")
-            self.assertRegex(self.cell(option, "forecast_last_out_s"), NO_DIGIT)
+            self.assertEqual(self.cell(option, "forecast_all_out"), "нет")
         self.assertEqual(self.text('[data-testid="decision-nobody-left"]'), "Ни один вариант модели не выводит этих работников")
         self.assertEqual(self.text('[data-testid="decision-no-path"]'),
                          "В графе модели нет открытого пути до выхода для Р-07, Р-08. Модель не рассчитывает, как выводить этих работников")
@@ -1339,8 +1364,8 @@ class StoriesTest(PanelsTestCase):
         self.page.wait_for(f"!!document.querySelector('{fact}')", timeout=15.0)
         self.assertEqual(self.text(fact + " .decision__alert"),
                          "Вывод не завершён: 2 работника без расчётного маршрута. Это за пределами того, что решает модель")
-        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "не все вышли")
-        self.assertRegex(self.cell("option-withdraw-all", "actual_last_out_s", fact), NO_DIGIT)
+        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "нет")
+        self.assertFalse(self.exists(f'{fact} td[data-metric="actual_last_out_s"]'))
         self.assertEqual((self.cell("option-withdraw-all", "actual_out", fact), self.cell("option-withdraw-all", "actual_no_route", fact)),
                          ("12", "2"))
         self.choose(ZONE_SELECT, "zone-c")
@@ -1377,9 +1402,9 @@ class StoriesTest(PanelsTestCase):
         self.page.wait_for(f"!!document.querySelector('{DECISION} .decision[data-decision-id=\"d-0006-01\"]')", timeout=8.0)
         self.assertEqual(self.body()["runState"], "paused")
         self.assertEqual(self.text('[data-testid="decision-pause"]'), "Модель на паузе для выбора действия")
-        self.assertEqual(self.text(f"{DECISION} .decision__causes"), "закрыт проход: В-12, тик 60")
+        self.assertEqual(self.text(f"{DECISION} .decision__causes"), "закрыт проход: В-12, в 00:01:00")
         self.assertEqual(self.texts(f'{CONDITIONS} [data-testid="conditions-active"] .chip'), ["В-12 закрыта"])
-        self.assertEqual(self.cell("option-withdraw-all", "forecast_last_out_s"), "9 мин 40 с")
+        self.assertEqual(self.cell("option-withdraw-all", "forecast_all_out"), "да, за 9 мин 40 с")
         journal = self.texts('[data-testid="journal"] li')
         self.assertTrue(any("В-12: условие задано — сценарий «Закрыть В-12 на 60-й секунде»" in line for line in journal), journal)
         self.assertTrue(any("run-0006: прогон начат — сценарий «Закрыть В-12 на 60-й секунде»" in line for line in journal), journal)

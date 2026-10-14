@@ -54,7 +54,7 @@ export function mount(root, ctx) {
       [working({bare: true}), VOCAB.quality.none],
     ]],
     [L.reach, [
-      [worker({'data-egress': 'ok'}), VOCAB.egress.ok],
+      [worker({'data-egress': 'ok'}), L.workerOk],
       [worker({'data-egress': 'none'}), VOCAB.egress.none],
       [worker({'data-egress': 'unknown'}), VOCAB.egress.unknown],
       [worker({'data-egress': 'ok', 'data-location-hazard': 'danger'}, 24), L.inDangerZone],
@@ -96,7 +96,7 @@ export function mount(root, ctx) {
     key(sensor('fresh'), '', VOCAB.quality.fresh), key(sensor('stale'), '', VOCAB.quality.stale),
     key(sensor('lost'), '', VOCAB.quality.lost), key(working({bare: true}, 'lc'), '', VOCAB.quality.none)),
   chipGroup(L.reach,
-    key(worker({'data-egress': 'ok'}), '', VOCAB.egress.ok), key(worker({'data-egress': 'none'}), '', VOCAB.egress.none),
+    key(worker({'data-egress': 'ok'}), '', L.workerOk), key(worker({'data-egress': 'none'}), '', VOCAB.egress.none),
     key(worker({'data-egress': 'unknown'}), '', VOCAB.egress.unknown)),
   chipGroup(L.exit, key(exit('available'), '', L.exitAvailable)),
   key(working({bare: true, closed: true}, 'lc'), L.closedShort, VOCAB.passability.closed),
@@ -104,6 +104,12 @@ export function mount(root, ctx) {
   h('span', {class: 'legend__more', text: L.more}), caret);
 
   function show(open) {
+    if (open) {
+      // The room above the chip, under the controls at the top of the stage: the column never leaves the stage.
+      const stage = ctx.roots.stage ? ctx.roots.stage.getBoundingClientRect() : null;
+      const room = stage ? root.getBoundingClientRect().top - stage.top - 56 : 0;
+      panel.style.setProperty('--legend-room', `${Math.max(Math.round(room), 160)}px`);
+    }
     panel.hidden = !open;
     chip.setAttribute('aria-expanded', String(open));
   }

@@ -5,7 +5,10 @@
 // buttons that select them; «Подробнее» reveals every published value with
 // its label and unit; «Показать на модели» asks the stage to show it. All from
 // the same full snapshot the stage shows (never a separate read). Nothing is
-// computed here.
+// computed here. Moments are said by the model clock with their age («в
+// 00:13:30 (7 мин назад)»); the ticks are in the titles and under «Подробнее».
+// Motion: «Подробнее» unfolds and folds (180 ms, height and fade); a zone of
+// the summary whose hazard changed flashes once (450 ms).
 
 import {unresolvedFor} from '../commands.js';
 import {h, reconcile, setAttrs, setText} from '../dom.js';
@@ -13,6 +16,7 @@ import {
   exitAtNode, knownHazard, labelOf, placeOf, routeOf, sensorsOfWorking, sensorsOfZone, thingByName, thingsOfKind,
   workersAtExit, workersAtWorking, workersInZone, workingsOfZone,
 } from '../model.js';
+import {EASE, MS, motionAllowed, play} from '../motion.js';
 import {setSign} from './signs.js';
 
 const BADGE = {normal: 'ok', attention: 'attention', danger: 'danger', unknown: 'unknown'};
@@ -70,9 +74,38 @@ export function mount(root, ctx) {
   const fields = h('div', {class: 'card__fields', id: 'card-fields', 'data-testid': 'card-fields', hidden: true});
   const times = h('p', {class: 'card__times mono', 'data-testid': 'card-times'});
   let expanded = false;
+  let folding = null;
   more.addEventListener('click', () => {
+    const state = store.getState();
+    if (folding) {
+      folding.cancel();
+      folding = null;
+    }
     expanded = !expanded;
-    draw(build(store.getState()));
+    if (!expanded) {
+      // Folding: the fields fade and close first, then they are hidden.
+      const height = fields.getBoundingClientRect().height;
+      const motion = motionAllowed(state) && height > 0 ? play(fields, [{height: `${height}px`, opacity: 1, overflow: 'hidden'},
+        {height: '0px', opacity: 0, overflow: 'hidden'}], {duration: MS.disclosure, easing: EASE}) : null;
+      if (motion) {
+        folding = motion;
+        setAttrs(more, {'aria-expanded': 'false'});
+        motion.finished.then(() => {
+          if (folding !== motion) return;
+          folding = null;
+          draw(build(store.getState()));
+        }, () => {});
+        return;
+      }
+    }
+    draw(build(state));
+    if (expanded && motionAllowed(state)) {
+      const height = fields.getBoundingClientRect().height;
+      if (height > 0) {
+        play(fields, [{height: '0px', opacity: 0, overflow: 'hidden'}, {height: `${height}px`, opacity: 1, overflow: 'hidden'}],
+          {duration: MS.disclosure, easing: EASE});
+      }
+    }
   });
   root.append(h('div', {class: 'card'},
     h('div', {class: 'card__head'}, h('div', {class: 'card__ident'}, kind, ' ', code), ' ', h('div', {class: 'card__tools'}, focus, close)),
@@ -111,13 +144,27 @@ export function mount(root, ctx) {
           }
           setText(item.firstChild, link.prefix ? `${link.prefix} ` : '');
           setText(item.lastChild, link.text);
-          setAttrs(item, {'data-badge': link.badge || null});
+          // A zone of the summary whose published hazard changed while the page watched: one flash.
+          const before = item.getAttribute('data-hazard');
+          setAttrs(item, {'data-badge': link.badge || null, 'data-hazard': link.hazard || null});
+          if (link.hazard && before && before !== link.hazard && flashing) {
+            play(item, [{backgroundColor: 'rgba(232, 227, 218, .30)'}, {backgroundColor: 'rgba(232, 227, 218, 0)'}],
+              {duration: MS.flash, easing: 'ease-out'});
+          }
         });
       }
     });
   }
 
+  // Set by every drawing: a change may flash only within one run of a current snapshot, never on the first picture.
+  let flashing = false;
+  let drawnRun = null;
+
   function draw(view) {
+    const state = store.getState();
+    const run = state.snapshot ? state.snapshot.run : null;
+    flashing = run !== null && run === drawnRun && motionAllowed(state);
+    drawnRun = run;
     setText(kind, view.kind);
     setText(code, view.code);
     code.hidden = !view.code;
@@ -145,7 +192,7 @@ export function mount(root, ctx) {
 
     reconcile(lead, view.lead, (line, index) => index, () => h('span'), (span, line) => {
       setText(span, line.text);
-      setAttrs(span, {class: [line.main && 'card__main', line.badge && `badge badge--${line.badge}`]});
+      setAttrs(span, {class: [line.main && 'card__main', line.badge && `badge badge--${line.badge}`], title: line.title || null});
     });
     lead.hidden = view.lead.length === 0;
 
@@ -153,10 +200,12 @@ export function mount(root, ctx) {
     drawSections(fields, view.fields);
     const count = view.fields.reduce((sum, section) => sum + (section.rows || section.links || []).length, 0);
     more.hidden = count === 0;
-    fields.hidden = !expanded || count === 0;
+    // While the fields fold, they stay until the motion ends.
+    fields.hidden = !(expanded || folding) || count === 0;
     setAttrs(more, {'aria-expanded': String(expanded && count > 0), text: expanded ? UI.card.less : UI.card.more(count)});
 
     setText(times, view.times.join('  ·  '));
+    setAttrs(times, {title: view.timesTitle || null});
     times.hidden = view.times.length === 0;
   }
 
@@ -203,15 +252,17 @@ export function mount(root, ctx) {
   function build(state) {
     const {model, snapshot, ui} = state;
     const view = {kind: UI.card.title, code: '', selected: false, thingId: null, hint: '', badges: [], figures: [], lead: [],
-      sections: [], fields: [], times: []};
+      sections: [], fields: [], times: [], timesTitle: ''};
     if (!model) return view;
     const name = (local) => labelOf(model, local);
     const link = (thing, words, badge) => ({
       id: thing.thingId, prefix: words === undefined ? text.label('kind', thing.kind) : '', text: words === undefined ? thing.label : words, badge,
     });
+    const now = snapshot ? snapshot.simTimeS : undefined;
     if (snapshot) {
-      view.times.push(`${UI.card.modelTime}: ${text.tickTime(snapshot.simTimeS, snapshot.tick)}`,
+      view.times.push(`${UI.card.modelTime}: ${text.modelTime(snapshot.simTimeS)}`,
         `${UI.card.platformTime}: ${text.utcTime(snapshot.modifiedMs)}`);
+      view.timesTitle = text.tickWords(snapshot.tick);
     }
 
     const thing = ui.selected ? model.things[ui.selected] : null;
@@ -229,8 +280,8 @@ export function mount(root, ctx) {
     view.code = thing.label;
     if (!thing.hasState && !['level', 'mine'].includes(thing.kind)) view.hint = UI.list.noState;
     view.badges = axisBadges(thing);
-    const say = (words, badge, main) => {
-      if (words && words !== text.DASH) view.lead.push({text: words, badge, main});
+    const say = (words, badge, main, title) => {
+      if (words && words !== text.DASH) view.lead.push({text: words, badge, main, title});
     };
 
     /** A value as the screen shows it: a code in words, a number with its unit, a twin by its code. */
@@ -266,13 +317,15 @@ export function mount(root, ctx) {
 
     // The state in sentences; what the badges already say is not repeated.
     if (thing.hazard) {
-      say(text.lastKnownText(values), BADGE[knownHazard(values.last_known_hazard_state)]);
+      say(text.lastKnownText(values, now), BADGE[knownHazard(values.last_known_hazard_state)], false, text.lastKnownTitle(values));
       const reason = text.reasonText(values, name);
       if (reason && values.reason_code !== 'no_sensor') say(`${text.fieldLabel('reason_code')}: ${reason}`);
       if (typeof values.instability_index === 'number') {
-        const at = typeof values.index_at_tick !== 'number' ? ''
-          : ` (${thing.hazard.state === 'unknown' ? UI.card.indexLastComputed(values.index_at_tick) : UI.card.indexAt(values.index_at_tick)})`;
-        say(`${text.fieldLabel('instability_index')}: ${text.quantity(values.instability_index, units.instability_index)}${at}`);
+        const moment = text.tickSeconds(values.index_at_tick);
+        const at = moment === null ? ''
+          : ` (${(thing.hazard.state === 'unknown' ? UI.card.indexLastComputed : UI.card.indexAt)(text.atClockAgo(moment, now))})`;
+        say(`${text.fieldLabel('instability_index')}: ${text.quantity(values.instability_index, units.instability_index)}${at}`,
+          null, false, text.tickWords(values.index_at_tick));
       }
       if (values.routing_restriction !== undefined && values.routing_restriction !== 'allowed') {
         say(text.label('restriction', values.routing_restriction), values.routing_restriction === 'blocked' ? 'blocked' : 'unknown');
@@ -284,7 +337,8 @@ export function mount(root, ctx) {
     } else if (thing.kind === 'sensor') {
       say(text.label('linkState', values.link_state));
       if (typeof values.measured_at_sim_s === 'number') {
-        say((values.quality === 'fresh' ? UI.card.measuredAt : UI.card.lastMeasurement)(text.modelTime(values.measured_at_sim_s)));
+        say((values.quality === 'fresh' ? UI.card.measuredAt : UI.card.lastMeasurement)(text.clockAgo(values.measured_at_sim_s, now)),
+          null, false, text.tickWords(values.measured_at_tick));
       }
     } else if (thing.kind === 'worker') {
       const status = values.egress_status;
@@ -351,7 +405,8 @@ export function mount(root, ctx) {
     if (attrRows.length > 0) view.fields.push({key: 'attributes', title: UI.card.attributes, rows: attrRows});
 
     if (typeof values.sim_time_s === 'number' && snapshot && values.tick !== snapshot.tick) {
-      view.times[0] = `${UI.card.modelTime}: ${text.tickTime(values.sim_time_s, values.tick)}`;
+      view.times[0] = `${UI.card.modelTime}: ${text.modelTime(values.sim_time_s)}`;
+      view.timesTitle = text.tickWords(values.tick);
     }
     return view;
   }
@@ -377,11 +432,14 @@ export function mount(root, ctx) {
       [`${exit.label}: ${text.label('exitState', exit.values.state)}`,
         typeof exit.values.workers_out === 'number' ? UI.scheme.out(exit.values.workers_out) : ''].filter(Boolean).join('; '),
       exit.values.state === 'available' ? null : (exit.values.state === 'unavailable' ? 'blocked' : 'unknown')))});
-    view.sections.push({key: 'zones', title: text.VOCAB.kindPlural.zone, wide: true, links: thingsOfKind(model, 'zone').map((zone) => link(zone,
-      [`${zone.label}: ${text.hazardText(zone.hazard)}`, text.label('workState', zone.values.work_state), text.label('withdrawal', zone.values.withdrawal_state),
-        typeof zone.values.workers_count === 'number' ? text.counted(zone.values.workers_count, text.FORMS.worker) : '']
-        .filter((words) => words && words !== text.DASH).join('; '),
-      zone.hazard.state === 'normal' ? null : BADGE[zone.hazard.state]))});
+    view.sections.push({key: 'zones', title: text.VOCAB.kindPlural.zone, wide: true, links: thingsOfKind(model, 'zone').map((zone) => ({
+      ...link(zone,
+        [`${zone.label}: ${text.hazardText(zone.hazard)}`, text.label('workState', zone.values.work_state), text.label('withdrawal', zone.values.withdrawal_state),
+          typeof zone.values.workers_count === 'number' ? text.counted(zone.values.workers_count, text.FORMS.worker) : '']
+          .filter((words) => words && words !== text.DASH).join('; '),
+        zone.hazard.state === 'normal' ? null : BADGE[zone.hazard.state]),
+      hazard: model.hasSnapshot ? zone.hazard.state : null,
+    }))});
     if (shift && model.hasSnapshot) {
       view.fields.push({key: 'people', title: text.VOCAB.kindPlural.worker, rows: PEOPLE.filter((field) => shift.values[field] !== undefined).map((field) => {
         const value = shift.values[field];
@@ -402,6 +460,8 @@ export function mount(root, ctx) {
   // A new selection starts folded.
   store.watch((state) => state.ui.selected, () => {
     expanded = false;
+    if (folding) folding.cancel();
+    folding = null;
   });
   store.watch((state) => [state.model, state.snapshot, state.ui.selected, state.pending], () => draw(build(store.getState())));
 }

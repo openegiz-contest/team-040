@@ -7,16 +7,26 @@
 // (layout.js, describe.js); nothing is invented. Rendering is on demand: a
 // frame is drawn when the camera moves, a transition runs or the visible state
 // changes, and no animation frame is requested while nothing changes.
+//
+// Transitions explain a published change once (clarity spec B: hazard and knowledge of a zone, a closed
+// passage, a route, the selection, the scope of a hovered option) and are skipped under reduced motion, on the
+// first picture and while the data are old. The camera frames a zone with its people, the ends of their routes
+// and its horizon («показать», an incident that opens); panels over the stage refit it only when they would hide
+// the incident or leave the stage mostly empty, at once.
+//
+// Read-only mirrors on the scene root (.s3) for tests: data-fx (the changes now explained), data-fx-count,
+// data-auto-framed (the incident framed by itself), data-refits (refits after a panel or a size change),
+// data-framing (how the last zone framing was chosen), data-scope (zones of the hovered option).
 
 import * as THREE from 'three';
 import {showsOldData} from '../link.js';
-import {thingByName} from '../model.js';
+import {incidentOf, isUnderground, routeOf, thingByName} from '../model.js';
 import * as geo from '../geometry.js';
 import {SCENE} from '../text3d.js';
 import * as text from '../text.js';
 import {createOrbit} from './camera.js';
 import {labelItems, tooltipLines} from './content.js';
-import {describe, groupWorkers} from './describe.js';
+import {changesBetween, describe, groupWorkers} from './describe.js';
 import {createLabels} from './labels.js';
 import {
   alongStep, buildLayout, DIMS, levelY, loaderPlaces, pointOnWorking, sceneBounds, sceneLine, silhouette, stepBetween, stepLength,
@@ -44,6 +54,18 @@ const LOADER_MIN_PX = 48;
 /** The most pixels the light quality renders (about a 1280×860 buffer). */
 const LOW_PIXELS = 1.1e6;
 const SPRITE_PX = {worker: 30, ring: 40, sensor: 22, exit: 30, sign: 24};
+/** Opacity of the warm work light on a selected floor, and of the steel wash of an option's scope. */
+const GLOW = 0.34;
+const SCOPE_WASH = 0.2;
+/** Durations of the transitions that explain a change (clarity spec B); each runs once, never on load. */
+const MOTION = {hazard: 450, knowledge: 400, closed: 200, routeOut: 300, select: 200, scope: 150};
+/** The light of the rest of the model while something is selected (the work light dims it slightly). */
+const DIM = 0.78;
+/** An incident is framed by itself only when the user left the camera alone this long. */
+const HANDS_OFF_MS = 10000;
+/** A size or a panel of the stage settles this long before the picture is refitted (after the strip has grown). */
+const SETTLE_MS = 200;
+const easeOut = (t) => 1 - (1 - t) ** 3;
 const median = (values) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted.length === 0 ? 0 : sorted[Math.floor(sorted.length / 2)];
@@ -159,6 +181,25 @@ export function createScene(host, options) {
   let obstaclesAt = 0;
   let fixedObstacles = [];
 
+  // Transitions that explain a change (clarity spec B). Each runs once, ends in the published state, and is
+  // skipped (the change shown at once) under reduced motion, on the first picture and while the data are old.
+  let fx = null;                   // one publication's changes: hatch fades, outline sweeps, barricades, sensor marks
+  let selectFx = null;             // the work light of a new selection fades in (M10)
+  let selectLevel = 1;
+  let scopeFx = null;              // the scope of a hovered decision option fades in or out (M5)
+  let scopeLevel = 1;
+  let scopeDrawn = {option: null, zones: [], workers: []};
+  const ghosts = [];               // routes no longer published, fading out (M7)
+  const ghostGroup = new THREE.Group();
+  world.add(ghostGroup);
+  // The camera: what it frames, and when the user last moved it (an incident is framed by itself only after a pause).
+  let focusId = null;              // the object the camera was last asked to frame, until the user moves it
+  let lastTouch = -Infinity;
+  const seenIncidents = new Set();
+  let settleTimer = 0;
+  let settleWhy = null;            // 'size' | 'panel'
+  let lastPanelCover = '';
+
   const atlasTexture = new THREE.Texture();
   atlasTexture.flipY = false;
   atlasTexture.colorSpace = THREE.SRGBColorSpace;
@@ -222,10 +263,15 @@ export function createScene(host, options) {
         danger: flat(TOKEN.danger),
         unknown: flat(TOKEN.unknown),
         lastDanger: flat(TOKEN.danger),
-        copper: flat(TOKEN.copper),
-        copperStrong: flat(TOKEN.copperStrong),
+        // Selection: the chalk-white double ring (its opacity is the fade-in of the work light, M10).
+        select: flat(TOKEN.select, 1, {transparent: true}),
+        // A command of this page not yet confirmed: the chalk of the scheme, dashed.
+        pending: flat(TOKEN.chalk),
+        // The scope of the hovered decision option (its opacity fades in and out, M5).
+        scope: flat(TOKEN.action, 1, {transparent: true}),
       },
-      glow: flat(TOKEN.lightWarm, 0.34, {blending: THREE.AdditiveBlending}),
+      glow: flat(TOKEN.lightWarm, GLOW, {blending: THREE.AdditiveBlending}),
+      scopeWash: flat(TOKEN.action, SCOPE_WASH, {blending: THREE.AdditiveBlending}),
       hover: flat('#ffffff', 0.16, {blending: THREE.AdditiveBlending}),
       shadow: new THREE.MeshBasicMaterial({map: tex.shadow, transparent: true, depthWrite: false}),
       pin: new THREE.LineBasicMaterial({color: TOKEN.dust2, transparent: true, opacity: 0.75}),
@@ -438,6 +484,7 @@ export function createScene(host, options) {
     if (loader) placeLoader();
     buildInter();
     buildInterOverlay();
+    clearGhosts();
     buildRoutes(false);
     spritesDirty = true;
     const bounds = sceneBounds(layout, k);
@@ -490,15 +537,27 @@ export function createScene(host, options) {
 
   function buildOverlays() {
     for (const group of overlayGroups) disposeGroup(group);
+    if (fx) {
+      fx.sweeps = [];
+      fx.scales = [];
+    }
     if (!layout || !view) return;
     const perLevel = layout.levels.map(() => new Map());
+    const levelIndex = (levelName) => layout.levels.findIndex((level) => level.name === levelName);
     const add = (levelName, material, geometry, order = 3) => {
       if (!geometry) return;
-      const index = layout.levels.findIndex((level) => level.name === levelName);
+      const index = levelIndex(levelName);
       if (index < 0) return;
       const map = perLevel[index];
       if (!map.has(material)) map.set(material, {order, parts: []});
       map.get(material).parts.push(geometry);
+    };
+    /** A mesh of its own (a transition animates it), in the frame of its level. */
+    const own = (levelName, mesh) => {
+      const index = levelIndex(levelName);
+      if (index < 0 || !mesh) return null;
+      overlayGroups[index].add(mesh);
+      return mesh;
     };
     const d = DIMS.depth;
     const sideRibbons = (plan, offset, width, y, dash) => {
@@ -512,6 +571,7 @@ export function createScene(host, options) {
       }
       return out;
     };
+    const scopeZones = new Set(scopeDrawn.zones);
 
     for (const [name, working] of Object.entries(view.workings)) {
       const line = layout.workings.get(name);
@@ -522,43 +582,72 @@ export function createScene(host, options) {
       if (!bare && view.hasSnapshot) {
         material = {normal: materials.zone, attention: materials.attention, danger: materials.danger, unknown: materials.unknown}[working.hazard];
       }
+      // A floor whose hazard has just changed: its hatch fades in (M6, M9).
+      if (material && fx && fx.workings.has(name)) material = fadeMaterial(material);
       const width = DIMS.half * 2 - 1.2;
       if (material) for (const piece of floorPieces(line, closed)) add(line.level, material, ribbon(piece, width, 0.05, {period: 9}));
       if (closed) {
         const cum = planCum(line.plan);
         const mid = geo.pointAt(line.plan, cum, cum[cum.length - 1] / 2);
-        add(line.level, materials.barricade, barricade([mid.point[0], 0, mid.point[1]], [mid.dir[0], 0, mid.dir[1]], DIMS.half * 2 + 3, d + 6), 4);
+        if (fx && fx.closed.has(name)) {
+          // A passage just closed: its barricade is set in place once (M8).
+          const mesh = own(line.level, meshOf(barricade([0, 0, 0], [mid.dir[0], 0, mid.dir[1]], DIMS.half * 2 + 3, d + 6), materials.barricade, 4));
+          if (mesh) {
+            mesh.position.set(mid.point[0], 0, mid.point[1]);
+            mesh.updateMatrix();
+            fx.scales.push(mesh);
+          }
+        } else {
+          add(line.level, materials.barricade, barricade([mid.point[0], 0, mid.point[1]], [mid.dir[0], 0, mid.dir[1]], DIMS.half * 2 + 3, d + 6), 4);
+        }
       }
       const isSelected = working.thingId === view.selected;
       if (isSelected) {
         for (const piece of floorPieces(line, closed)) add(line.level, materials.glow, ribbon(piece, width, 0.12), 6);
-        for (const r of sideRibbons(line.plan, DIMS.half + 1.4, 1.5, d + 0.12, null)) add(line.level, materials.frame.copper, r, 7);
+        for (const offset of [DIMS.half + 1.3, DIMS.half + 3.3]) {
+          for (const r of sideRibbons(line.plan, offset, 0.9, d + 0.12, null)) add(line.level, materials.frame.select, r, 7);
+        }
       } else if (working.hazard === 'unknown' && working.lastKnown === 'danger') {
         for (const r of sideRibbons(line.plan, DIMS.half + 1.2, 1.3, d + 0.1, [6, 4])) add(line.level, materials.frame.lastDanger, r, 7);
       }
       if (working.pending) {
-        for (const r of sideRibbons(line.plan, DIMS.half + 3.2, 1.2, d + 0.12, [5, 4])) add(line.level, materials.frame.copper, r, 7);
+        for (const r of sideRibbons(line.plan, DIMS.half + 5, 1.1, d + 0.12, [5, 4])) add(line.level, materials.frame.pending, r, 7);
       }
+      if (working.zone && scopeZones.has(working.zone)) add(line.level, materials.scopeWash, ribbon(line.plan, width, 0.13), 6);
     }
     for (const [name, zone] of Object.entries(view.zones)) {
       const frame = staticParts.zoneFrames.get(name);
       if (!frame) continue;
       const style = view.hasSnapshot ? frameStyle(zone) : {material: materials.frame.unknown, width: 1.4, dash: [5, 4]};
+      const parts = [];
       for (const loop of frame.loops) {
-        if (style.dash) for (const piece of dashes(loop, style.dash[0], style.dash[1], true)) add(frame.level, style.material, ribbon(piece, style.width, d + 0.08), 5);
-        else add(frame.level, style.material, ribbon(loop, style.width, d + 0.08, {closed: true}), 5);
+        if (style.dash) for (const piece of dashes(loop, style.dash[0], style.dash[1], true)) parts.push(ribbon(piece, style.width, d + 0.08));
+        else parts.push(ribbon(loop, style.width, d + 0.08, {closed: true}));
       }
-      if (zone.thingId === view.selected) {
-        for (const loop of zoneFrame(name, 3.2).loops) add(frame.level, materials.frame.copper, ribbon(loop, 1.8, d + 0.1, {closed: true}), 7);
+      if (fx && fx.zones.has(name)) {
+        // The outline of a zone whose state has just changed sweeps round it once (M6, M9).
+        const mesh = own(frame.level, meshOf(merge(parts), style.material, 5));
+        if (mesh) fx.sweeps.push({mesh, count: mesh.geometry.attributes.position.count, ms: MOTION[fx.zones.get(name)]});
+      } else {
+        for (const part of parts) add(frame.level, style.material, part, 5);
+      }
+      const isSelected = zone.thingId === view.selected;
+      if (isSelected) {
+        for (const reach of [2.6, 5]) {
+          for (const loop of zoneFrame(name, reach).loops) add(frame.level, materials.frame.select, ribbon(loop, 1, d + 0.1, {closed: true}), 7);
+        }
         for (const local of zone.workings) {
           const line = layout.workings.get(local);
           if (!line.between) add(line.level, materials.glow, ribbon(line.plan, DIMS.half * 2 - 1.2, 0.12), 6);
         }
       }
       if (zone.pending) {
-        for (const loop of zoneFrame(name, 6).loops) {
-          for (const piece of dashes(loop, 6, 5, true)) add(frame.level, materials.frame.copper, ribbon(piece, 1.4, d + 0.1), 7);
+        for (const loop of zoneFrame(name, 7.5).loops) {
+          for (const piece of dashes(loop, 6, 5, true)) add(frame.level, materials.frame.pending, ribbon(piece, 1.3, d + 0.1), 7);
         }
+      }
+      if (scopeZones.has(name)) {
+        for (const loop of zoneFrame(name, isSelected ? 9 : 3.6).loops) add(frame.level, materials.frame.scope, ribbon(loop, 3, d + 0.11, {closed: true}), 7);
       }
     }
     perLevel.forEach((map, index) => {
@@ -569,6 +658,7 @@ export function createScene(host, options) {
     });
     buildInterOverlay();
     updateHoverOverlay();
+    if (fx) applyFx(performance.now());
   }
 
   /** Overlays of inter-level workings, in the scene frame: hazard decks, barricades, selection. */
@@ -591,7 +681,9 @@ export function createScene(host, options) {
       }
       const selectedHere = working.thingId === view.selected;
       if (selectedHere || working.pending || (working.hazard !== 'unknown' && working.hazard !== 'normal')) {
-        const material = selectedHere || working.pending ? materials.frame.copper : materials.frame[working.hazard];
+        let material = materials.frame[working.hazard];
+        if (working.pending) material = materials.frame.pending;
+        if (selectedHere) material = materials.frame.select;
         add(material, tube(points.map((p) => [p[0], p[1] + 0.4, p[2]]), selectedHere ? 1.1 : 0.8, 5));
       }
     }
@@ -627,16 +719,190 @@ export function createScene(host, options) {
     }
   }
 
+  // ---- transitions ------------------------------------------------------------------------
+
+  /** A transparent copy of a floor material, for the floors whose hatch fades in during the current change. */
+  function fadeMaterial(material) {
+    if (!fx.fades.has(material)) {
+      const clone = material.clone();
+      clone.transparent = true;
+      clone.opacity = 0;
+      fx.fades.set(material, clone);
+    }
+    return fx.fades.get(material);
+  }
+
+  /** Start the transitions of one publication's changes (describe.changesBetween); a running set ends first. */
+  function startFx(changes) {
+    finishFx(false);
+    const kinds = [...changes.zones.values(), ...changes.workings.values()];
+    const total = Math.max(0, ...kinds.map((kind) => MOTION[kind]), changes.closed.size > 0 ? MOTION.closed : 0,
+      changes.sensors.size > 0 ? MOTION.knowledge : 0);
+    if (total === 0) return;
+    fx = {...changes, start: null, total, fades: new Map(), sweeps: [], scales: []};
+    root.setAttribute('data-fx', [...changes.zones.keys()].map((name) => `zone:${name}`)
+      .concat([...changes.workings.keys()].map((name) => `working:${name}`), [...changes.closed].map((name) => `closed:${name}`),
+        [...changes.sensors.keys()].map((name) => `sensor:${name}`)).join(' '));
+    root.setAttribute('data-fx-count', String(Number(root.getAttribute('data-fx-count') || 0) + 1));
+  }
+
+  /** Eased progress (0…1) of a part of the current change that lasts `ms`. */
+  function fxAt(ms, now = performance.now()) {
+    if (!fx || fx.start === null) return 0;
+    return easeOut(Math.min((now - fx.start) / ms, 1));
+  }
+
+  /** Write the current progress into the meshes and materials of the change. */
+  function applyFx(now) {
+    for (const [base, clone] of fx.fades) clone.opacity = base.opacity * fxAt(base === materials.unknown ? MOTION.knowledge : MOTION.hazard, now);
+    for (const sweep of fx.sweeps) sweep.mesh.geometry.setDrawRange(0, Math.floor((sweep.count * fxAt(sweep.ms, now)) / 3) * 3);
+    for (const mesh of fx.scales) {
+      mesh.scale.setScalar(0.7 + 0.3 * fxAt(MOTION.closed, now));
+      mesh.updateMatrix();
+    }
+  }
+
+  function stepFx(now) {
+    if (!fx) return false;
+    if (fx.start === null) fx.start = now;
+    if (reduced() || now - fx.start >= fx.total) {
+      finishFx(true);
+      return false;
+    }
+    applyFx(now);
+    if (fx.sensors.size > 0) spritesDirty = true;
+    return true;
+  }
+
+  /** End the change: the overlays are built again exactly as without a transition. */
+  function finishFx(rebuild) {
+    if (!fx) return;
+    const done = fx;
+    fx = null;
+    for (const clone of done.fades.values()) clone.dispose();
+    root.removeAttribute('data-fx');
+    if (rebuild) {
+      buildOverlays();
+      spritesDirty = true;
+      if (done.closed.size > 0) setLabels();
+    }
+  }
+
+  /** The work light of the selection: glow, double ring and the dimming of the rest, at a level 0…1. */
+  function applySelectLevel() {
+    materials.glow.opacity = GLOW * selectLevel;
+    materials.frame.select.opacity = selectLevel;
+    const dim = view && view.selected ? 1 - (1 - DIM) * selectLevel : 1;
+    hemi.intensity = baseLight.hemi * dim;
+    key.intensity = baseLight.key * dim;
+    fill.intensity = baseLight.fill * dim;
+  }
+
+  function stepSelect(now) {
+    if (!selectFx) return false;
+    if (selectFx.start === null) selectFx.start = now;
+    const t = reduced() ? 1 : Math.min((now - selectFx.start) / MOTION.select, 1);
+    selectLevel = easeOut(t);
+    applySelectLevel();
+    spritesDirty = true;
+    if (t >= 1) selectFx = null;
+    return selectFx !== null;
+  }
+
+  function applyScopeLevel() {
+    materials.frame.scope.opacity = scopeLevel;
+    materials.scopeWash.opacity = SCOPE_WASH * scopeLevel;
+  }
+
+  function stepScope(now) {
+    if (!scopeFx) return false;
+    if (scopeFx.start === null) scopeFx.start = now;
+    const t = reduced() ? 1 : Math.min((now - scopeFx.start) / MOTION.scope, 1);
+    scopeLevel = scopeFx.from + (scopeFx.to - scopeFx.from) * easeOut(t);
+    applyScopeLevel();
+    spritesDirty = true;
+    if (t < 1) return true;
+    const out = scopeFx.to === 0;
+    scopeFx = null;
+    if (out) {
+      // Faded out: what was highlighted goes, and the materials are ready for the next option.
+      scopeDrawn = view ? view.scope : {option: null, zones: [], workers: []};
+      scopeLevel = 1;
+      applyScopeLevel();
+      buildOverlays();
+    }
+    return false;
+  }
+
+  /** A newly hovered or chosen option highlights its zones and people; none fades the highlight out. */
+  function updateScope(animate) {
+    const next = view.scope;
+    const same = (a, b) => a.option === b.option && a.zones.join() === b.zones.join();
+    const fadingOut = Boolean(scopeFx && scopeFx.to === 0);
+    if (same(next, scopeDrawn) && !fadingOut) {
+      scopeDrawn = next;
+      return;
+    }
+    if (!animate) {
+      scopeFx = null;
+      scopeDrawn = next;
+      scopeLevel = 1;
+    } else if (next.zones.length > 0) {
+      scopeDrawn = next;
+      scopeFx = {start: null, from: 0, to: 1};
+      scopeLevel = 0;
+    } else if (scopeDrawn.zones.length > 0 && !fadingOut) {
+      scopeFx = {start: null, from: scopeLevel, to: 0};
+    } else if (!fadingOut) {
+      scopeDrawn = next;
+    }
+    applyScopeLevel();
+  }
+
   // ---- routes -------------------------------------------------------------------------
 
   function routeKey(route) {
     return `${route.worker}:${route.pieces.map((piece) => piece.working).join(',')}`;
   }
 
-  /** The published routes as tubes with arrow heads; a new route draws itself in once. */
+  /** The workings of a route key, after the worker. */
+  const keyWorkings = (routeId) => routeId.slice(routeId.indexOf(':') + 1).split(',');
+
+  /**
+   * The published routes as tubes with arrow heads. A new route draws itself in once and the route it replaces
+   * fades out (M7); a route that only got shorter because its walker went on along it is not a change of route.
+   */
   function buildRoutes(animateNew) {
-    disposeGroup(routeGroup);
+    const previous = new Map(routeMeshes.map((mesh) => [mesh.userData.worker, mesh]));
+    const keep = new Set();
     routeMeshes = [];
+    if (layout && view) {
+      for (const route of view.routes) {
+        const routeId = routeKey(route);
+        const before = previous.get(route.worker);
+        if (!before) continue;
+        const was = keyWorkings(before.userData.key);
+        const now = keyWorkings(routeId);
+        const walking = now.length <= was.length && now.every((name, i) => name === was[was.length - now.length + i]);
+        if (walking) {
+          keep.add(route.worker);
+          if (!drawIn.has(routeId)) drawIn.set(routeId, {start: -1});
+        }
+      }
+    }
+    // The routes that are not published any more fade out instead of vanishing.
+    for (const [worker, mesh] of previous) {
+      if (!animateNew || keep.has(worker) || reduced()) continue;
+      routeGroup.remove(mesh);
+      const material = mesh.material.clone();
+      material.transparent = true;
+      material.depthWrite = false;
+      mesh.material = material;
+      mesh.geometry.setDrawRange(0, mesh.userData.count);
+      ghostGroup.add(mesh);
+      ghosts.push({mesh, start: null});
+    }
+    disposeGroup(routeGroup);
     if (!layout || !view) return;
     const keys = new Set();
     for (const route of view.routes) {
@@ -646,8 +912,8 @@ export function createScene(host, options) {
         const line = layout.workings.get(piece.working);
         const points = geo.cut(sceneLine(layout, line, k), line.cum, piece.start, piece.end)
           .map((p) => [p[0], p[1] + (line.between ? 0.6 : 1.6), p[2]]);
-        const previous = runs[runs.length - 1];
-        if (previous && geo.dist(previous[previous.length - 1], points[0]) < 1) previous.push(...points.slice(1));
+        const last = runs[runs.length - 1];
+        if (last && geo.dist(last[last.length - 1], points[0]) < 1) last.push(...points.slice(1));
         else runs.push(points);
       }
       const parts = [];
@@ -668,6 +934,7 @@ export function createScene(host, options) {
       const routeId = routeKey(route);
       keys.add(routeId);
       mesh.userData.key = routeId;
+      mesh.userData.worker = route.worker;
       mesh.userData.count = geometry.attributes.position.count;
       if (!drawIn.has(routeId)) drawIn.set(routeId, {start: animateNew && !reduced() ? null : -1});
       routeGroup.add(mesh);
@@ -675,6 +942,27 @@ export function createScene(host, options) {
     }
     for (const routeId of [...drawIn.keys()]) if (!keys.has(routeId)) drawIn.delete(routeId);
     stepDrawIn(performance.now());
+  }
+
+  function stepGhosts(now) {
+    for (const ghost of [...ghosts]) {
+      if (ghost.start === null) ghost.start = now;
+      const t = reduced() ? 1 : Math.min((now - ghost.start) / MOTION.routeOut, 1);
+      ghost.mesh.material.opacity = 1 - easeOut(t);
+      if (t >= 1) dropGhost(ghost);
+    }
+    return ghosts.length > 0;
+  }
+
+  function dropGhost(ghost) {
+    ghostGroup.remove(ghost.mesh);
+    ghost.mesh.geometry.dispose();
+    ghost.mesh.material.dispose();
+    ghosts.splice(ghosts.indexOf(ghost), 1);
+  }
+
+  function clearGhosts() {
+    for (const ghost of [...ghosts]) dropGhost(ghost);
   }
 
   function stepDrawIn(now) {
@@ -820,7 +1108,7 @@ export function createScene(host, options) {
     for (const [name, exit] of Object.entries(view.exits)) {
       const cell = ['available', 'unavailable'].includes(exit.state) ? `exit:${exit.state}` : 'exit:unknown';
       const p = exitPoint(name);
-      if (exit.thingId === view.selected) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 4, key: exit.thingId});
+      if (exit.thingId === view.selected) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 12, key: exit.thingId, alpha: selectLevel});
       list.push({position: p, cell, size: SPRITE_PX.exit, key: exit.thingId});
     }
     for (const [name, sensor] of Object.entries(view.sensors)) {
@@ -829,10 +1117,13 @@ export function createScene(host, options) {
       const p = [base[0], base[1] + 7.5, base[2]];
       signPosts.push([base, [base[0], base[1] + 6, base[2]]]);
       const cell = ['fresh', 'stale', 'lost'].includes(sensor.quality) ? `sensor:${sensor.quality}` : 'sensor:unknown';
-      if (sensor.thingId === view.selected) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.sensor + 14, key: sensor.thingId});
+      if (sensor.thingId === view.selected) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.sensor + 22, key: sensor.thingId, alpha: selectLevel});
       if (sensor.pending) list.push({position: p, cell: 'ring:pending', size: SPRITE_PX.sensor + 14, key: sensor.thingId});
       if (sensor.thingId === hovered) list.push({position: p, cell: 'ring:hover', size: SPRITE_PX.sensor + 12, key: sensor.thingId});
-      list.push({position: p, cell, size: SPRITE_PX.sensor, key: sensor.thingId});
+      // Data that stopped being fresh: the mark of the old state gives way to the new one (M9).
+      const turned = fx && fx.sensors.has(name) ? fxAt(MOTION.knowledge, now) : 1;
+      if (turned < 1) list.push({position: p, cell: `sensor:${fx.sensors.get(name)}`, size: SPRITE_PX.sensor, key: sensor.thingId, alpha: 1 - turned});
+      list.push({position: p, cell, size: SPRITE_PX.sensor, key: sensor.thingId, alpha: turned});
     }
     // Signs: restriction of entry at the entrances of a zone, the state of a zone at its centre, pending commands.
     for (const [name, zone] of Object.entries(view.zones)) {
@@ -861,6 +1152,7 @@ export function createScene(host, options) {
       }
     }
     // People last: on top of every other sprite.
+    const scopeWorkers = new Set(scopeDrawn.workers);
     const rank = (group) => ({ok: 0, none: 2}[view.workers[group.front].egress] ?? 1);
     for (const group of [...groups].sort((a, b) => rank(a) - rank(b))) {
       const p = groupPoint(group, now);
@@ -869,7 +1161,12 @@ export function createScene(host, options) {
       const thingId = front.thingId;
       const members = group.members.map((member) => view.workers[member]);
       pinPoints.push([p[0], p[1] - 6 + 0.3, p[2]], [p[0], p[1] - 1.8, p[2]]);
-      if (members.some((member) => member.thingId === view.selected)) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 6, key: thingId});
+      if (members.some((member) => member.thingId === view.selected)) {
+        list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 14, key: thingId, alpha: selectLevel});
+      }
+      if (group.members.some((member) => scopeWorkers.has(member))) {
+        list.push({position: p, cell: 'ring:scope', size: SPRITE_PX.ring + 10, key: thingId, alpha: scopeLevel});
+      }
       if (members.some((member) => member.thingId === hovered)) list.push({position: p, cell: 'ring:hover', size: SPRITE_PX.ring + 4, key: thingId});
       if (members.some((member) => member.locationHazard === 'danger')) list.push({position: p, cell: 'ring:danger', size: SPRITE_PX.ring, key: thingId});
       const cell = front.egress === 'ok' ? 'worker:ok' : (front.egress === 'none' ? 'worker:none' : 'worker:unknown');
@@ -1031,11 +1328,9 @@ export function createScene(host, options) {
   };
 
   function setLabels() {
-    if (!layout || !view || !state || !state.model) {
-      labels.set([]);
-      return;
-    }
-    labels.set(labelItems({model: state.model, view, layout, groups, anchors}));
+    if (!layout || !view || !state || !state.model) return labels.set([]);
+    const arriving = new Set(fx ? [...fx.closed].map((name) => view.workings[name] && view.workings[name].thingId) : []);
+    return labels.set(labelItems({model: state.model, view, layout, groups, anchors, arriving}));
   }
 
   const v3 = new THREE.Vector3();
@@ -1061,10 +1356,13 @@ export function createScene(host, options) {
     // of a fallback, the gizmo and the caption of old data.
     const others = [...document.querySelectorAll('#stage-hud .hud__row, #stage-hud .hud__status, .hud__keys[open] .hud__keys-body, '
       + '#legend, .stage-notice:not([hidden]), #centre > .centre__bar')];
-    for (const element of [...others, gizmo.element, ...(old.hidden ? [] : [oldText])]) {
+    // The legend counts for the camera only as its chip: the open legend is read and closed, it never moves the mine.
+    const chip = document.querySelector('#legend [data-testid="legend-toggle"]');
+    for (const element of [...others, gizmo.element, ...(old.hidden ? [] : [oldText]), ...(chip ? [chip] : [])]) {
       const rect = element.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
-        fixedObstacles.push({x: rect.left - origin.left - 4, y: rect.top - origin.top - 4, w: rect.width + 8, h: rect.height + 8, key: 'fixed'});
+        fixedObstacles.push({x: rect.left - origin.left - 4, y: rect.top - origin.top - 4, w: rect.width + 8, h: rect.height + 8, key: 'fixed',
+          camera: element.id !== 'legend' || !chip});
       }
     }
   }
@@ -1096,7 +1394,27 @@ export function createScene(host, options) {
       }
     }
     const focused = labelLayer.contains(document.activeElement) ? document.activeElement : null;
-    labels.place(project, width, height, obstacles, {focused, selected: view ? view.selected : null, hovered});
+    labels.place(project, width, height, obstacles, {focused, selected: view ? view.selected : null, hovered}, markPoint);
+  }
+
+  /** The scene point of an object's mark: the centre of a zone's floor, its marker, the middle of a working. */
+  function markPoint(thingId) {
+    if (!layout || !view || !state || !state.model) return null;
+    const thing = state.model.things[thingId];
+    // A zone first: the signs of its entrances carry its key too, but its tag belongs to its middle.
+    if (thing && thing.kind === 'zone' && view.zones[thing.name] && view.zones[thing.name].workings.length > 0) {
+      return zonePoint(thing.name, 3);
+    }
+    const sprite = spriteList.find((entry) => !entry.cell.startsWith('ring') && (entry.key === thingId
+      || (entry.group && entry.group.members.some((member) => view.workers[member].thingId === thingId))));
+    if (sprite) return sprite.position;
+    if (thingId === DECOR) return loader && loader.visible ? [loader.position.x, loader.position.y + 1.2 * WIDTH_FACTOR, loader.position.z] : null;
+    if (thing && thing.kind === 'working' && layout.workings.has(thing.name)) {
+      const line = layout.workings.get(thing.name);
+      const mid = geo.pointAt(sceneLine(layout, line, k), line.cum, line.total / 2).point;
+      return [mid[0], mid[1] + 0.2, mid[2]];
+    }
+    return null;
   }
 
   // ---- gizmo: north arrow, scale bar and honest captions --------------------------------------
@@ -1205,6 +1523,10 @@ export function createScene(host, options) {
     active = stepExplode(now) || active;
     active = stepTweens(now) || active;
     active = stepDrawIn(now) || active;
+    active = stepFx(now) || active;
+    active = stepSelect(now) || active;
+    active = stepScope(now) || active;
+    active = stepGhosts(now) || active;
     if (spritesDirty) buildSprites();
     updateLoaderZoom();
     const started = performance.now();
@@ -1223,7 +1545,8 @@ export function createScene(host, options) {
     root.setAttribute('data-frames', String(frames));
     root.setAttribute('data-tweens', String(tweens.size));
     if (active) invalidate();
-    else root.setAttribute('data-rendering', 'idle');
+    // A refit waits for the stage to settle: the stage stays busy until it has run.
+    else if (!settleTimer) root.setAttribute('data-rendering', 'idle');
     options.onEvent('frame', {frames});
     if (firstWithContent) options.onEvent('ready');
   }
@@ -1284,7 +1607,6 @@ export function createScene(host, options) {
   /** Around a focused object: it stays well inside the free part of the stage. */
   const PAD_FOCUS = {left: 120, right: 120, top: 90, bottom: 80};
   const probe = camera.clone();
-  let lastCover = '';
 
   /**
    * Rectangles over the stage that the picture keeps clear of, in pixels of the stage: the HUD, the tabs,
@@ -1294,7 +1616,8 @@ export function createScene(host, options) {
   function coverRects() {
     obstaclesAt = 0;
     refreshObstacles();
-    const rects = fixedObstacles.map(({x, y, w, h}) => ({x, y, w, h}));
+    const rects = fixedObstacles.filter((r) => r.camera).map(({x, y, w, h}) => ({x, y, w, h}));
+    const chips = rects.length;
     const origin = root.getBoundingClientRect();
     const add = (element, grow = 8) => {
       const r = element.getBoundingClientRect();
@@ -1306,7 +1629,7 @@ export function createScene(host, options) {
     if (drawer && document.body.dataset.stand === 'open') add(drawer, 12);
     // The dock and the drawer cover a part of the stage; the other rectangles are chips that may give way.
     rects.forEach((r, index) => {
-      r.cover = index >= fixedObstacles.length;
+      r.cover = index >= chips;
     });
     return rects.filter((r) => r.x < width && r.y < height && r.x + r.w > 0 && r.y + r.h > 0);
   }
@@ -1407,7 +1730,7 @@ export function createScene(host, options) {
     const silhouettePx = () => hull([...probePixels(vectors), ...probePixels(labelVectors).map(([x, y]) => [x - LEVEL_LABEL_PX, y])]);
     const aspect = width / Math.max(height, 1);
     const ndc = (px, total) => (2 * px) / Math.max(total, 1);
-    const base = orbit.fit(vectors, aspect, {x: ndc((pad.left + pad.right) / 2, width), top: ndc(pad.top, height),
+    const base = orbit.fit([...vectors, ...labelVectors], aspect, {x: ndc((pad.left + pad.right) / 2, width), top: ndc(pad.top, height),
       bottom: ndc(pad.bottom, height)}, az, el);
     const offsets = [];
     for (let i = -6; i <= 6; i += 1) {
@@ -1432,21 +1755,8 @@ export function createScene(host, options) {
     return null;
   }
 
-  /** The controls over the stage changed (the legend chip appeared, the HUD wrapped, the dock or the drawer opened): refit the overview. */
-  function refitOverview(animate = false) {
-    if (!layout || !width || !overviewMode || orbit.gliding || explodeTween) return;
-    const before = lastCover;
-    const fitted = fitAll();
-    // Nothing fits in what is left of the stage (the dock unfolded over a small stage): the view stays.
-    if (lastCover === before || !fitted.ok) return;
-    if (animate) orbit.glideTo({target: fitted.target, dist: fitted.dist});
-    else orbit.set({target: fitted.target, dist: fitted.dist});
-    invalidate();
-  }
-
   function fitAll(factor = k) {
     const rects = coverRects();
-    lastCover = `${width}x${height}:${rects.map((r) => [r.x, r.y, r.w, r.h].map(Math.round).join(',')).join(';')}`;
     const corners = layout.levels.flatMap((level) => {
       const y = levelY(layout, level, factor) + DIMS.depth;
       const b = level.box;
@@ -1458,6 +1768,7 @@ export function createScene(host, options) {
   function overview(animate = true) {
     if (!layout || !width) return false;
     overviewMode = true;
+    focusId = null;
     const fitted = fitAll();
     const goal = {target: fitted.target, dist: fitted.dist, az: nearestAngle(orbit.state.az, DEFAULT_VIEW.az), el: DEFAULT_VIEW.el};
     if (animate) orbit.glideTo(goal);
@@ -1471,75 +1782,336 @@ export function createScene(host, options) {
     return to + Math.round((from - to) / turn) * turn;
   }
 
-  function fitPoints(points, minDist) {
-    const fitted = frameView(points, orbit.state.az, orbit.state.el, PAD_FOCUS, coverRects());
-    if (fitted.dist >= minDist) return fitted;
-    // Not closer than minDist: the object is then centred in the free part of the stage, as framed above.
+  function coverKey(rects) {
+    return `${width}x${height}:${rects.filter((r) => r.cover).map((r) => [r.x, r.y, r.w, r.h].map(Math.round).join(',')).join(';')}`;
+  }
+
+  /** The part of the stage left free by the dock unfolded over its bottom and the stand drawer over its left edge. */
+  function freeRect(rects) {
+    let left = 0;
+    let bottom = height;
+    for (const r of rects) {
+      if (!r.cover) continue;
+      if (r.w >= width * 0.6 && r.y > height * 0.2) bottom = Math.min(bottom, Math.max(r.y, 0));
+      else if (r.h >= height * 0.6 && r.x < width * 0.25) left = Math.max(left, r.x + r.w);
+    }
+    return {x: left, y: 0, w: Math.max(width - left, 1), h: Math.max(bottom, 1)};
+  }
+
+  /** Margins of a framed object: inside the free part of the stage, smaller when that part is small. */
+  function focusPad(rects) {
+    const free = freeRect(rects);
+    return {
+      left: free.x + Math.min(PAD_FOCUS.left, free.w * 0.08),
+      right: width - free.x - free.w + Math.min(PAD_FOCUS.right, free.w * 0.08),
+      top: free.y + Math.min(PAD_FOCUS.top, free.h * 0.12),
+      bottom: height - free.y - free.h + Math.min(PAD_FOCUS.bottom, free.h * 0.06),
+    };
+  }
+
+  /** The corner of a level's slab its label stands at, for an azimuth: the leftmost on the screen. */
+  function levelLabelPoint(level, az) {
+    const y = levelY(layout, level, k) + DIMS.depth;
+    const b = level.box;
+    const corners = [[b.minX, y, b.minZ], [b.maxX, y, b.minZ], [b.maxX, y, b.maxZ], [b.minX, y, b.maxZ]];
+    const along = (c) => c[0] * Math.cos(az) - c[2] * Math.sin(az);
+    return corners.reduce((best, c) => (along(c) < along(best) ? c : best));
+  }
+
+  /** Pixels a horizon's width takes on the screen at a distance. */
+  function horizonPx(level, dist) {
+    const b = level.box;
+    return (Math.max(b.maxX - b.minX, b.maxZ - b.minZ) * height) / (2 * dist * Math.tan((camera.fov * DEG) / 2));
+  }
+
+  /** The distance at which one horizon is about as wide as the stage: a framed zone is never shown closer. */
+  function horizonDist(level) {
+    const b = level.box;
+    const span = Math.max(b.maxX - b.minX, b.maxZ - b.minZ);
+    return (0.95 * span * height) / (2 * Math.tan((camera.fov * DEG) / 2) * Math.max(width, 1));
+  }
+
+  /**
+   * What «показать» of a zone frames (clarity spec B, camera): the zone with its tag, the people now in it, the
+   * end points of their published routes (a person without one: the nearest exit), and the level it lies on.
+   */
+  function zoneArea(zoneName) {
+    const zone = view && view.zones[zoneName];
+    if (!zone || zone.workings.length === 0) return null;
+    const points = [];
+    for (const local of zone.workings) points.push(...sceneLine(layout, layout.workings.get(local), k).map((p) => [p[0], p[1] + DIMS.depth, p[2]]));
+    const tag = zonePoint(zoneName, 16);
+    if (tag) points.push(tag);
+    const inside = new Set(zone.workings);
+    const people = [];
+    const ends = [];
+    const exitsNear = [];
+    for (const [name, worker] of Object.entries(view.workers)) {
+      if (!worker.at || !inside.has(worker.at)) continue;
+      const at = workerPoint(name);
+      if (!at) continue;
+      people.push([at[0], at[1] + 6, at[2]]);
+      const thing = thingByName(state.model, name);
+      const pieces = thing && isUnderground(thing) ? geo.routePieces(routeOf(state.model, thing), {working: worker.at, offsetM: worker.offsetM},
+        (local) => {
+          const line = layout.workings.get(local);
+          return line ? {from: line.from, to: line.to, lengthM: line.lengthM, total: line.total} : null;
+        }) : [];
+      const last = pieces[pieces.length - 1];
+      if (last) {
+        const line = layout.workings.get(last.working);
+        const end = geo.pointAt(sceneLine(layout, line, k), line.cum, last.end).point;
+        ends.push([end[0], end[1] + 15, end[2]]);
+        // Where the route leaves the zone's level: kept in view when the whole way out does not fit.
+        const leave = pieces.find((piece) => layout.workings.get(piece.working).between);
+        if (leave) {
+          const between = layout.workings.get(leave.working);
+          exitsNear.push(geo.pointAt(sceneLine(layout, between, k), between.cum, leave.start).point);
+        }
+      } else {
+        const exits = Object.keys(view.exits).map((exit) => exitPoint(exit));
+        const nearest = exits.reduce((best, p) => (!best || geo.dist(p, at) < geo.dist(best, at) ? p : best), null);
+        if (nearest) ends.push(nearest);
+      }
+    }
+    // The zone of the open incident: the other published causes of the incident are part of what is framed.
+    if (incidentZone() === zoneName) {
+      for (const cause of incidentOf(state.model).values.causes || []) {
+        const subject = cause && typeof cause.subject === 'string' ? cause.subject : null;
+        if (!subject || subject === zoneName) continue;
+        let at = null;
+        if (view.sensors[subject]) at = sensorPoint(subject);
+        else if (view.zones[subject] && view.zones[subject].workings.length > 0) at = zonePoint(subject, 16);
+        else if (view.workings[subject]) at = workingPoint(subject, false);
+        if (at) points.push(at);
+      }
+    }
+    const frame = staticParts.zoneFrames.get(zoneName);
+    const level = frame ? layout.levels.find((entry) => entry.name === frame.level) : null;
+    return {points: [...points, ...people, ...ends], near: [...points, ...people, ...exitsNear], core: [...points, ...people], level};
+  }
+
+  /** The zone of the open incident, if any. */
+  function incidentZone() {
+    const incident = state && state.model ? incidentOf(state.model) : null;
+    if (!incident || !['active', 'executing'].includes(incident.values.state) || typeof incident.values.zone !== 'string') return null;
+    return view && view.zones[incident.values.zone] ? incident.values.zone : null;
+  }
+
+  /** Centre `points` at the distance `dist` in the free part of the stage, as `fitted` placed them. */
+  function centred(points, fitted, dist) {
     const vectors = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     placeProbe(fitted.target, fitted.dist, orbit.state.az, orbit.state.el);
     const centre = probePixels(vectors).reduce((sum, p) => [sum[0] + p[0] / vectors.length, sum[1] + p[1] / vectors.length], [0, 0]);
     const right = new THREE.Vector3().setFromMatrixColumn(probe.matrixWorld, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(probe.matrixWorld, 1);
     const mid = vectors.reduce((sum, v) => sum.add(v), new THREE.Vector3()).multiplyScalar(1 / vectors.length);
-    const perPixel = (2 * minDist * Math.tan((camera.fov * DEG) / 2)) / Math.max(height, 1);
+    const perPixel = (2 * dist * Math.tan((camera.fov * DEG) / 2)) / Math.max(height, 1);
     const target = mid.addScaledVector(right, -(centre[0] - width / 2) * perPixel).addScaledVector(up, (centre[1] - height / 2) * perPixel);
-    return {target, dist: minDist};
+    return {target, dist};
+  }
+
+  function fitPoints(points, minDist, rects = coverRects(), leftLabels = []) {
+    const fitted = frameView(points, orbit.state.az, orbit.state.el, focusPad(rects), rects, leftLabels);
+    // Not closer than minDist: the object is then centred in the free part of the stage, as framed above.
+    return fitted.dist >= minDist ? fitted : {...centred(points, fitted, minDist), ok: fitted.ok};
+  }
+
+  /**
+   * The view that frames a zone by the rule of «показать». When the whole way out does not fit the free part of
+   * the stage at a readable scale (the dock unfolded over a small stage), the zone, its people and where their
+   * routes leave its level are framed instead: never the whole mine shrunk into a strip.
+   */
+  function zoneGoal(zoneName, rects = coverRects()) {
+    const area = zoneArea(zoneName);
+    if (!area) return null;
+    const label = area.level ? [levelLabelPoint(area.level, orbit.state.az)] : [];
+    const minDist = area.level ? horizonDist(area.level) : 200;
+    // The horizon must stay readable: as wide on the screen as about a third of the free stage, 300 px at least.
+    const free = freeRect(rects);
+    const readable = (dist) => !area.level || horizonPx(area.level, dist) >= Math.max(300, 0.3 * free.w);
+    let fitted = null;
+    const tried = [];
+    for (const [name, points] of [['all', area.points], ['near', area.near], ['core', area.core]]) {
+      fitted = fitPoints(points, minDist, rects, label);
+      tried.push(`${name}:${fitted.ok === false ? 'no' : 'ok'}:${Math.round(fitted.dist)}`);
+      if (fitted.ok !== false && readable(fitted.dist)) break;
+    }
+    root.setAttribute('data-framing', `${zoneName} min:${Math.round(minDist)} ${tried.join(' ')}`);
+    return fitted;
+  }
+
+  /** The view that frames an object (full thingId) or a level (local name); null when it is not drawn. */
+  function goalOf(id, rects = coverRects()) {
+    const model = state.model;
+    const level = layout.levels.find((entry) => entry.name === id || (entry.thingId && entry.thingId === id));
+    if (level) {
+      const y = levelY(layout, level, k);
+      const b = level.box;
+      return fitPoints([[b.minX, y + DIMS.depth, b.minZ], [b.maxX, y + DIMS.depth, b.maxZ], [b.minX, y - DIMS.thickness, b.maxZ],
+        [b.maxX, y + DIMS.depth, b.minZ]], 120, rects);
+    }
+    const thing = model.things[id] || thingByName(model, id);
+    if (!thing) return null;
+    if (thing.kind === 'zone') return zoneGoal(thing.name, rects);
+    if (thing.kind === 'level') return goalOf(thing.name, rects);
+    if (thing.kind === 'incident') {
+      const zone = typeof thing.values.zone === 'string' ? thingByName(model, thing.values.zone) : null;
+      return zone ? zoneGoal(zone.name, rects) : null;
+    }
+    let points = [];
+    let minDist = 160;
+    if (thing.kind === 'working' && layout.workings.has(thing.name)) {
+      points = sceneLine(layout, layout.workings.get(thing.name), k);
+      minDist = 150;
+    } else if (thing.kind === 'worker') {
+      const p = workerPoint(thing.name);
+      if (p) points = [p];
+    } else if (thing.kind === 'sensor' && view.sensors[thing.name]) {
+      const p = sensorPoint(thing.name);
+      if (p) points = [p];
+      minDist = 130;
+    } else if (thing.kind === 'exit' && view.exits[thing.name]) {
+      points = [exitPoint(thing.name)];
+    }
+    if (points.length === 0) return null;
+    if (points.length === 1) {
+      const p = points[0];
+      points = [[p[0] - 30, p[1] - 4, p[2] - 30], [p[0] + 30, p[1] + 8, p[2] + 30]];
+    }
+    return fitPoints(points, minDist, rects);
   }
 
   /** Glide to an object (full thingId) or a level (local name); the azimuth is kept. */
   function focus(id) {
-    if (!layout || !state || !state.model) {
+    if (!layout || !state || !state.model || !width) {
       pendingFocus = id;
       return true;
     }
-    if (!width) {
-      pendingFocus = id;
-      return true;
-    }
-    const model = state.model;
-    const level = layout.levels.find((entry) => entry.name === id || (entry.thingId && entry.thingId === id));
-    let goal = null;
-    if (level) {
-      const y = levelY(layout, level, k);
-      const b = level.box;
-      goal = fitPoints([[b.minX, y + DIMS.depth, b.minZ], [b.maxX, y + DIMS.depth, b.maxZ], [b.minX, y - DIMS.thickness, b.maxZ],
-        [b.maxX, y + DIMS.depth, b.minZ]], 120);
-    } else {
-      const thing = model.things[id] || thingByName(model, id);
-      if (!thing) return false;
-      let points = [];
-      let minDist = 160;
-      if (thing.kind === 'zone' && view.zones[thing.name]) {
-        for (const local of view.zones[thing.name].workings) points.push(...sceneLine(layout, layout.workings.get(local), k));
-        minDist = 200;
-      } else if (thing.kind === 'working' && layout.workings.has(thing.name)) {
-        points = sceneLine(layout, layout.workings.get(thing.name), k);
-        minDist = 150;
-      } else if (thing.kind === 'worker') {
-        const p = workerPoint(thing.name);
-        if (p) points = [p];
-      } else if (thing.kind === 'sensor' && view.sensors[thing.name]) {
-        const p = sensorPoint(thing.name);
-        if (p) points = [p];
-        minDist = 130;
-      } else if (thing.kind === 'exit' && view.exits[thing.name]) {
-        points = [exitPoint(thing.name)];
-      } else if (thing.kind === 'level') {
-        return focus(thing.name);
-      } else if (thing.kind === 'incident' && typeof thing.values.zone === 'string') {
-        return focus(thing.values.zone);
-      }
-      if (points.length === 0) return false;
-      if (points.length === 1) {
-        const p = points[0];
-        points = [[p[0] - 30, p[1] - 4, p[2] - 30], [p[0] + 30, p[1] + 8, p[2] + 30]];
-      }
-      goal = fitPoints(points, minDist);
-    }
+    const goal = goalOf(id);
+    if (!goal) return false;
     overviewMode = false;
+    focusId = id;
     orbit.glideTo({target: goal.target, dist: goal.dist});
     invalidate();
     return true;
+  }
+
+  // ---- refits after a change of the stage's size or of the panels over it --------------------
+
+  /** Mark the stage busy until a pending refit has run (tests and the HUD wait for 'idle'). */
+  function markBusy() {
+    if (root.getAttribute('data-rendering') !== 'active') {
+      root.setAttribute('data-rendering', 'active');
+      options.onEvent('frame', {frames});
+    }
+  }
+
+  function idleIfQuiet() {
+    if (rafId || settleTimer) return;
+    root.setAttribute('data-rendering', 'idle');
+    options.onEvent('frame', {frames});
+  }
+
+  /**
+   * The size of the stage or a panel over it changed: refit once the change has settled (the situation strip
+   * grows first, M2). A refit is instant; a panel causes one only when the picture would hide the incident area
+   * or leave the stage mostly empty. The legend is not watched: opening it never moves the mine.
+   */
+  function settleSoon(why) {
+    settleWhy = settleWhy === 'size' || why === 'size' ? 'size' : 'panel';
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(settle, SETTLE_MS);
+    markBusy();
+  }
+
+  function settle() {
+    settleTimer = 0;
+    const why = settleWhy;
+    settleWhy = null;
+    if (disposed || !layout || !width || !view) {
+      idleIfQuiet();
+      return;
+    }
+    if (explodeTween) {
+      settleSoon(why);
+      return;
+    }
+    const rects = coverRects();
+    const cover = coverKey(rects);
+    if (why !== 'size' && cover === lastPanelCover) {
+      idleIfQuiet();
+      return;
+    }
+    lastPanelCover = cover;
+    const goal = refitGoal(rects, why === 'size');
+    if (!goal) {
+      idleIfQuiet();
+      return;
+    }
+    if (orbit.gliding) orbit.retarget(goal);
+    else orbit.set(goal);
+    root.setAttribute('data-refits', String(Number(root.getAttribute('data-refits') || 0) + 1));
+    invalidate();
+  }
+
+  function refitGoal(rects, sized) {
+    const hides = incidentHidden(rects);
+    const zone = incidentZone();
+    if (overviewMode) {
+      // The overview is the whole mine in the stage: it follows a new size of the stage. A panel over the stage
+      // that hides the incident area turns it into the framing of the incident in the part left free.
+      if (hides && zone && !sized) {
+        const goal = zoneGoal(zone, rects);
+        if (goal) {
+          overviewMode = false;
+          focusId = thingByName(state.model, zone).thingId;
+          return goal;
+        }
+      }
+      if (!sized && !hides && !mostlyEmpty(rects)) return null;
+      const fitted = fitAll();
+      return fitted.ok || sized ? {target: fitted.target, dist: fitted.dist} : null;
+    }
+    if (!hides && !mostlyEmpty(rects)) return null;
+    const id = focusId || (zone ? thingByName(state.model, zone).thingId : null);
+    const goal = id ? goalOf(id, rects) : null;
+    if (goal) focusId = id;
+    return goal;
+  }
+
+  /** Project with the camera where it is going (the end of a glide), in pixels of the stage. */
+  function projectGoal(points) {
+    const goal = orbit.goal;
+    placeProbe(goal.target, goal.dist, goal.az, goal.el);
+    const v = new THREE.Vector3();
+    return points.map((p) => {
+      v.set(p[0], p[1], p[2]).project(probe);
+      return {x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height, front: v.z > -1 && v.z < 1};
+    });
+  }
+
+  /** True when the zone of the open incident or a person in it would be out of the free stage or under a panel. */
+  function incidentHidden(rects) {
+    const zone = incidentZone();
+    const area = zone ? zoneArea(zone) : null;
+    if (!area) return false;
+    const free = freeRect(rects);
+    const covers = rects.filter((r) => r.cover);
+    return projectGoal(area.core).some((p) => !p.front || p.x < free.x || p.x > free.x + free.w || p.y < free.y || p.y > free.y + free.h
+      || covers.some((r) => p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h));
+  }
+
+  /** True when the model would take less than a quarter of the free stage. */
+  function mostlyEmpty(rects) {
+    const free = freeRect(rects);
+    const points = projectGoal(silhouette(layout, k)).filter((p) => p.front);
+    if (points.length === 0) return true;
+    const x0 = Math.max(Math.min(...points.map((p) => p.x)), free.x);
+    const x1 = Math.min(Math.max(...points.map((p) => p.x)), free.x + free.w);
+    const y0 = Math.max(Math.min(...points.map((p) => p.y)), free.y);
+    const y1 = Math.min(Math.max(...points.map((p) => p.y)), free.y + free.h);
+    return Math.max(x1 - x0, 0) * Math.max(y1 - y0, 0) < 0.25 * free.w * free.h;
   }
 
   function focusLevelStep(direction) {
@@ -1690,7 +2262,7 @@ export function createScene(host, options) {
       dragging.x = at.x;
       dragging.y = at.y;
       dragging.t = now;
-      overviewMode = false;
+      userMoved();
       hideTip();
       invalidate();
       return;
@@ -1733,7 +2305,7 @@ export function createScene(host, options) {
     event.preventDefault();
     const factor = Math.exp(Math.max(Math.min(event.deltaY, 200), -200) * 0.0015);
     orbit.zoom(factor, false);
-    overviewMode = false;
+    userMoved();
     invalidate();
   }, {passive: false});
   canvas.addEventListener('keydown', (event) => {
@@ -1757,10 +2329,18 @@ export function createScene(host, options) {
     }
     if (handled) {
       event.preventDefault();
-      if (event.key !== 'Home' && event.key !== 'Escape' && event.code !== 'KeyE') overviewMode = false;
+      if (event.key !== 'Escape' && event.code !== 'KeyE') lastTouch = performance.now();
+      if (event.key !== 'Home' && event.key !== 'Escape' && event.code !== 'KeyE' && event.key !== 'PageUp' && event.key !== 'PageDown') userMoved();
       invalidate();
     }
   });
+
+  /** The user moved the camera: it frames nothing in particular now, and an incident does not take it away soon. */
+  function userMoved() {
+    overviewMode = false;
+    focusId = null;
+    lastTouch = performance.now();
+  }
 
   function updateHover(x, y) {
     const next = pick(x, y);
@@ -1825,30 +2405,27 @@ export function createScene(host, options) {
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     obstaclesAt = 0;
-    if (layout && overviewMode) overview(false);
     if (pendingFocus && layout) {
       const id = pendingFocus;
       pendingFocus = null;
       focus(id);
     }
+    // The picture is refitted once the size has settled (the situation strip grows over SETTLE_MS, M2).
+    if (layout) settleSoon('size');
     invalidate();
   }
   const resizeObserver = new ResizeObserver((entries) => {
     if (entries.some((entry) => entry.target === host)) resize();
-    refitOverview(entries.some((entry) => entry.target.id === 'decision-dock'));
+    if (entries.some((entry) => entry.target !== host)) settleSoon('panel');
   });
   resizeObserver.observe(host);
-  for (const id of ['legend', 'stage-hud', 'decision-dock']) {
+  // Not the legend: opening it never moves the mine.
+  for (const id of ['stage-hud', 'decision-dock']) {
     const element = document.getElementById(id);
     if (element) resizeObserver.observe(element);
   }
-  // The dock unfolding over the stage and the stand drawer change no size of the stage: the overview glides
-  // to the part of the stage they leave free.
-  let coverTimer = 0;
-  const coverObserver = new MutationObserver(() => {
-    clearTimeout(coverTimer);
-    coverTimer = setTimeout(() => refitOverview(true), 40);
-  });
+  // The dock unfolding over the stage and the stand drawer change no size of the stage.
+  const coverObserver = new MutationObserver(() => settleSoon('panel'));
   coverObserver.observe(document.body, {attributes: true, attributeFilter: ['data-dock', 'data-stand']});
 
   // ---- context loss ----------------------------------------------------------------------
@@ -1915,16 +2492,42 @@ export function createScene(host, options) {
     if (!linkNowOk && previousLinkOk) snapMotion();
     if (!rebuilt && described.signature === signature) {
       if (!linkNowOk && tweens.size > 0) snapMotion();
+      // The age of a last known state («7 мин назад») follows the model time; a label that changed is placed anew.
+      if (Object.values(view.zones).some((zone) => zone.lastKnown) || Object.values(view.workings).some((working) => working.lastKnown)) {
+        if (setLabels()) invalidate();
+      }
       return;
     }
-    const firstView = view === null;
+    const before = view;
     view = described.view;
     signature = described.signature;
+    // A transition explains a change of a picture already seen: never on the first picture, a new run or a new
+    // topology, never under reduced motion, and not while (or right after) the data were old or the link failed.
+    const settled = Boolean(before) && before.hasSnapshot && !rebuilt && before.run === view.run;
+    const calm = (v) => v.linkOk && !v.old;
+    const animate = settled && calm(before) && calm(view) && !reduced();
     groups = groupWorkers(view.workers);
     updateMotion(previousRun);
     if (!linkNowOk) snapMotion();
+    if (!animate) {
+      finishFx(false);
+      clearGhosts();
+    }
+    const changes = animate ? changesBetween(before, view) : null;
+    if (changes && (changes.zones.size || changes.workings.size || changes.closed.size || changes.sensors.size)) startFx(changes);
+    // The work light fades in on a new selection; it goes at once.
+    const selectedNow = view.selected;
+    if (selectedNow !== (before ? before.selected : null)) {
+      selectFx = animate && selectedNow ? {start: null} : null;
+      selectLevel = selectFx ? 0 : 1;
+    } else if (!animate && selectFx) {
+      selectFx = null;
+      selectLevel = 1;
+    }
+    applySelectLevel();
+    updateScope(Boolean(before) && calm(view) && !reduced());
     buildOverlays();
-    buildRoutes(!firstView);
+    buildRoutes(animate);
     // The loader keeps out of the way of what the model publishes: it moves to the next free place, or goes.
     const place = chooseLoaderPlace();
     const moved = place !== loaderPlaceInfo;
@@ -1935,21 +2538,35 @@ export function createScene(host, options) {
     root.toggleAttribute('data-old', view.old);
     // The moment of the data is named by the line above the stage (view/overlay.js); the caption says what it means here.
     oldText.textContent = view.old ? SCENE.oldData : '';
-    const dim = view.selected ? 0.78 : 1;
-    hemi.intensity = baseLight.hemi * dim;
-    key.intensity = baseLight.key * dim;
-    fill.intensity = baseLight.fill * dim;
     root.setAttribute('data-workers-drawn', String(Object.values(view.workers).filter((worker) => worker.at).length));
     root.setAttribute('data-routes', String(view.routes.length));
     root.setAttribute('data-selected', view.selected || '');
     canvas.setAttribute('aria-label', summary());
+    root.setAttribute('data-scope', view.scope.zones.join(' '));
     if (pendingFocus && width) {
       const id = pendingFocus;
       pendingFocus = null;
       focus(id);
     }
+    frameNewIncident(Boolean(before) && before.hasSnapshot && !rebuilt);
     spritesDirty = true;
     invalidate();
+  }
+
+  /**
+   * An incident that opens while the page is watching is framed once, when the user has left the camera alone
+   * for HANDS_OFF_MS; one already open when the picture appears is not (the overview comes first).
+   */
+  function frameNewIncident(watching) {
+    const incident = incidentOf(state.model);
+    if (!incident || incident.values.state !== 'active' || typeof incident.values.zone !== 'string') return;
+    const opened = Number.isFinite(incident.values.opened_at_tick) ? incident.values.opened_at_tick : JSON.stringify(incident.values.causes || null);
+    const id = `${view.run}:${incident.values.zone}:${opened}`;
+    if (seenIncidents.has(id)) return;
+    seenIncidents.add(id);
+    if (!watching || view.old || !view.linkOk || performance.now() - lastTouch < HANDS_OFF_MS) return;
+    const zone = thingByName(state.model, incident.values.zone);
+    if (zone && focus(zone.thingId)) root.setAttribute('data-auto-framed', id);
   }
 
   function summary() {
@@ -2038,6 +2655,30 @@ export function createScene(host, options) {
       // The pixels of the stage the model takes (its silhouette), and the size of the stage.
       model: layout && width ? silhouetteBox() : null,
       stage: [width, height],
+      // The width of the world seen across the stage at the camera's target, and the widths of the horizons.
+      viewWidth: Math.round((2 * orbit.state.dist * Math.tan((camera.fov * DEG) / 2) * width) / Math.max(height, 1)),
+      levels: layout ? layout.levels.map((level) => ({name: level.name,
+        width: Math.round(Math.max(level.box.maxX - level.box.minX, level.box.maxZ - level.box.minZ))})) : [],
+      focus: focusId,
+      overview: overviewMode,
+      // The labels of the last frame: box, anchor, how far the decluttering pushed each, and its leader.
+      labels: labels.placement,
+      // The transitions now running (for frame sampling in tests): progress of each part, 0…1.
+      motion: {
+        fx: fx ? {
+          started: fx.start !== null, total: fx.total,
+          fades: [...fx.fades.values()].map((material) => Math.round(material.opacity * 1000) / 1000),
+          sweeps: fx.sweeps.map((sweep) => Math.round((sweep.mesh.geometry.drawRange.count / sweep.count) * 1000) / 1000),
+          scales: fx.scales.map((mesh) => Math.round(mesh.scale.x * 1000) / 1000),
+          sensors: [...fx.sensors.keys()],
+        } : null,
+        ghosts: ghosts.map((ghost) => Math.round(ghost.mesh.material.opacity * 1000) / 1000),
+        drawIn: [...drawIn.values()].filter((entry) => entry.start !== -1).length,
+        select: Math.round(selectLevel * 1000) / 1000,
+        scope: Math.round(scopeLevel * 1000) / 1000,
+        scopeZones: scopeDrawn.zones,
+        scopeWorkers: scopeDrawn.workers,
+      },
       // The decorative loader: where it stands (a working and an offset of length_m), how large, whether drawn.
       decor: loader && loaderPlaceInfo ? {
         working: (layout.workings.get(loaderPlaceInfo.working) || {}).thingId || null, offsetM: loaderPlaceInfo.offsetM,
@@ -2053,7 +2694,8 @@ export function createScene(host, options) {
     rafId = 0;
     resizeObserver.disconnect();
     coverObserver.disconnect();
-    clearTimeout(coverTimer);
+    clearTimeout(settleTimer);
+    settleTimer = 0;
     canvas.removeEventListener('webglcontextlost', onLost);
     canvas.removeEventListener('webglcontextrestored', onRestored);
     scene.traverse((object) => {
@@ -2084,22 +2726,9 @@ export function createScene(host, options) {
     },
     /** Pixel position of an object's marker or label anchor, for tests and the card. */
     screenOf(thingId) {
-      if (!layout || !view || !state) return null;
-      const sprite = spriteList.find((entry) => !entry.cell.startsWith('ring') && (entry.key === thingId
-        || (entry.group && entry.group.members.some((member) => view.workers[member].thingId === thingId))));
-      const at = (point) => {
-        const p = project(point);
-        return p ? {...p, world: point.map((v) => Math.round(v * 100) / 100)} : null;
-      };
-      if (sprite) return at(sprite.position);
-      if (thingId === DECOR) return loader && loader.visible ? at([loader.position.x, loader.position.y + 1.2 * WIDTH_FACTOR, loader.position.z]) : null;
-      const thing = state.model.things[thingId];
-      if (thing && thing.kind === 'working' && layout.workings.has(thing.name)) {
-        const line = layout.workings.get(thing.name);
-        const mid = geo.pointAt(sceneLine(layout, line, k), line.cum, line.total / 2).point;
-        return at([mid[0], mid[1] + 0.2, mid[2]]);
-      }
-      return null;
+      const point = markPoint(thingId);
+      const p = point ? project(point) : null;
+      return p ? {...p, world: point.map((v) => Math.round(v * 100) / 100)} : null;
     },
     invalidate,
   };

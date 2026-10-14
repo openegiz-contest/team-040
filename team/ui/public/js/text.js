@@ -296,6 +296,56 @@ export function utcTime(time) {
   return `${two(date.getUTCHours())}:${two(date.getUTCMinutes())}:${two(date.getUTCSeconds())} UTC`;
 }
 
+/**
+ * The model second of a tick: one tick is one model second (CONTRACT.md, decision 7), so a tick
+ * names a moment of model time. Null when no tick is published.
+ */
+export function tickSeconds(tick) {
+  return typeof tick === 'number' && Number.isFinite(tick) && tick >= 0 ? tick : null;
+}
+
+/**
+ * How long ago a moment of model time was, by the model clock: "40 с назад", "7 мин назад",
+ * "1 ч 5 мин назад", "сейчас". Whole units, rounded down. Empty when either moment is unknown or
+ * the moment lies ahead.
+ * @param {number|null|undefined} thenS model seconds of the event
+ * @param {number|null|undefined} nowS model seconds of the shown snapshot
+ */
+export function agoText(thenS, nowS) {
+  if (typeof thenS !== 'number' || typeof nowS !== 'number' || !Number.isFinite(thenS) || !Number.isFinite(nowS)) return '';
+  const age = Math.floor(nowS - thenS);
+  if (age < 0) return '';
+  if (age < 1) return 'сейчас';
+  if (age < 60) return `${age}${NBSP}с назад`;
+  const minutes = Math.floor(age / 60);
+  if (minutes < 60) return `${minutes}${NBSP}мин назад`;
+  const rest = minutes % 60;
+  return `${Math.floor(minutes / 60)}${NBSP}ч${rest > 0 ? ` ${rest}${NBSP}мин` : ''} назад`;
+}
+
+/** A moment by the model clock with its age: "00:13:30 (7 мин назад)"; the clock alone without the age. */
+export function clockAgo(thenS, nowS) {
+  const ago = agoText(thenS, nowS);
+  return ago ? `${modelTime(thenS)} (${ago})` : modelTime(thenS);
+}
+
+/** Inside brackets of their own: "в 00:13:30, 7 мин назад"; "в 00:13:30" without the age. */
+export function atClockAgo(thenS, nowS) {
+  const ago = agoText(thenS, nowS);
+  return ago ? `в ${modelTime(thenS)}, ${ago}` : `в ${modelTime(thenS)}`;
+}
+
+/** A line of the journal: "00:13:30 · 7 мин назад". */
+export function clockAgoLine(thenS, nowS) {
+  const ago = agoText(thenS, nowS);
+  return ago ? `${modelTime(thenS)} ·${NBSP}${ago}` : modelTime(thenS);
+}
+
+/** "тик 1280", for a title; empty without a tick. */
+export function tickWords(tick) {
+  return typeof tick === 'number' ? `тик${NBSP}${tick}` : '';
+}
+
 /** "00:21:20 · тик 1280" */
 export function tickTime(simTimeS, tick) {
   const parts = [];
@@ -365,12 +415,39 @@ export function hazardCodeText(code) {
   return label('hazard', code);
 }
 
-/** "последнее известное: опасно (тик 810)", or an empty string when nothing is kept. */
-export function lastKnownText(values) {
+/**
+ * "последнее известное: опасно в 00:13:30 (7 мин назад)", or an empty string when nothing is kept.
+ * The moment is the tick of the last assessment read as model time; its age is counted from `nowS`,
+ * the model time of the shown snapshot (without it, the clock alone). The tick itself goes into a title
+ * (lastKnownTitle).
+ * @param {Object} values
+ * @param {number} [nowS]
+ */
+export function lastKnownText(values, nowS) {
   if (typeof values.last_known_hazard_state !== 'string') return '';
   const state = hazardCodeText(values.last_known_hazard_state);
-  const tick = typeof values.last_known_hazard_tick === 'number' ? ` (тик${NBSP}${values.last_known_hazard_tick})` : '';
-  return `последнее известное: ${state}${tick}`;
+  const at = tickSeconds(values.last_known_hazard_tick);
+  return `последнее известное: ${state}${at === null ? '' : ` в ${clockAgo(at, nowS)}`}`;
+}
+
+/** "оценка на тике 810", the title next to lastKnownText; empty without a tick. */
+export function lastKnownTitle(values) {
+  return typeof values.last_known_hazard_tick === 'number' ? `оценка на тике${NBSP}${values.last_known_hazard_tick}` : '';
+}
+
+const UNIT_NAME = {'person*s': 'опубликовано в человеко-секундах', 'zone*s': 'опубликовано в участко-секундах',
+  s: 'опубликовано в секундах'};
+
+/**
+ * A result in model person-seconds or zone-seconds, shown in minutes (a conversion of units, nothing
+ * else): "45 чел.·мин". `title` keeps the published value with its own unit. Another unit is shown as is.
+ * @returns {{text: string, title: string}}
+ */
+export function perMinute(value, unitCode) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return {text: DASH, title: ''};
+  const minute = {'person*s': 'чел.·мин', 'zone*s': 'уч.·мин', s: 'мин'}[unitCode];
+  if (!minute) return {text: quantity(value, unitCode), title: ''};
+  return {text: `${num(value / 60, 1)}${NBSP}${minute}`, title: `${quantity(value, unitCode)}, ${UNIT_NAME[unitCode]}`};
 }
 
 /** Why a working or a zone is in its state: "скорость изменения 2,6 мм/ч по Э-03 выше порога «опасно» 2 мм/ч". */
@@ -701,6 +778,8 @@ export const UI = {
     oldTag: 'последние полученные данные:',
     speed: (value) => `×${num(value)}`,
     link: 'Связь',
+    runTitle: (run, seed) => `Прогон ${run}; seed ${seed}`,
+    timeTitle: (tick) => `Время модели; тик${NBSP}${tick}`,
   },
   incident: {
     region: 'Инцидент и люди',
@@ -708,7 +787,7 @@ export const UI = {
     noRoute: 'без расчётного маршрута',
     unknown: 'состояние неизвестно',
     total: 'всего',
-    out: 'вышло',
+    out: 'вышли',
     overlap: 'числа считает модель; один работник может входить в несколько',
     zone: 'участок',
     people: 'Люди',
@@ -722,23 +801,34 @@ export const UI = {
     showRoutes: 'показать маршруты',
     showRoutesWord: 'маршруты',
     openOptions: 'к вариантам',
-    atTick: (tick) => `тик${NBSP}${tick}`,
+    // Step 1: «Участок Г — опасно», «+ потеряны данные Э-05».
+    head: (zone, words) => (zone ? `${zone} — ${words}` : words),
+    more: (words) => `+ ${words}`,
+    cause: {passage_closed: 'закрыт проход', data_lost: 'потеряны данные'},
+    executingOption: (option) => `исполняется: ${option}`,
+    doneOption: (option) => `исполнено: ${option}`,
+    // Step 2: the number is a counter of the model, the codes come from the fields of each worker.
+    inDanger: (count, codes) => `${num(count)}${NBSP}чел. в опасной зоне${codes ? `: ${codes}` : ''}`,
     inZone: (zone, codes) => `${zone}: ${codes}`,
     nobodyInZone: (zone) => `${zone}: работников нет`,
-    noRoute: (codes) => `нет расчётного маршрута: ${codes}`,
-    inDanger: (codes) => `в опасной зоне: ${codes}`,
-    unknown: (codes) => `маршрут не рассчитан: ${codes}`,
+    unknownPeople: (count, codes) => `${num(count)}${NBSP}чел. — состояние неизвестно${codes ? `: ${codes}` : ''}`,
+    // Step 3.
+    noRoute: (codes) => `${codes}: нет расчётного маршрута`,
+    nobodyLeads: 'ни один вариант модели их не выводит',
+    hasRoute: (codes) => `${codes}: расчётный маршрут есть`,
+    unknown: (codes) => `${codes}: маршрут не рассчитан`,
     longer: (items) => `маршрут длиннее: ${items}`,
     plus: (code, metres) => `${code} +${metres}`,
     routesUnchanged: 'расчётные маршруты не удлинились',
     exitsAvailable: 'все выходы доступны (модель)',
     exitsNot: (items) => `выходы: ${items}`,
-    options: (count) => `${counted(count, FORMS.option)} модели`,
+    // Step 4.
+    options: (count) => counted(count, FORMS.option),
     noOptions: 'варианты не опубликованы',
     paused: 'модель ждёт выбора',
     executing: 'решение исполняется',
     done: 'решение исполнено, итог в вариантах',
-    fromWorkers: 'коды из полей работников',
+    honesty: 'Числа — счётчики модели; коды работников — из опубликованных полей каждого работника',
     noIncidentData: 'нет данных об инциденте',
   },
   stand: {
@@ -790,7 +880,7 @@ export const UI = {
     axo: 'Аксонометрия',
     plan: 'План горизонта',
     level: 'Горизонт',
-    allLevels: 'все горизонты',
+    allLevels: 'Горизонт: все',
     note: 'Вертикаль не в масштабе; координаты условные, метры',
     notDrawn: 'Схема не показана',
     noSensors: 'без датчиков, состояние не оценивается',
@@ -806,9 +896,10 @@ export const UI = {
   legend: {
     title: 'Легенда',
     hint: 'одни обозначения для 3D и для схемы',
-    chipLabel: 'Легенда: опасность, знание, достижимость, выход, закрытый проход, маршрут. Развернуть или свернуть',
+    chipLabel: 'Легенда: опасность, данные, достижимость, выход, закрытый проход, маршрут. Развернуть или свернуть',
     hazard: 'Опасность',
-    knowledge: 'Знание',
+    knowledge: 'Данные',
+    workerOk: 'работник (есть расчётный маршрут)',
     reach: 'Достижимость',
     exit: 'Выход',
     commands: 'Команды',
@@ -834,16 +925,16 @@ export const UI = {
     related: 'Связанные объекты',
     modelTime: 'время модели',
     platformTime: 'платформа',
-    measuredAt: (time) => `Измерено ${time} модельного времени`,
-    lastMeasurement: (time) => `Последнее измерение ${time} модельного времени`,
-    indexLastComputed: (tick) => `последнее рассчитанное, тик${NBSP}${tick}`,
+    measuredAt: (time) => `Измерено в ${time} по времени модели`,
+    lastMeasurement: (time) => `Последнее измерение в ${time} по времени модели`,
+    indexLastComputed: (when) => `последнее рассчитанное ${when}`,
     noRoute: (code) => `${code}: нет расчётного маршрута. В графе модели нет открытого пути до выхода`,
     notPublished: 'не опубликовано',
     none: 'нет',
     graphOnly: 'Это утверждение о графе модели, а не о реальной шахте',
     defensive: ' (опубликовано «норма» без актуальных данных)',
     records: (count) => `записей: ${num(count)}`,
-    indexAt: (tick) => `рассчитан на тике${NBSP}${tick}`,
+    indexAt: (when) => `рассчитан ${when}`,
     more: (count) => `Подробнее: все поля (${num(count)})`,
     less: 'Скрыть поля',
     focus: 'Показать на модели',
@@ -876,6 +967,10 @@ export const UI = {
     resume: 'Возобновить работу',
     resumeNote: 'Возобновление работы не возвращает вышедших людей',
     unavailable: 'Недоступно',
+    chooseOption: '— выберите участок —',
+    chooseZone: 'Выберите участок',
+    otherZone: (incident, chosen) => `Инцидент: ${incident}. Выбран другой участок: ${chosen}`,
+    waitsForOption: 'Модель ждёт выбора варианта — см. «Варианты решения». Здесь — отдельные команды по участку',
   },
   reset: {
     title: 'Прогон',
@@ -894,13 +989,18 @@ export const UI = {
     dismiss: 'Снять ожидание',
     close: 'Закрыть сообщение',
     attempts: (count) => `попыток: ${num(count)}`,
+    standOn: (words) => `Условие стенда: ${words}`,
+    standOff: (words) => `Условие стенда снято: ${words}`,
   },
   decision: {
     title: 'Решение',
     noIncident: 'Инцидентов нет. Варианты не предложены',
     noData: 'Нет данных об инциденте и вариантах',
-    forecastFor: (seconds) => `Прогноз модели на ${num(seconds)} секунд для заданного сценария`,
-    forecastTick: (tick) => `рассчитан на тике${NBSP}${tick}`,
+    forecastFor: (seconds) => `Прогноз модели на ${duration(seconds)}`,
+    forecastTick: (time) => `рассчитан в ${time}`,
+    forecastTitle: (seconds, tick) => [typeof seconds === 'number' ? `горизонт ${num(seconds)}${NBSP}с` : '',
+      typeof tick === 'number' ? `тик расчёта ${tick}` : ''].filter(Boolean).join('; '),
+    noRecommendation: 'Модель не рекомендует вариант — сравните и выберите',
     notPublished: 'Прогноз не опубликован',
     qualityNotPublished: 'полнота прогноза не опубликована',
     forecast: 'прогноз модели',
@@ -909,6 +1009,10 @@ export const UI = {
     chosen: 'выбран',
     allOutNo: 'не все вышли',
     noLastOut: 'нет: не все вышли',
+    // The table of options: «все вышли» is one row with its time, written only next to a published `all_out = true`.
+    allOutYesIn: (seconds) => `да, за ${duration(seconds)}`,
+    allOutYes: 'да',
+    allOutNot: 'нет',
     nobodyLeft: 'Ни один вариант модели не выводит этих работников',
     noPath: (codes) => `В графе модели нет открытого пути до выхода для ${codes}. Модель не рассчитывает, как выводить этих работников`,
     incomplete: (count) => `Вывод не завершён: ${counted(count, FORMS.worker)} без расчётного маршрута. Это за пределами того, что решает модель`,
@@ -928,12 +1032,14 @@ export const UI = {
     confirmText: (option, scope) => `${option}. Участки: ${scope}. Модель применит вариант и снимет паузу`,
     factOf: (option) => `Факт прогона: ${option}`,
     tick: (tick) => `тик${NBSP}${tick}`,
-    people: 'люди общей группы на конец расчёта',
+    at: (time) => `в ${time}`,
+    people: 'люди на конец расчёта',
+    peopleIn: (seconds) => `люди через ${duration(seconds)}`,
     peopleShort: 'люди группы',
-    // «из ?»: the size of the common group is not published; the note of the dock says so in words.
-    out: (out, total) => `вышли ${typeof out === 'number' ? num(out) : out} из ${total === null ? '?' : num(total)}`,
+    // Without a published size of the common group no «из N» is written: nothing is invented.
+    out: (out, total) => `вышли ${typeof out === 'number' ? num(out) : out}${total === null ? '' : ` из ${num(total)}`}`,
     inDangerCount: (count) => `${num(count)} в опасных зонах`,
-    noRouteCount: (count) => `${num(count)} без маршрута`,
+    noRouteCount: (count) => `для ${num(count)}${NBSP}чел. выход не рассчитан`,
     leftCount: (count) => `${num(count)} ещё под землёй`,
     overlap: 'числа пересекаются: человек может быть и в опасной зоне, и без маршрута',
     groupFrom: (count, option) => `Общая группа решения — ${num(count)} ${plural(count, ['человек', 'человека', 'человек'])}: `

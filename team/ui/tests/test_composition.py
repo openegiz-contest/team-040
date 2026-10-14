@@ -20,12 +20,13 @@ from __future__ import annotations
 import json
 import time
 
-from screenshots import REWRITE_SHIFT, close_working, set_stand, show_right, wait_decision
+from screenshots import REWRITE_SHIFT, close_working, set_stand, settle, show_right, wait_decision
 
 from .test_scenarios import APP, DECISION, PROBE, Stage3dScenarioCase, ScenarioTestCase, plain, thing
 
 SIZES = ((1280, 720), (1920, 1080))
-CHALK = ("btn--stand", "btn--danger")
+# The stand controls: chalk mark-up, and the reset as a neutral outline (clarity pass, A9: red is hazard-only).
+CHALK = ("btn--stand", "btn--reset")
 
 # Where an object is drawn relative to the stage: the share of the stage's width and height from its top left corner.
 WHERE = """(async (id) => {
@@ -40,13 +41,15 @@ class SituationStripTest(Stage3dScenarioCase):
         return self.page.evaluate(f"{WHERE}({json.dumps(thing(name))})")
 
     def test_show_steps_move_the_camera_in_3d(self):
-        """Every «показать» of the strip glides the camera to its object, and selects nothing; «к вариантам» opens the dock."""
+        """Every «показать» of the strip glides the camera to its object; step 1 also selects the incident's zone (clarity
+        pass, A1: the card and the actions follow it), steps 2 and 3 select nothing; «к вариантам» opens the dock."""
         self.open3d("sensor_lost_after_danger")
         self.assertEqual(self.attr('[data-testid="incident-strip"]', "data-open"), "true")
         # The incident of this story: causes `hazard` of Участок В (tick 700) and `data_lost` of Э-05; every step points at the zone.
         far = self.where("zone-c")
         for step, target in ((1, "zone-c"), (2, "zone-c"), (3, "zone-c")):
             with self.subTest(step=step):
+                self.js(f"{APP}.ctx.select(null);")
                 self.page.click('[data-testid="stage-overview"]')
                 overview = self.wait_idle()["camera"]
                 frames = int(self.stage()["frames"])
@@ -58,12 +61,18 @@ class SituationStripTest(Stage3dScenarioCase):
                 self.assertNotEqual(stage["camera"], overview, "the camera moved")
                 self.assertGreaterEqual(int(stage["frames"]) - frames, 5, "it glided over several frames")
                 distance = [float(value) for value in stage["camera"].split()][2]
-                self.assertLess(distance, [float(value) for value in overview.split()][2] * 0.6, "and came closer")
+                # Closer than the overview, never a close-up: the framing keeps about a horizon in view (clarity pass,
+                # camera rule of U2).
+                self.assertLess(distance, [float(value) for value in overview.split()][2], "and came closer")
                 where = self.where(target)
                 self.assertTrue(where["visible"])
                 self.assertTrue(0.05 <= where["x"] <= 0.95 and 0.05 <= where["y"] <= 0.95,
                                 f"{target} is brought into the stage: {where}")
-                self.assertIsNone(self.js(f"return {APP}.store.getState().ui.selected;"), "showing is not selecting")
+                selected = self.js(f"return {APP}.store.getState().ui.selected;")
+                if step == 1:
+                    self.assertEqual(selected, thing("zone-c"), "step 1 selects the incident's zone")
+                else:
+                    self.assertIsNone(selected, "showing is not selecting")
         self.assertNotEqual(far, self.where("zone-c"))
         # Step 4 unfolds the dock with the options and puts the focus on its toggle.
         self.page.click('[data-testid="situation-show-4"]')
@@ -202,13 +211,15 @@ class DockTest(Stage3dScenarioCase):
         before = self.page.evaluate(size)
         self.page.click('[data-testid="dock-toggle"]')
         self.page.wait_for("document.body.dataset.dock === 'open'", timeout=2.0)
+        time.sleep(0.3)    # it unfolds over 200 ms (clarity pass, M3): the toggle is pressed where it stands then
         self.assertEqual(self.attr('[data-testid="dock-toggle"]', "aria-expanded"), "true")
         self.assertTrue(self.visible("#decision"))
         self.assertEqual(self.count(f'{DECISION} th[data-state="offered"]'), 3)
         self.assertEqual(self.page.evaluate(size), before, "over the stage: the stage keeps its size")
         self.page.click('[data-testid="dock-toggle"]')
         self.page.wait_for("document.body.dataset.dock === 'collapsed'", timeout=2.0)
-        self.assertFalse(self.page.evaluate("document.getElementById('decision').getClientRects().length > 0"))
+        self.page.wait_for("document.getElementById('decision').getClientRects().length === 0", timeout=1.0,
+                           message="folded after its 200 ms")
 
         # 1920x1080: the decision point unfolds the dock under the stage by itself; folding it gives the room back.
         self.page.set_viewport(1920, 1080)
@@ -400,6 +411,7 @@ class NoWebglTest(ScenarioTestCase):
         self.wait_body(12.0, runState="paused")
         self.assertEqual(self.counters()["in-danger"], "3")
         self.assertEqual(self.drawn()[thing("zone-d")]["hazard"], "danger")
+        settle(self.page)    # the strip unfolds when the incident opens (clarity pass, M2)
         self.page.click('[data-testid="situation-show-2"]')
         self.page.wait_for(f"location.hash.includes('sel={thing('zone-d')}')", timeout=2.0, message="«показать» selects the zone")
         self.assertEqual(self.text('[data-testid="card"] .card__code'), "Участок Г")

@@ -281,7 +281,7 @@ class SchemeTestCase(BrowserTestCase):
         text = self.text_of(self.node("zone-c"))
         self.assertIn("Участок В: состояние неизвестно", text)
         self.assertIn("данные потеряны", text)
-        self.assertIn("последнее известное: опасно (тик", text)
+        self.assertIn("последнее известное: опасно в 00:13:30", text)
         self.assertIn("новый вход запрещён моделью", text)
         self.assertNotIn("норма", text)
         self.assertTrue(self.page.evaluate("document.querySelector('#scheme .halo--unknown.halo--last-danger') !== null"))
@@ -298,9 +298,9 @@ class SchemeTestCase(BrowserTestCase):
         self.select("zone-c")
         self.page.wait_for("document.querySelector('[data-testid=\"card\"]').textContent.includes('Участок В')")
         card = self.card()
-        self.assertIn("последнее известное: опасно (тик", card)
+        self.assertIn("последнее известное: опасно в 00:13:30", card)
         self.assertIn("синтетический индекс нестабильности", card)
-        self.assertIn("последнее рассчитанное, тик", card)
+        self.assertIn("последнее рассчитанное в 00:13:30, ", card)
         self.assertNotIn("вероятност", card.lower())
 
     def test_unknown_codes_are_shown_as_unknown(self):
@@ -563,7 +563,7 @@ class SchemeTestCase(BrowserTestCase):
         card = self.card()
         self.assertIn("датчик Э-04", card)
         self.assertIn("скорость изменения 1,3 мм/ч", card)
-        self.assertIn("Измерено 00:", card)
+        self.assertIn("Измерено в 00:", card)
         self.assertIn("is-selected", self.attrs("sens-ext-04")["cls"])
         self.page.click('[data-testid="card-close"]')
         self.page.wait_for("!location.hash.includes('sel=')")
@@ -712,9 +712,9 @@ class SchemeTestCase(BrowserTestCase):
         })()""")
         self.assertEqual((chip["tag"], chip["expanded"], chip["panelHidden"]), ("BUTTON", "false", True), "folded at first")
         # Folded: the three axes and the exit by name, each with its key symbols, the closed passage and the route.
-        self.assertEqual(chip["titles"], ["Опасность:", "Знание:", "Достижимость:", "Выход:"])
+        self.assertEqual(chip["titles"], ["Опасность:", "Данные:", "Достижимость:", "Выход:"])
         for words in ("норма", "внимание", "опасно", "состояние неизвестно", "данные актуальны", "данные устарели",
-                      "данные потеряны", "без датчиков, состояние не оценивается", "расчётный маршрут (модель)",
+                      "данные потеряны", "без датчиков, состояние не оценивается", "работник (есть расчётный маршрут)",
                       "нет расчётного маршрута", "маршрут не рассчитан", "доступен (модель)", "проход закрыт"):
             self.assertIn(words, chip["hints"], "every key symbol of the chip names its state")
         self.assertEqual(chip["symbols"], 14, "4 hazard, 4 knowledge, 3 reachability, the exit, the closed passage, the route")
@@ -729,7 +729,7 @@ class SchemeTestCase(BrowserTestCase):
         self.page.wait_for("!document.getElementById('legend-panel').hidden", timeout=3.0, message="the legend unfolds")
         self.assertEqual(self.page.evaluate("document.querySelector('[data-testid=\"legend-toggle\"]').getAttribute('aria-expanded')"), "true")
         legend = self.text_of("#legend-panel")
-        for axis in ("Опасность:", "Знание:", "Достижимость:", "Выход:", "Команды:"):
+        for axis in ("Опасность:", "Данные:", "Достижимость:", "Выход:", "Команды:"):
             self.assertIn(axis, legend)
         for words in ("норма", "внимание", "опасно", "состояние неизвестно", "последнее известное: опасно",
                       "данные актуальны", "данные устарели", "данные потеряны", "без датчиков, состояние не оценивается",

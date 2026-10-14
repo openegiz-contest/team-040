@@ -10,6 +10,12 @@ metres), data-frames, data-tweens, data-routes, data-measured-ms.
 
     PYTHONUTF8=1 python -m unittest discover -s team/ui/tests -t team/ui -p "test_scene3d.py" -v
 
+The clarity pass adds (clarity spec B, C): the framing of «показать» and of an
+incident that opens (FramingTest), refits caused by panels (PanelRefitTest), the
+highlight of a hovered decision option (HoverOptionTest) and the transitions
+that explain a change (TransitionTest, ReducedMotionTransitionTest). Motion is
+verified by sampling `ctx.stage.info().motion` in the page every 15–30 ms.
+
 The last test measures (and does not assert tightly) the figures reported in
 the 3D section of the README; they are written to test-output/scene3d-measure.json.
 """
@@ -246,7 +252,9 @@ class BootTest(Stage3dCase):
         camera = [float(value) for value in after["camera"].split()]
         self.assertEqual(camera[0], before[0], "the azimuth is kept")
         self.assertEqual(camera[1], before[1], "and the elevation")
-        self.assertLess(camera[2], before[2] * 0.6, "the camera came closer")
+        # A zone is framed with its people, the ends of their routes and its horizon, never closer than about one
+        # horizon width (clarity spec B): closer than the overview, not a close-up.
+        self.assertLess(camera[2], before[2] * 0.9, "the camera came closer")
         self.assertGreaterEqual(int(after["frames"]) - frames, 8, "it glided over several frames")
         self.assertTrue(self.js(f"return {APP}.ctx.stage.focus('level-380');"), "a level by its local name")
         self.wait_idle()
@@ -498,6 +506,10 @@ class CompositionTest(Stage3dCase):
     def test_the_overview_fills_the_stage_and_refits_when_the_dock_folds(self):
         self.open_decision()
         self.wait_idle()
+        # The incident opened while the page was watching and was framed by itself: Home is the overview.
+        self.focus_canvas()
+        self.page.press("Home")
+        self.wait_idle()
         info = self.js(f"return {APP}.ctx.stage.info();")
         left, top, right, bottom = info["model"]
         width, height = info["stage"]
@@ -517,6 +529,505 @@ class CompositionTest(Stage3dCase):
         self.assertGreater(folded["model"][3] - folded["model"][1], bottom - top, "the overview grew with the stage")
         self.assertEqual(self.camera()[:2], camera[:2], "the azimuth and the elevation are kept")
         self.page.set_viewport(1280, 720)
+
+
+# Samples `ctx.stage.info().motion` every `step` ms for `ms` ms, after running `act` (a statement), in the page;
+# the samples are kept in window.__samples, and returned when `wait` is true.
+SAMPLE = """(async () => {
+  const app = (await import('/js/main.js')).app;
+  const stage = document.querySelector('#stage');
+  const out = [];
+  window.__samples = out;
+  const run = async () => {
+    %(act)s;
+    const t0 = performance.now();
+    while (performance.now() - t0 < %(ms)d) {
+      const info = app.ctx.stage.info();
+      out.push({t: Math.round(performance.now() - t0), m: info && info.motion, r: stage.dataset.rendering,
+        fx: document.querySelector('#stage-3d .s3').dataset.fx || null});
+      await new Promise((resolve) => setTimeout(resolve, %(step)d));
+    }
+    out.done = true;
+    return out;
+  };
+  return %(wait)s ? run() : (run(), true);
+})()"""
+
+# Where an object is drawn, relative to the 3D stage, and whether a label is shown inside it.
+PLACE = """(async (ids) => {
+  const app = (await import('/js/main.js')).app;
+  const box = document.getElementById('stage-3d').getBoundingClientRect();
+  return ids.map((id) => {
+    const p = app.ctx.stage.screenOf(id);
+    return p && {id, visible: p.visible, x: p.x - box.left, y: p.y - box.top};
+  });
+})"""
+
+LABEL = """((key) => {
+  const node = document.querySelector(`#stage-3d .s3-label[data-label="${key}"]`);
+  if (!node) return null;
+  const r = node.getBoundingClientRect();
+  const box = document.getElementById('stage-3d').getBoundingClientRect();
+  return {culled: node.hasAttribute('data-culled'), x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height,
+    cls: node.className};
+})"""
+
+
+class Stage3dStoryCase(Stage3dCase):
+    """A story with an incident: danger_zone reaches its decision point six publications after the start."""
+
+    def decision(self, scenario="danger_zone", route=""):
+        stage = self.open(scenario, route)
+        self.page.wait_for("document.body.dataset.runState === 'paused'", timeout=30.0, message="the decision point")
+        time.sleep(0.8)
+        self.wait_idle()
+        return stage
+
+    def info(self):
+        return self.js(f"return {APP}.ctx.stage.info();")
+
+    def place(self, *names):
+        return self.page.evaluate(f"{PLACE}({json.dumps([thing(name) for name in names])})", timeout=10.0)
+
+    def label(self, key):
+        return self.page.evaluate(f"{LABEL}({json.dumps(key)})")
+
+    def sample(self, act="", ms=900, step=25):
+        return self.page.evaluate(SAMPLE % {"act": act, "ms": ms, "step": step, "wait": "true"}, timeout=ms / 1000 + 20)
+
+    def sample_around(self, action, ms=900, step=15):
+        """Start sampling in the page, then do `action` (from Python, e.g. a real pointer move), and give the samples."""
+        self.page.evaluate(SAMPLE % {"act": "", "ms": ms, "step": step, "wait": "false"})
+        action()
+        self.page.wait_for("window.__samples.done === true", timeout=ms / 1000 + 20)
+        return self.page.evaluate("window.__samples")
+
+    def free_area(self):
+        """The part of the 3D stage not under the dock unfolded over it, in stage pixels: [top, bottom]."""
+        return self.page.evaluate("""(() => {
+          const box = document.getElementById('stage-3d').getBoundingClientRect();
+          const dock = document.getElementById('decision-dock');
+          const r = dock.getBoundingClientRect();
+          const over = document.body.dataset.dock === 'open' && getComputedStyle(dock).position === 'absolute';
+          return [0, over ? r.top - box.top : box.height, box.width];
+        })()""")
+
+    def assert_in_free_area(self, points, what):
+        top, bottom, width = self.free_area()
+        for point in points:
+            self.assertIsNotNone(point, what)
+            self.assertTrue(point["visible"], f"{what}: {point}")
+            self.assertTrue(0 <= point["x"] <= width and top <= point["y"] <= bottom, f"{what} {point['id']} in the free stage {top}..{bottom}: {point}")
+
+
+class FramingTest(Stage3dStoryCase):
+    """«показать» and the incident: the zone, its people, the ends of their routes and the horizon label (clarity spec B)."""
+
+    def tearDown(self):
+        self.page.set_viewport(1280, 720)
+        super().tearDown()
+
+    def test_show_frames_the_zone_its_people_route_ends_and_horizon_label(self):
+        for width, height in ((1920, 1080), (1280, 720)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport(width, height)
+                self.decision()
+                self.focus_canvas()
+                self.page.press("Home")
+                overview = self.wait_idle()["camera"]
+                frames = int(self.stage()["frames"])
+                zone = thing("zone-d")
+                self.js(f"{APP}.ctx.select({json.dumps(zone)}); {APP}.ctx.stage.focus({json.dumps(zone)}); return true;")
+                stage = self.wait_idle()
+                self.assertNotEqual(stage["camera"], overview)
+                self.assertGreaterEqual(int(stage["frames"]) - frames, 5, "it glided")
+                info = self.info()
+                self.assertEqual(info["focus"], zone)
+                # The zone (its workings), the people in it, and where their published routes end (exit-raise).
+                self.assert_in_free_area(self.place("w-23", "w-24", "w-25", "worker-11", "worker-12", "worker-13"), "zone and people")
+                if width == 1920:
+                    self.assert_in_free_area(self.place("exit-raise"), "the end of their routes")
+                level = self.label("level:level-380")
+                self.assertFalse(level["culled"], "the horizon label is shown")
+                self.assertTrue(level["x"] >= 0 and level["y"] >= 0 and level["x"] + level["w"] <= info["stage"][0]
+                                and level["y"] + level["h"] <= info["stage"][1], f"the horizon label is in the stage: {level}")
+                widths = {entry["name"]: entry["width"] for entry in info["levels"]}
+                self.assertGreaterEqual(info["viewWidth"], 0.9 * widths["level-380"],
+                                        f"never closer than about one horizon width: {info['viewWidth']} m of {widths['level-380']} m")
+
+    def test_with_the_dock_unfolded_at_1280_the_incident_is_framed_above_it(self):
+        self.page.set_viewport(1280, 720)
+        self.decision()
+        self.focus_canvas()
+        self.page.press("Home")
+        self.wait_idle()
+        refits = int(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.refits || '0'"))
+        frames = int(self.stage()["frames"])
+        self.page.click('[data-testid="dock-toggle"]')
+        self.page.wait_for("document.body.dataset.dock === 'open'", timeout=3.0)
+        time.sleep(0.6)
+        stage = self.wait_idle()
+        self.assertLessEqual(int(stage["frames"]) - frames, 3, "a refit caused by a panel is instant")
+        self.assertEqual(int(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.refits")), refits + 1)
+        info = self.info()
+        self.assertEqual(info["focus"], thing("zone-d"), "the incident, not the whole mine")
+        self.assert_in_free_area(self.place("w-23", "w-24", "w-25", "worker-11", "worker-12", "worker-13"), "zone and people above the dock")
+        level = self.label("level:level-380")
+        top, bottom, _ = self.free_area()
+        self.assertFalse(level["culled"])
+        self.assertLessEqual(level["y"] + level["h"], bottom, f"the horizon label is above the dock: {level}")
+        widths = {entry["name"]: entry["width"] for entry in info["levels"]}
+        self.assertGreaterEqual(info["viewWidth"], 0.9 * widths["level-380"], "about one horizon width at least")
+        self.assertLessEqual(info["viewWidth"], 2.5 * widths["level-380"], "not the whole mine shrunk into a strip")
+        # The HUD folds to icons and the scale box goes while the dock is open below 1600 px.
+        hud = self.page.evaluate("""(() => ({
+          words: [...document.querySelectorAll('#stage-hud .hud__text')].map((n) => getComputedStyle(n).display),
+          icons: [...document.querySelectorAll('#stage-hud .hud__btn > .hud__icon')].map((n) => getComputedStyle(n).display),
+          scale: getComputedStyle(document.querySelector('#stage-3d .s3__gizmo-text')).display,
+          names: [...document.querySelectorAll('#stage-hud button, #stage-hud summary')].filter((n) => n.offsetWidth > 0)
+            .map((n) => n.getAttribute('aria-label') || n.textContent.trim()),
+        }))()""")
+        self.assertEqual(set(hud["words"]), {"none"}, hud)
+        self.assertNotIn("none", hud["icons"], hud)
+        self.assertEqual(hud["scale"], "none")
+        self.assertTrue(all(hud["names"]), f"every folded control keeps its name: {hud['names']}")
+        # Folded again, the framing stays: the incident is not hidden and the stage is not empty.
+        self.page.click('[data-testid="dock-toggle"]')
+        self.page.wait_for("document.body.dataset.dock === 'collapsed'", timeout=3.0)
+        time.sleep(0.6)
+        camera = self.wait_idle()["camera"]
+        self.assertEqual(camera, stage["camera"], "folding the dock does not move the picture")
+        self.assertEqual(self.page.evaluate("getComputedStyle(document.querySelector('#stage-3d .s3__gizmo-text')).display"), "flex")
+
+    def test_an_incident_that_opens_is_framed_once_unless_the_user_moved_the_camera(self):
+        self.page.set_viewport(1920, 1080)
+        self.open("danger_zone")
+        self.assertTrue(self.info()["overview"], "the overview first")
+        self.page.wait_for("document.querySelector('#stage-3d .s3').dataset.autoFramed !== undefined", timeout=30.0,
+                           message="the incident is framed when it opens")
+        self.assertIn("zone-d", self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.autoFramed"))
+        self.wait_idle()
+        info = self.info()
+        self.assertEqual(info["focus"], thing("zone-d"))
+        self.assert_in_free_area(self.place("worker-11", "worker-12", "worker-13"), "the people of the incident")
+        # Once per incident: the next publications of the same incident do not move the camera.
+        camera = self.camera()
+        self.page.evaluate("window.__probe.raf = 0")
+        time.sleep(3.0)
+        self.assertEqual(self.camera(), camera)
+        self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "nothing moves after it")
+        # A user who moved the camera in the last 10 s keeps his view.
+        self.open("danger_zone")
+        self.focus_canvas()
+        self.page.press("ArrowLeft")
+        moved = self.wait_idle()["camera"]
+        self.page.wait_for("document.body.dataset.runState === 'paused'", timeout=30.0)
+        time.sleep(1.0)
+        self.wait_idle()
+        self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.autoFramed || null"))
+        self.assertEqual(self.camera()[:2], [float(v) for v in moved.split()][:2], "the user's azimuth and elevation stay")
+        self.assertIsNone(self.info()["focus"])
+
+    def test_an_incident_already_open_on_load_keeps_the_overview(self):
+        for scenario in ("paused_heartbeat", "sensor_lost_after_danger"):
+            with self.subTest(scenario=scenario):
+                self.open(scenario)
+                time.sleep(1.5)
+                self.wait_idle()
+                info = self.info()
+                self.assertTrue(info["overview"], f"{scenario}: the overview on load")
+                self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.autoFramed || null"))
+
+
+class PanelRefitTest(Stage3dStoryCase):
+    def test_opening_the_legend_never_moves_the_mine(self):
+        for scenario in ("normal", "danger_zone"):
+            with self.subTest(scenario=scenario):
+                if scenario == "normal":
+                    self.open(scenario)
+                else:
+                    self.decision(scenario)
+                camera = self.wait_idle()["camera"]
+                refits = self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.refits || '0'")
+                self.page.click('[data-testid="legend-toggle"]')
+                self.page.wait_for("document.querySelector('[data-testid=\"legend-toggle\"]').getAttribute('aria-expanded') === 'true'",
+                                   timeout=3.0)
+                time.sleep(0.6)
+                self.wait_idle()
+                self.assertEqual(self.camera(), [float(v) for v in camera.split()], "the legend opened over the stage")
+                self.assertEqual(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.refits || '0'"), refits)
+                self.page.click('[data-testid="legend-toggle"]')
+                time.sleep(0.6)
+                self.wait_idle()
+                self.assertEqual(self.camera(), [float(v) for v in camera.split()], "and closed")
+
+    def test_the_stand_drawer_moves_the_overview_only_when_it_would_hide_the_incident(self):
+        self.open("normal")
+        camera = self.wait_idle()["camera"]
+        self.page.evaluate("document.querySelector('[data-testid=\"stand-toggle\"]').click()")
+        self.page.wait_for("document.body.dataset.stand === 'open'", timeout=3.0)
+        time.sleep(0.6)
+        self.wait_idle()
+        self.assertEqual(self.stage()["camera"], camera, "no incident: the drawer does not move the mine")
+        self.page.evaluate("document.querySelector('[data-testid=\"stand-toggle\"]').click()")
+        self.page.wait_for("document.body.dataset.stand === 'closed'", timeout=3.0)
+
+
+class HoverOptionTest(Stage3dStoryCase):
+    """C: the option under the pointer in the dock lights the zones of its published scope and the people in them now."""
+
+    def unfold(self):
+        self.page.evaluate("""(() => { const t = document.querySelector('[data-testid="dock-toggle"]');
+          if (document.body.dataset.dock !== 'open') t.click(); })()""")
+        self.page.wait_for("document.body.dataset.dock === 'open'", timeout=3.0)
+        time.sleep(0.6)
+        self.wait_idle()
+
+    def point_at(self, name):
+        """Move the pointer over the column of an option in the dock, or over the stage when `name` is None."""
+        if name:
+            box = self.page.evaluate(f"""(() => {{ const n = document.querySelector('[data-testid="decision-options"] th[data-column="{name}"]')
+              || document.querySelector('[data-option="{name}"]');
+              const r = n.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()""")
+        else:
+            box = self.page.evaluate("(() => { const r = document.getElementById('stage-3d').getBoundingClientRect();"
+                                     " return [r.left + 40, r.top + r.height / 2]; })()")
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": box[0], "y": box[1]})
+
+    def scope_labels(self):
+        return self.page.evaluate("[...document.querySelectorAll('#stage-3d .s3-label.is-scope')].map((n) => n.dataset.thingId).sort()")
+
+    def test_hovered_option_highlights_its_zones_and_their_people(self):
+        self.page.set_viewport(1920, 1080)
+        self.decision()
+        self.unfold()
+        model = self.js(f"""const s = {APP}.store.getState();
+          const zones = (name) => s.model.byName[name].attrs.workings;
+          return Object.fromEntries(s.model.byKind.zone.map((z) => [z.name, s.model.byKind.worker
+            .filter((w) => w.values.status !== 'out' && zones(z.name).includes(w.values.at_working)).map((w) => w.name).sort()]));""")
+        cases = (("option-stop-withdraw", ["zone-d"]), ("option-withdraw-all", ["zone-a", "zone-b", "zone-c", "zone-d"]),
+                 ("option-observe", []))
+        for option, zones in cases:
+            with self.subTest(option=option):
+                self.point_at(option)
+                self.page.wait_for(f"(async () => (await import('/js/main.js')).app.store.getState().ui.hoverOption === {json.dumps(thing(option))})()",
+                                   timeout=3.0, message="the dock names the option under the pointer")
+                time.sleep(0.4)
+                self.wait_idle()
+                motion = self.info()["motion"]
+                people = sorted(name for zone in zones for name in model[zone])
+                self.assertEqual(motion["scopeZones"], zones, "the zones of the published scope")
+                self.assertEqual(motion["scopeWorkers"], people, "and the people now in them")
+                self.assertEqual(motion["scope"], 1)
+                labelled = self.scope_labels()
+                for zone in zones:
+                    self.assertIn(thing(zone), labelled, f"the tag of {zone} is lit")
+                for other in {"zone-a", "zone-b", "zone-c", "zone-d"} - set(zones):
+                    self.assertNotIn(thing(other), labelled)
+                if option == "option-stop-withdraw":
+                    self.assertNotIn("worker-14", people, "Р-14 belongs to Участок Г but stands outside it: not lit")
+                    self.assertTrue(any(thing(name) in labelled for name in ("worker-11", "worker-12", "worker-13")),
+                                    f"the labels of its people are lit: {labelled}")
+        self.point_at(None)
+        time.sleep(0.5)
+        self.wait_idle()
+        self.assertEqual(self.info()["motion"]["scopeZones"], [], "nothing is lit without an option")
+        self.assertEqual(self.scope_labels(), [])
+        self.page.set_viewport(1280, 720)
+
+    def test_the_highlight_fades_in_and_out_once(self):
+        self.page.set_viewport(1920, 1080)
+        self.decision()
+        self.unfold()
+        samples = self.sample_around(lambda: self.point_at("option-stop-withdraw"), ms=800)
+        levels = [s["m"]["scope"] for s in samples if s["m"]["scopeZones"] == ["zone-d"]]
+        self.assertTrue(levels, samples[:4])
+        self.assertTrue(any(0 < level < 1 for level in levels), f"it fades in: {levels}")
+        self.assertEqual(levels[-1], 1, "and ends lit")
+        self.assertEqual(levels, sorted(levels), "once, never back")
+        lit = [s["t"] for s in samples if s["m"]["scopeZones"] == ["zone-d"] and s["m"]["scope"] == 1]
+        first = [s["t"] for s in samples if s["m"]["scopeZones"] == ["zone-d"]][0]
+        self.assertLessEqual(lit[0] - first, 450, f"over about 150 ms: lit {lit[0] - first} ms after it began")
+        self.wait_idle()
+        samples = self.sample_around(lambda: self.point_at(None), ms=800)
+        out = [s["m"]["scope"] for s in samples if s["m"]["scopeZones"] == ["zone-d"]]
+        self.assertTrue(any(0 < level < 1 for level in out), f"it fades out: {out}")
+        self.assertEqual(out, sorted(out, reverse=True), "once")
+        self.assertEqual(samples[-1]["m"]["scopeZones"], [], "and nothing stays lit")
+        self.page.set_viewport(1280, 720)
+
+
+class TransitionTest(Stage3dStoryCase):
+    """B, M6–M10: each transition runs once, ends in the published state, never on load."""
+
+    def test_a_hazard_change_sweeps_once_and_ends_in_the_published_state(self):
+        self.page.set_viewport(1280, 720)
+        self.open("danger_zone")
+        self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.fxCount || null"), "nothing on load")
+        samples = self.sample(ms=11000, step=30)
+        with_fx = [s for s in samples if s["m"]["fx"]]
+        self.assertTrue(with_fx, "the change of Участок Г was explained")
+        names = with_fx[0]["fx"].split()
+        for name in ("zone:zone-d", "zone:zone-c", "sensor:sens-ext-05"):
+            self.assertIn(name, names, f"{name} changed in this publication")
+        sweeps = [s["m"]["fx"]["sweeps"] for s in with_fx if s["m"]["fx"]["started"] and s["m"]["fx"]["sweeps"]]
+        fades = [s["m"]["fx"]["fades"] for s in with_fx if s["m"]["fx"]["started"] and s["m"]["fx"]["fades"]]
+        self.assertTrue(any(0 < value < 1 for sweep in sweeps for value in sweep), f"the outline swept: {sweeps[:6]}")
+        self.assertTrue(any(0 < value < 1 for fade in fades for value in fade), f"the hatch faded in: {fades[:6]}")
+        duration = with_fx[-1]["t"] - with_fx[0]["t"]
+        self.assertLessEqual(duration, 1200, f"about 450 ms, not more: {duration} ms")
+        self.assertIsNone(samples[-1]["m"]["fx"], "it ended")
+        self.assertEqual(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.fxCount"), "1", "once")
+        self.wait_idle()
+        self.page.evaluate("window.__probe.raf = 0")
+        time.sleep(2.5)
+        self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "and nothing moves after it")
+        # The end is the published state: the same pixels as the same state drawn without a transition.
+        after = self.stage_pixels("after")
+        self.page.goto(self.mock.url + "/")
+        self.page.wait_for("document.body.dataset.boot === 'ready' && document.body.dataset.runState === 'paused'", timeout=30.0)
+        self.page.wait_for("(() => { const s = document.querySelector('#stage').dataset; return Number(s.frames) > 0"
+                           " && s.measuredMs !== undefined && s.rendering === 'idle'; })()", timeout=30.0)
+        time.sleep(1.0)
+        self.wait_idle()
+        self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.fxCount || null"), "no transition on load")
+        self.assertEqual(self.stage_pixels("fresh"), after, "the transition ended exactly in the published picture")
+
+    def stage_pixels(self, name):
+        """The canvas of the overview without the HTML over it (labels and their leaders, gizmo, HUD, legend, tabs), as PNG bytes."""
+        self.focus_canvas()
+        self.page.press("Home")
+        self.wait_idle()
+        over = "'#stage-3d .s3__labels, #stage-3d .s3__leaders, #stage-3d .s3__gizmo, #stage-hud, #legend, #centre > .centre__bar'"
+        self.page.evaluate(f"document.querySelectorAll({over}).forEach((n) => {{ n.style.visibility = 'hidden'; }})")
+        box = self.page.evaluate("(() => { const r = document.querySelector('#stage-3d canvas').getBoundingClientRect();"
+                                 " return [r.left, r.top, r.width, r.height]; })()")
+        path = os.path.join(OUTPUT_DIR, f"scene3d-end-state-{name}.png")
+        self.page.screenshot(path, clip=tuple(box))
+        self.page.evaluate(f"document.querySelectorAll({over}).forEach((n) => {{ n.style.visibility = ''; }})")
+        with open(path, "rb") as handle:
+            return handle.read()
+
+    def test_a_closed_passage_sets_its_barricade_once(self):
+        self.open("no_path")
+        samples = self.sample(act="app.ctx.sendCommand('condition.close_working', 'w-07')", ms=6000, step=20)
+        scales = [s["m"]["fx"]["scales"] for s in samples if s["m"]["fx"] and s["m"]["fx"]["started"] and s["m"]["fx"]["scales"]]
+        self.assertTrue(scales, "the barricade of В-07 was set in place")
+        values = [scale[0] for scale in scales]
+        self.assertGreaterEqual(min(values), 0.7)
+        self.assertEqual(values, sorted(values), f"it grows once: {values}")
+        names = [s["fx"] for s in samples if s["fx"]]
+        self.assertIn("closed:w-07", names[0].split())
+        self.assertIsNone(samples[-1]["m"]["fx"])
+        self.assertFalse(self.page.evaluate("Boolean(document.querySelector('#stage-3d .s3-label.is-arriving'))"),
+                         "the label appeared and stays without the transition class")
+        self.assertEqual(self.page.evaluate(f"document.querySelector('#stage-3d .s3-label[data-thing-id=\"{thing('w-07')}\"]').dataset.passability"),
+                         "closed")
+
+    def test_a_route_change_fades_the_old_route_and_draws_the_new_one(self):
+        self.open("paused_heartbeat")
+        self.js(f"{APP}.ctx.select({json.dumps(thing('worker-03'))}); return true;")
+        self.wait_idle()
+        self.assertEqual(self.stage()["routes"], "1")
+        samples = self.sample(act=f"app.ctx.select({json.dumps(thing('worker-04'))})", ms=900, step=20)
+        ghosts = [s["m"]["ghosts"] for s in samples if s["m"]["ghosts"]]
+        self.assertTrue(ghosts, "the route of Р-03 fades out")
+        values = [ghost[0] for ghost in ghosts]
+        self.assertEqual(values, sorted(values, reverse=True), f"once: {values}")
+        self.assertTrue(any(s["m"]["drawIn"] > 0 for s in samples), "the route of Р-04 draws itself in")
+        self.assertEqual(samples[-1]["m"]["ghosts"], [], "no lasting ghost")
+        self.assertEqual(samples[-1]["m"]["drawIn"], 0)
+        levels = [s["m"]["select"] for s in samples]
+        self.assertTrue(any(0 < level < 1 for level in levels), f"the work light fades in (M10): {levels[:10]}")
+        self.assertEqual(levels[-1], 1)
+
+    def test_nothing_runs_on_load(self):
+        for scenario, route in (("sensor_lost_after_danger", ""), ("paused_heartbeat", f"#/scheme?sel={thing('worker-03')}"),
+                                ("no_path", "")):
+            with self.subTest(scenario=scenario):
+                self.open(scenario, route)
+                time.sleep(1.2)
+                self.wait_idle()
+                motion = self.info()["motion"]
+                self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.fxCount || null"))
+                self.assertEqual((motion["fx"], motion["ghosts"], motion["drawIn"], motion["select"]), (None, [], 0, 1))
+
+    def test_no_transition_for_a_change_seen_after_old_data(self):
+        self.open("danger_zone")
+        self.mock.fault("http_502")
+        try:
+            self.page.wait_for("document.body.dataset.link === 'unavailable'", timeout=10.0)
+            self.page.wait_for("document.querySelector('#stage-3d .s3').hasAttribute('data-old')", timeout=3.0)
+            time.sleep(4.0)
+        finally:
+            self.mock.fault("none")
+        samples = self.sample(ms=6000, step=30)
+        self.assertTrue(any(s["m"] and s["r"] for s in samples))
+        self.assertEqual([s["fx"] for s in samples if s["fx"]], [], "the change that happened meanwhile is shown at once")
+        self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.fxCount || null"))
+
+
+class ReducedMotionTransitionTest(Stage3dStoryCase):
+    def setUp(self):
+        super().setUp()
+        self.page.send("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+
+    def test_every_transition_is_instant(self):
+        self.open("danger_zone")
+        samples = self.sample(ms=10000, step=30)
+        self.page.wait_for("document.body.dataset.runState === 'paused'", timeout=10.0)
+        self.wait_idle()
+        self.assertEqual([s["fx"] for s in samples if s["fx"]], [], "no hazard transition")
+        self.assertEqual(self.info()["focus"], thing("zone-d"), "the incident is framed, at once")
+        frames = int(self.stage()["frames"])
+        samples = self.sample(act=f"app.ctx.select({json.dumps(thing('zone-d'))}); app.ctx.hoverOption({json.dumps(thing('option-withdraw-all'))})",
+                              ms=600, step=20)
+        self.assertTrue(all(s["m"]["select"] == 1 and s["m"]["scope"] == 1 and not s["m"]["ghosts"] for s in samples),
+                        "the work light and the scope appear at once")
+        self.wait_idle()
+        self.assertLessEqual(int(self.stage()["frames"]) - frames, 2, "one frame for the change")
+        self.assertEqual(self.page.evaluate("document.getAnimations().length"), 0, "no CSS transition either")
+
+
+class LeaderTest(Stage3dStoryCase):
+    """A label the decluttering pushed away from its anchor keeps a leader to its object (danger_zone at 1280x720:
+    the tag of Участок Г on −380 m must not read as a tag of −320 m it may lie over)."""
+
+    def test_pushed_labels_lead_to_their_objects(self):
+        self.decision()
+        found = self.js("""
+          const st = (await import('/js/main.js')).app.ctx.stage;
+          const svg = document.querySelector('#stage-3d .s3__leaders');
+          const origin = svg.getBoundingClientRect();
+          const {min, labels} = st.info().labels;
+          return {min, hidden: svg.getAttribute('aria-hidden'), labels: labels.map((label) => {
+            const p = label.thingId ? st.screenOf(label.thingId) : null;
+            const g = svg.querySelector(`[data-leader="${CSS.escape(label.key)}"]`);
+            const line = g && g.querySelector('.s3-leader__line');
+            return {...label, mark: p && p.visible ? [p.x - origin.left, p.y - origin.top] : label.anchor,
+              drawn: line ? ['x1', 'y1', 'x2', 'y2'].map((name) => Number(line.getAttribute(name))) : null};
+          })};""")
+        self.assertEqual(found["hidden"], "true", "the leaders are not read by assistive technology")
+        pushed = [label for label in found["labels"] if label["off"] > found["min"]]
+        self.assertTrue(pushed, f"some label is pushed away in danger_zone at 1280x720: {found['labels']}")
+        for label in found["labels"]:
+            with self.subTest(label=label["key"]):
+                # A label in its own place may still carry a short stem (a zone's tag floating above its zone).
+                if label["off"] <= found["min"] and not label["drawn"]:
+                    continue
+                box = label["box"]
+                mark = label["mark"]
+                near = [min(max(mark[0], box["x"]), box["x"] + box["w"]), min(max(mark[1], box["y"]), box["y"] + box["h"])]
+                if ((near[0] - mark[0]) ** 2 + (near[1] - mark[1]) ** 2) ** 0.5 <= 4:
+                    continue  # the mark touches the label: nothing to lead to
+                self.assertIsNotNone(label["drawn"], f"pushed {label['off']} px from its anchor, it has a leader")
+                x1, y1, x2, y2 = label["drawn"]
+                self.assertLessEqual(((x2 - mark[0]) ** 2 + (y2 - mark[1]) ** 2) ** 0.5, 3.0,
+                                     f"the leader ends on the object's mark {mark}: {label['drawn']}")
+                # It starts on the label's edge and never runs over the label itself.
+                self.assertTrue(box["x"] - 0.5 <= x1 <= box["x"] + box["w"] + 0.5 and box["y"] - 0.5 <= y1 <= box["y"] + box["h"] + 0.5)
+                edge = min(abs(x1 - box["x"]), abs(x1 - box["x"] - box["w"]), abs(y1 - box["y"]), abs(y1 - box["y"] - box["h"]))
+                self.assertLessEqual(edge, 0.2, f"the leader starts on the edge of {box}: {label['drawn']}")
 
 
 class LoaderTest(Stage3dCase):

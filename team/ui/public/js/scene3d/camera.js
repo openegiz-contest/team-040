@@ -80,6 +80,16 @@ export function createOrbit(camera, options) {
     };
   }
 
+  /** A new end for the running glide (the stage changed under it); a jump when none runs. */
+  function retarget(view) {
+    if (!glide || options.reducedMotion()) {
+      set(view);
+      return;
+    }
+    if (view.target) glide.to.target.copy(view.target);
+    for (const name of ['az', 'el', 'dist']) if (Number.isFinite(view[name])) glide.to[name] = view[name];
+  }
+
   /** Right and forward unit vectors of the ground plane as seen from the camera. */
   function groundAxes() {
     const right = new THREE.Vector3(Math.cos(state.az), 0, -Math.sin(state.az));
@@ -228,9 +238,13 @@ export function createOrbit(camera, options) {
   }
 
   return {
-    state, limits, apply, set, glideTo, drag, release, zoom, rotate, pan, step, fit, stop,
+    state, limits, apply, set, glideTo, retarget, drag, release, zoom, rotate, pan, step, fit, stop,
     get gliding() {
       return glide !== null;
+    },
+    /** Where the camera is going: the end of the running glide, or where it is. */
+    get goal() {
+      return glide ? glide.to : {target: state.target, az: state.az, el: state.el, dist: state.dist};
     },
   };
 }

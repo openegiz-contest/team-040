@@ -19,6 +19,7 @@
 //               `ctx.roots.decisionSummary` (the one-line summary in the bar of
 //               the decision dock, owned by view/decision.js).
 //   select(thingId | null)                    select an object (full thingId) or clear the selection
+//   hoverOption(thingId | null)               the option the user points at or has chosen (ui.hoverOption)
 //   setView('scheme' | 'list' | 'runs')
 //   setProjection('axo' | 'plan')
 //   setLevel(localName | null)                the level of the plan
@@ -164,6 +165,7 @@ function start() {
   const ctx = {
     store, text, roots,
     select: (thingId) => setUi({selected: thingId || null}),
+    hoverOption: (thingId) => setUi({hoverOption: thingId || null}),
     setView: (view) => setUi({view}),
     setProjection: (projection) => setUi({projection}),
     setLevel: (level) => setUi({level: level || null}),

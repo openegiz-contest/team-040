@@ -3,7 +3,8 @@
 // code this interface does not know is shown as it came. A jump of `seq` is
 // said in its own line: missing events are never passed over in silence.
 // Condensed by default: the latest three lines; the button of its bar unfolds
-// the whole journal (body[data-journal="open"]).
+// the whole journal (body[data-journal="open"]). A line starts with its moment
+// by the model clock and its age («00:13:30 · 7 мин назад»); the tick is in its title.
 
 import {h, reconcile, setAttrs, setText} from '../dom.js';
 import {labelOf, thingsOfKind} from '../model.js';
@@ -116,7 +117,11 @@ export function mount(root, ctx) {
     const {event} = line;
     const [time, words, command, run] = node.children;
     setAttrs(node, {'data-seq': event.seq, 'data-code': event.code, 'data-run': event.run});
-    setText(time, text.tickTime(event.sim_time_s, event.tick));
+    // The age is counted in the run of the event only: a moment of another run has no age here.
+    const sameRun = typeof event.run !== 'string' || !state.snapshot || event.run === state.snapshot.run;
+    const now = state.snapshot && sameRun ? state.snapshot.simTimeS : undefined;
+    setText(time, typeof event.sim_time_s === 'number' ? text.clockAgoLine(event.sim_time_s, now) : text.tickTime(null, event.tick));
+    setAttrs(time, {title: text.tickWords(event.tick) || null});
     setText(words, eventText(text, state, event));
     command.hidden = typeof event.command_id !== 'string';
     setText(command, command.hidden ? '' : `${UI.journal.command} ${text.shortCommandId(event.command_id)}`);
@@ -131,8 +136,9 @@ export function mount(root, ctx) {
     const events = journal && Array.isArray(journal.values.events) ? journal.values.events : [];
     const lastSeq = journal ? journal.values.last_seq : undefined;
     // The journal changes far less often than the snapshot: the same events are not written again.
+    // The age of the lines follows the model clock: a new model time is a new picture too.
     const signature = journal && journal.hasState
-      ? [state.snapshot.run, lastSeq, ...events.map((event) => (event ? event.seq : ''))].join() : null;
+      ? [state.snapshot.run, state.snapshot.simTimeS, lastSeq, ...events.map((event) => (event ? event.seq : ''))].join() : null;
     if (signature !== null && signature === shown && shownFor === state.attributes) return;
     shown = signature;
     shownFor = state.attributes;

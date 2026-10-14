@@ -207,8 +207,11 @@ class BootAndListTest(CoreTestCase):
         self.assertEqual(self.text_of("status-notice"), "Синтетические данные. Расчёт модели, не сведения о реальной шахте")
         self.assertEqual(self.text_of("status-link"), "Платформа: связь есть")
         self.assertRegex(self.text_of("status-age"), r"^данные [01] с назад$")
-        self.assertRegex(self.text_of("status-model-time"), r"^Модель \d\d:\d\d:\d\d · тик \d+ · ×10 · модель идёт$")
-        self.assertEqual(self.text_of("status-run"), "Прогон run-0005 · seed 42")
+        # Time, not ticks (clarity pass, A8); the tick and the seed are in the titles (A7).
+        self.assertRegex(self.text_of("status-model-time"), r"^Модель \d\d:\d\d:\d\d · ×10 · модель идёт$")
+        self.assertRegex(self.page.evaluate("document.querySelector('[data-testid=\"status-model-time\"]').title"), r"^Время модели; тик\s\d+$")
+        self.assertEqual(self.text_of("status-run"), "Прогон run-0005")
+        self.assertEqual(self.page.evaluate("document.querySelector('[data-testid=\"status-run\"]').title"), "Прогон run-0005; seed 42")
         self.assertEqual(self.text_of("status-conditions"), "Условия стенда: нет")
         self.assertTrue(self.page.evaluate("document.querySelector('[data-testid=\"status-commands\"]').hidden"))
         strip = self.page.evaluate("Object.assign({}, document.querySelector('[data-testid=\"incident-strip\"]').dataset)")
@@ -290,7 +293,8 @@ class BootAndListTest(CoreTestCase):
           .map((cell) => cell.textContent.replace(/\\u00a0/g, ' '))""")
         self.assertEqual(cells[0], "участок")
         self.assertEqual(cells[1], "Участок В")
-        self.assertEqual(cells[3], "состояние неизвестнопоследнее известное: опасно (тик 810)",
+        # The moment of the last assessment by the model clock with its age (clarity pass, A8); the tick is in the title.
+        self.assertRegex(cells[3], r"^состояние неизвестнопоследнее известное: опасно в 00:13:30 \(\d+ мин назад\)$",
                          "the last known danger stays visible after the sensor is lost")
         marks = self.page.evaluate(f"""[...document.querySelector('[data-testid="list"] tr[data-thing-id="{NS}:zone-c"]')
           .cells[3].children].map((node) => [node.className, node.hidden])""")
@@ -298,7 +302,7 @@ class BootAndListTest(CoreTestCase):
                          "unknown now and danger before are two separate marks")
         self.assertEqual(cells[4], "данные потеряны")
         self.assertIn("новый вход запрещён моделью", cells[5])
-        self.assertRegex(cells[7], r"^\d\d:\d\d:\d\d · тик \d+$")
+        self.assertRegex(cells[7], r"^\d\d:\d\d:\d\d$")
         self.assertRegex(cells[8], r"^\d\d:\d\d:\d\d UTC$")
         sensor = rows[f"{NS}:sens-ext-05"]["text"]
         self.assertIn("данные потеряны; нет связи", sensor)
@@ -479,7 +483,8 @@ class LinkStatesTest(CoreTestCase):
         self.assertEqual(self.text_of("status-conditions"), "Условия стенда: В-12 закрыта")
         strip = self.page.evaluate("document.querySelector('[data-testid=\"incident-strip\"]').dataset.incidentState")
         self.assertEqual(strip, "active")
-        self.assertIn("Инцидент: Участок Б — закрыт проход (В-12)", self.text_of("incident-strip"))
+        # Step 1 says the zone and what happened to it (clarity pass, A4); the state word is in its title.
+        self.assertIn("Участок Б — закрыт проход В-12", self.text_of("incident-strip"))
         self.assertEqual(self.page.evaluate("document.body.dataset.dock"), "collapsed",
                          "an active incident brings the decision dock; at 1280x720 it shows its bar over the stage")
 
@@ -971,6 +976,7 @@ class ShellTest(CoreTestCase):
         self.assertEqual(self.page.focus_info()["testid"], "stand-toggle", "Esc gives the focus back to the button")
         self.page.click('[data-testid="dock-toggle"]')
         self.assertEqual(self.body()["dock"], "open")
+        time.sleep(0.35)    # the dock unfolds over 200 ms (clarity pass, M3); the legend chip follows it
         cover = self.page.evaluate("[parseFloat(getComputedStyle(document.getElementById('centre')).getPropertyValue('--dock-cover')),"
                                    " document.getElementById('decision-dock').getBoundingClientRect().top,"
                                    " document.getElementById('legend').getBoundingClientRect().bottom]")

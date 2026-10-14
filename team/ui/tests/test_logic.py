@@ -1142,6 +1142,8 @@ class ModelTest(LogicTestCase):
             label: [zone.label, zone.kind, zone.name, zone.thingId, zone.hasState],
             zoneHazard: zone.hazard, zoneAttrs: M.stateAttributes(zone),
             lastKnown: T.lastKnownText(zone.values),
+            lastKnownNow: T.lastKnownText(zone.values, checked.snapshot.simTimeS),
+            lastKnownTitle: T.lastKnownTitle(zone.values),
             sensorAttrs: M.stateAttributes(M.thingByName(model, 'sens-ext-05')),
             workerAttrs: M.stateAttributes(worker, true),
             exitAttrs: M.stateAttributes(M.thingByName(model, 'exit-shaft')),
@@ -1175,7 +1177,11 @@ class ModelTest(LogicTestCase):
             "data-hazard": "unknown", "data-quality": "lost", "data-last-known-hazard": "danger",
             "data-work-state": "working", "data-withdrawal": "none",
         })
-        self.assertEqual(plain(got["lastKnown"]), "последнее известное: опасно (тик 810)")
+        # Time, not ticks (clarity pass, A8): the tick of the last assessment read as model time, its age by the
+        # model clock of the snapshot; the tick itself is in the title.
+        self.assertEqual(plain(got["lastKnown"]), "последнее известное: опасно в 00:13:30")
+        self.assertRegex(plain(got["lastKnownNow"]), r"^последнее известное: опасно в 00:13:30 \(\d+ мин назад\)$")
+        self.assertEqual(plain(got["lastKnownTitle"]), "оценка на тике 810")
         self.assertEqual(got["sensorAttrs"]["data-quality"], "lost")
         self.assertEqual(got["sensorAttrs"]["data-link"], "offline")
         self.assertEqual(got["workerAttrs"], {
@@ -1763,10 +1769,11 @@ class RouterStoreDomTest(LogicTestCase):
         """)
         parsed = got["parsed"]
         # The route fields, plus the fields of the stage (redesign): stageMode from the hash (`mode`), quality and
-        # explode only from the stage's own controls, all three unset by default.
+        # explode only from the stage's own controls, all three unset by default; and the option pointed at in the
+        # decision dock (clarity pass, C), never from a route.
         default = {"view": "scheme", "projection": "axo", "level": None, "selected": None, "listType": "all",
-                   "stageMode": None, "quality": None, "explode": None}
-        stage = {"stageMode": None, "quality": None, "explode": None}
+                   "stageMode": None, "quality": None, "explode": None, "hoverOption": None}
+        stage = {"stageMode": None, "quality": None, "explode": None, "hoverOption": None}
         self.assertEqual(parsed["empty"], default)
         self.assertEqual(parsed["scheme"], {"view": "scheme", "projection": "plan", "level": "level-320",
                                             "selected": "team040.mine:w-12", "listType": "all", **stage})

@@ -11,9 +11,13 @@
 // While it lies over the stage, its height is published as --dock-cover on the
 // centre column (the legend chip stays above it), and the height of its bar as
 // --dock-bar-cover (the 3D picture and the scheme are fitted above the bar).
+// Unfolding and folding take 200 ms (the height of the body); never under
+// reduced motion or with old data, never when the dock comes or goes with
+// the incident.
 
 import {h, setAttrs} from '../dom.js';
 import {incidentOf} from '../model.js';
+import {EASE, MS, motionAllowed, play} from '../motion.js';
 
 const OPEN = new Set(['active', 'executing', 'done']);
 /** The compact layout of layout.css. */
@@ -33,11 +37,45 @@ export function mount(root, ctx) {
   ctx.roots.dockBar.append(h('h2', {class: 'dock__title', id: 'dock-title', text: UI.dock.title}), summary, toggle);
   setAttrs(root, {role: 'region', 'aria-labelledby': 'dock-title'});
 
+  const body = ctx.roots.decision;
+  let folding = null;
+  let shown = shell.get().dock;
+  /** The body of the dock opens from no height to its own, or closes to none; it stays drawn while it closes. */
+  function move(from, to) {
+    if (!body || !motionAllowed(store.getState())) return;
+    if (from === 'collapsed' && to === 'open') {
+      const height = body.getBoundingClientRect().height;
+      if (height > 0) play(body, [{height: '0px', overflow: 'hidden'}, {height: `${height}px`, overflow: 'hidden'}], {duration: MS.dock, easing: EASE});
+    } else if (from === 'open' && to === 'collapsed') {
+      root.setAttribute('data-folding', 'true');
+      const height = body.getBoundingClientRect().height;
+      const motion = height > 0
+        ? play(body, [{height: `${height}px`, overflow: 'hidden'}, {height: '0px', overflow: 'hidden'}], {duration: MS.dock, easing: EASE}) : null;
+      if (!motion) {
+        root.removeAttribute('data-folding');
+        return;
+      }
+      folding = motion;
+      const end = () => {
+        if (folding !== motion) return;
+        folding = null;
+        root.removeAttribute('data-folding');
+      };
+      motion.finished.then(end, end);
+    }
+  }
   shell.watch((frame) => {
     const open = frame.dock === 'open';
     setAttrs(toggle, {'aria-expanded': String(open), text: open ? UI.dock.collapse : UI.dock.expand});
     root.hidden = frame.dock === 'none';
     setAttrs(root, {'data-dock': frame.dock});
+    if (folding) {
+      folding.cancel();
+      folding = null;
+      root.removeAttribute('data-folding');
+    }
+    move(shown, frame.dock);
+    shown = frame.dock;
   });
 
   const unfolded = () => (window.matchMedia && window.matchMedia(COMPACT).matches ? 'collapsed' : 'open');
