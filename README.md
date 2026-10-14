@@ -43,6 +43,8 @@ Example Mine запускать не требуется. Внешние API-кл
 python3 -m unittest team.sim.test_model team.gateway.test_gateway -v
 python3 -m unittest team.sim.test_journal team.sim.test_parameters -v
 python3 -m team.sim.sensitivity
+python3 -m team.sim.comparison --check team/research/comparison.json
+python3 -m unittest team.sim.test_comparison -v
 make smoke
 python3 -m team.smoke
 python3 -m team.restart_smoke
@@ -55,6 +57,10 @@ make down
 команды и исполняет вывод; занимает около двух минут. `make down` сохраняет данные,
 а `make clean` удаляет данные всей платформы. Автономные Python-команды на Windows
 можно выполнять через `py -3`.
+
+Таблица 12 автономных прогонов и объяснения:
+[сравнение действий](team/research/comparison.md). Отчёт отдельно отмечает, что
+при перекрытии текущая модель включает оба участка в область локального вывода.
 
 `team.restart_smoke` после полного smoke перезапускает только симулятор команды и
 проверяет сохранение прогона и дедупликацию повторного reset. Дополнительные

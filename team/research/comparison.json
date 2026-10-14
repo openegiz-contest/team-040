@@ -1,0 +1,1812 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "platform_verified": false,
+  "model_version": "0.1",
+  "topology_version": "t1",
+  "parameters": {
+    "walking_speed_m_s": 1.25,
+    "attention_rate_mm_h": 1.0,
+    "danger_rate_mm_h": 2.0,
+    "baseline_rate_mm_h": 0.2,
+    "unstable_rate_mm_h": 2.6,
+    "stale_after_s": 15,
+    "lost_after_s": 30,
+    "forecast_horizon_s": 900,
+    "speedup": 10
+  },
+  "scenarios": [
+    {
+      "preset": "p-instability",
+      "label": "Нестабильность",
+      "decision_tick": 60,
+      "event_tick": 60,
+      "scope": [
+        "zone-a"
+      ],
+      "causes": [
+        "hazard:zone-a"
+      ],
+      "cohort": [
+        "worker-a1",
+        "worker-a2",
+        "worker-a3",
+        "worker-b1",
+        "worker-b2",
+        "worker-b3"
+      ],
+      "checkpoint_hash": "344c36d5e650a59bd04a7eb8e4dfeac1b484a0631e9a23f08f977c06c242aece",
+      "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+      "initial_routes": {
+        "worker-a1": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 641.8857807434961
+        },
+        "worker-a2": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 661.8857807434961
+        },
+        "worker-a3": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 681.8857807434961
+        },
+        "worker-b1": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1021.3590999637015
+        },
+        "worker-b2": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1041.3590999637015
+        },
+        "worker-b3": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1061.3590999637015
+        }
+      },
+      "decision_routes": {
+        "worker-a1": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 641.8857807434961,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-a2": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 661.8857807434961,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-a3": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 681.8857807434961,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b1": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1021.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b2": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1041.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b3": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1061.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        }
+      },
+      "horizon_s": 900,
+      "rows": [
+        {
+          "option": "observe",
+          "label": "Наблюдать",
+          "target_zones": [],
+          "targeted_workers": 0,
+          "target_out_s": null,
+          "actual": {
+            "out": 0,
+            "all_out": false,
+            "in_danger": 3,
+            "no_route": 0,
+            "unknown": 0,
+            "danger_exposure_person_s": 2700,
+            "unknown_exposure_person_s": 0,
+            "downtime_s": 0
+          },
+          "peak": {
+            "in_danger": 3,
+            "unknown": 0,
+            "no_route": 0
+          },
+          "downtime_since_decision_zone_s": 0,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+            "forecast_tick": 60,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "full",
+            "forecast_out": 0,
+            "forecast_all_out": false,
+            "forecast_in_danger": 3,
+            "forecast_no_route": 0,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 2700,
+            "forecast_unknown_exposure_person_s": 0,
+            "forecast_downtime_s": 0
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+          "finished_at_sim_s": 960,
+          "zones": {
+            "zone-a": {
+              "work_state": "working",
+              "withdrawal_state": "none",
+              "production_rate": 30,
+              "downtime_s": 0
+            },
+            "zone-b": {
+              "work_state": "working",
+              "withdrawal_state": "none",
+              "production_rate": 30,
+              "downtime_s": 0
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 20,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a2": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 40,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a3": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b1": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 20,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 40,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        },
+        {
+          "option": "stop_withdraw_zone",
+          "label": "Вывести затронутые участки",
+          "target_zones": [
+            "zone-a"
+          ],
+          "targeted_workers": 3,
+          "target_out_s": 546,
+          "actual": {
+            "out": 3,
+            "all_out": false,
+            "in_danger": 0,
+            "no_route": 0,
+            "unknown": 0,
+            "danger_exposure_person_s": 96,
+            "unknown_exposure_person_s": 0,
+            "downtime_s": 900
+          },
+          "peak": {
+            "in_danger": 3,
+            "unknown": 0,
+            "no_route": 0
+          },
+          "downtime_since_decision_zone_s": 900,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+            "forecast_tick": 60,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "full",
+            "forecast_out": 3,
+            "forecast_all_out": false,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 0,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 96,
+            "forecast_unknown_exposure_person_s": 0,
+            "forecast_downtime_s": 900
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+          "finished_at_sim_s": 960,
+          "zones": {
+            "zone-a": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            },
+            "zone-b": {
+              "work_state": "working",
+              "withdrawal_state": "none",
+              "production_rate": 30,
+              "downtime_s": 0
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a2": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a3": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b1": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 20,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 40,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        },
+        {
+          "option": "withdraw_all",
+          "label": "Вывести всех",
+          "target_zones": [
+            "zone-a",
+            "zone-b"
+          ],
+          "targeted_workers": 6,
+          "target_out_s": 850,
+          "actual": {
+            "out": 6,
+            "all_out": true,
+            "in_danger": 0,
+            "no_route": 0,
+            "unknown": 0,
+            "danger_exposure_person_s": 96,
+            "unknown_exposure_person_s": 0,
+            "downtime_s": 1800,
+            "last_out_s": 850
+          },
+          "peak": {
+            "in_danger": 3,
+            "unknown": 0,
+            "no_route": 0
+          },
+          "downtime_since_decision_zone_s": 1800,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+            "forecast_tick": 60,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "full",
+            "forecast_out": 6,
+            "forecast_all_out": true,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 0,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 96,
+            "forecast_unknown_exposure_person_s": 0,
+            "forecast_downtime_s": 1800,
+            "forecast_last_out_s": 850
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "69112bde3b7323b865a38a9099179f96aebb61cc5a72e80825cf738d7aede15f",
+          "finished_at_sim_s": 960,
+          "zones": {
+            "zone-a": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            },
+            "zone-b": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a2": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a3": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b1": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "preset": "p-detour",
+      "label": "Закрыт основной проход",
+      "decision_tick": 60,
+      "event_tick": 60,
+      "scope": [
+        "zone-a",
+        "zone-b"
+      ],
+      "causes": [
+        "passage_closed:w-04"
+      ],
+      "cohort": [
+        "worker-a1",
+        "worker-a2",
+        "worker-a3",
+        "worker-b1",
+        "worker-b2",
+        "worker-b3"
+      ],
+      "checkpoint_hash": "d0f3a9a65c43e9b34df6502fcdf7580654b83a25d060c83193b0486475771181",
+      "comparison_key": "8dada34fc0d24dacb50088afbf04e6b8af40557e18979ed22ebdcda1c00c4bd6",
+      "initial_routes": {
+        "worker-a1": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 641.8857807434961
+        },
+        "worker-a2": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 661.8857807434961
+        },
+        "worker-a3": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 681.8857807434961
+        },
+        "worker-b1": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1021.3590999637015
+        },
+        "worker-b2": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1041.3590999637015
+        },
+        "worker-b3": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1061.3590999637015
+        }
+      },
+      "decision_routes": {
+        "worker-a1": {
+          "route": [
+            "w-07",
+            "w-03",
+            "w-01"
+          ],
+          "egress_exit": "exit-a",
+          "egress_length_m": 664.7726750741192,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-a2": {
+          "route": [
+            "w-07",
+            "w-03",
+            "w-01"
+          ],
+          "egress_exit": "exit-a",
+          "egress_length_m": 684.7726750741192,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-a3": {
+          "route": [
+            "w-07",
+            "w-03",
+            "w-01"
+          ],
+          "egress_exit": "exit-a",
+          "egress_length_m": 704.7726750741192,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b1": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1021.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b2": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1041.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b3": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1061.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        }
+      },
+      "horizon_s": 900,
+      "rows": [
+        {
+          "option": "observe",
+          "label": "Наблюдать",
+          "target_zones": [],
+          "targeted_workers": 0,
+          "target_out_s": null,
+          "actual": {
+            "out": 0,
+            "all_out": false,
+            "in_danger": 0,
+            "no_route": 0,
+            "unknown": 0,
+            "danger_exposure_person_s": 0,
+            "unknown_exposure_person_s": 0,
+            "downtime_s": 0
+          },
+          "peak": {
+            "in_danger": 0,
+            "unknown": 0,
+            "no_route": 0
+          },
+          "downtime_since_decision_zone_s": 0,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "8dada34fc0d24dacb50088afbf04e6b8af40557e18979ed22ebdcda1c00c4bd6",
+            "forecast_tick": 60,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "full",
+            "forecast_out": 0,
+            "forecast_all_out": false,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 0,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 0,
+            "forecast_unknown_exposure_person_s": 0,
+            "forecast_downtime_s": 0
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "8dada34fc0d24dacb50088afbf04e6b8af40557e18979ed22ebdcda1c00c4bd6",
+          "finished_at_sim_s": 960,
+          "zones": {
+            "zone-a": {
+              "work_state": "working",
+              "withdrawal_state": "none",
+              "production_rate": 30,
+              "downtime_s": 0
+            },
+            "zone-b": {
+              "work_state": "working",
+              "withdrawal_state": "none",
+              "production_rate": 30,
+              "downtime_s": 0
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 20,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a2": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 40,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a3": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b1": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 20,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 40,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        },
+        {
+          "option": "stop_withdraw_zone",
+          "label": "Вывести затронутые участки",
+          "target_zones": [
+            "zone-a",
+            "zone-b"
+          ],
+          "targeted_workers": 6,
+          "target_out_s": 850,
+          "actual": {
+            "out": 6,
+            "all_out": true,
+            "in_danger": 0,
+            "no_route": 0,
+            "unknown": 0,
+            "danger_exposure_person_s": 0,
+            "unknown_exposure_person_s": 0,
+            "downtime_s": 1800,
+            "last_out_s": 850
+          },
+          "peak": {
+            "in_danger": 0,
+            "unknown": 0,
+            "no_route": 0
+          },
+          "downtime_since_decision_zone_s": 1800,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "8dada34fc0d24dacb50088afbf04e6b8af40557e18979ed22ebdcda1c00c4bd6",
+            "forecast_tick": 60,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "full",
+            "forecast_out": 6,
+            "forecast_all_out": true,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 0,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 0,
+            "forecast_unknown_exposure_person_s": 0,
+            "forecast_downtime_s": 1800,
+            "forecast_last_out_s": 850
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "8dada34fc0d24dacb50088afbf04e6b8af40557e18979ed22ebdcda1c00c4bd6",
+          "finished_at_sim_s": 960,
+          "zones": {
+            "zone-a": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            },
+            "zone-b": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a2": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a3": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b1": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        },
+        {
+          "option": "withdraw_all",
+          "label": "Вывести всех",
+          "target_zones": [
+            "zone-a",
+            "zone-b"
+          ],
+          "targeted_workers": 6,
+          "target_out_s": 850,
+          "actual": {
+            "out": 6,
+            "all_out": true,
+            "in_danger": 0,
+            "no_route": 0,
+            "unknown": 0,
+            "danger_exposure_person_s": 0,
+            "unknown_exposure_person_s": 0,
+            "downtime_s": 1800,
+            "last_out_s": 850
+          },
+          "peak": {
+            "in_danger": 0,
+            "unknown": 0,
+            "no_route": 0
+          },
+          "downtime_since_decision_zone_s": 1800,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "8dada34fc0d24dacb50088afbf04e6b8af40557e18979ed22ebdcda1c00c4bd6",
+            "forecast_tick": 60,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "full",
+            "forecast_out": 6,
+            "forecast_all_out": true,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 0,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 0,
+            "forecast_unknown_exposure_person_s": 0,
+            "forecast_downtime_s": 1800,
+            "forecast_last_out_s": 850
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "8dada34fc0d24dacb50088afbf04e6b8af40557e18979ed22ebdcda1c00c4bd6",
+          "finished_at_sim_s": 960,
+          "zones": {
+            "zone-a": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            },
+            "zone-b": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a2": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a3": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b1": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "preset": "p-trapped",
+      "label": "Закрыт выход с участка",
+      "decision_tick": 60,
+      "event_tick": 60,
+      "scope": [
+        "zone-a",
+        "zone-b"
+      ],
+      "causes": [
+        "passage_closed:w-07"
+      ],
+      "cohort": [
+        "worker-a1",
+        "worker-a2",
+        "worker-a3",
+        "worker-b1",
+        "worker-b2",
+        "worker-b3"
+      ],
+      "checkpoint_hash": "01f52ee628ee142d878126f42ee7dd8b7134cead4a6ac5f3e5d7dac298cbeae1",
+      "comparison_key": "debf13dba29b0987eb3e151f400a30e8a1c5e926005641c27b4763f582088699",
+      "initial_routes": {
+        "worker-a1": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 641.8857807434961
+        },
+        "worker-a2": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 661.8857807434961
+        },
+        "worker-a3": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 681.8857807434961
+        },
+        "worker-b1": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1021.3590999637015
+        },
+        "worker-b2": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1041.3590999637015
+        },
+        "worker-b3": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1061.3590999637015
+        }
+      },
+      "decision_routes": {
+        "worker-a1": {
+          "route": [],
+          "egress_exit": null,
+          "egress_length_m": null,
+          "egress_status": "none",
+          "egress_reason": "current_working_closed"
+        },
+        "worker-a2": {
+          "route": [],
+          "egress_exit": null,
+          "egress_length_m": null,
+          "egress_status": "none",
+          "egress_reason": "current_working_closed"
+        },
+        "worker-a3": {
+          "route": [],
+          "egress_exit": null,
+          "egress_length_m": null,
+          "egress_status": "none",
+          "egress_reason": "current_working_closed"
+        },
+        "worker-b1": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1021.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b2": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1041.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b3": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1061.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        }
+      },
+      "horizon_s": 900,
+      "rows": [
+        {
+          "option": "observe",
+          "label": "Наблюдать",
+          "target_zones": [],
+          "targeted_workers": 0,
+          "target_out_s": null,
+          "actual": {
+            "out": 0,
+            "all_out": false,
+            "in_danger": 0,
+            "no_route": 3,
+            "unknown": 0,
+            "danger_exposure_person_s": 0,
+            "unknown_exposure_person_s": 0,
+            "downtime_s": 0
+          },
+          "peak": {
+            "in_danger": 0,
+            "unknown": 0,
+            "no_route": 3
+          },
+          "downtime_since_decision_zone_s": 0,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "debf13dba29b0987eb3e151f400a30e8a1c5e926005641c27b4763f582088699",
+            "forecast_tick": 60,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "full",
+            "forecast_out": 0,
+            "forecast_all_out": false,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 3,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 0,
+            "forecast_unknown_exposure_person_s": 0,
+            "forecast_downtime_s": 0
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "debf13dba29b0987eb3e151f400a30e8a1c5e926005641c27b4763f582088699",
+          "finished_at_sim_s": 960,
+          "zones": {
+            "zone-a": {
+              "work_state": "working",
+              "withdrawal_state": "none",
+              "production_rate": 30,
+              "downtime_s": 0
+            },
+            "zone-b": {
+              "work_state": "working",
+              "withdrawal_state": "none",
+              "production_rate": 30,
+              "downtime_s": 0
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 20,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
+            "worker-a2": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 40,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
+            "worker-a3": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 60,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
+            "worker-b1": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 20,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 40,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        },
+        {
+          "option": "stop_withdraw_zone",
+          "label": "Вывести затронутые участки",
+          "target_zones": [
+            "zone-a",
+            "zone-b"
+          ],
+          "targeted_workers": 6,
+          "target_out_s": null,
+          "actual": {
+            "out": 3,
+            "all_out": false,
+            "in_danger": 0,
+            "no_route": 3,
+            "unknown": 0,
+            "danger_exposure_person_s": 0,
+            "unknown_exposure_person_s": 0,
+            "downtime_s": 1800
+          },
+          "peak": {
+            "in_danger": 0,
+            "unknown": 0,
+            "no_route": 3
+          },
+          "downtime_since_decision_zone_s": 1800,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "debf13dba29b0987eb3e151f400a30e8a1c5e926005641c27b4763f582088699",
+            "forecast_tick": 60,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "full",
+            "forecast_out": 3,
+            "forecast_all_out": false,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 3,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 0,
+            "forecast_unknown_exposure_person_s": 0,
+            "forecast_downtime_s": 1800
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "debf13dba29b0987eb3e151f400a30e8a1c5e926005641c27b4763f582088699",
+          "finished_at_sim_s": 960,
+          "zones": {
+            "zone-a": {
+              "work_state": "stopped",
+              "withdrawal_state": "incomplete",
+              "production_rate": 0,
+              "downtime_s": 900
+            },
+            "zone-b": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "waiting",
+              "at_working": "w-07",
+              "offset_m": 20,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
+            "worker-a2": {
+              "status": "waiting",
+              "at_working": "w-07",
+              "offset_m": 40,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
+            "worker-a3": {
+              "status": "waiting",
+              "at_working": "w-07",
+              "offset_m": 60,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
+            "worker-b1": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        },
+        {
+          "option": "withdraw_all",
+          "label": "Вывести всех",
+          "target_zones": [
+            "zone-a",
+            "zone-b"
+          ],
+          "targeted_workers": 6,
+          "target_out_s": null,
+          "actual": {
+            "out": 3,
+            "all_out": false,
+            "in_danger": 0,
+            "no_route": 3,
+            "unknown": 0,
+            "danger_exposure_person_s": 0,
+            "unknown_exposure_person_s": 0,
+            "downtime_s": 1800
+          },
+          "peak": {
+            "in_danger": 0,
+            "unknown": 0,
+            "no_route": 3
+          },
+          "downtime_since_decision_zone_s": 1800,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "debf13dba29b0987eb3e151f400a30e8a1c5e926005641c27b4763f582088699",
+            "forecast_tick": 60,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "full",
+            "forecast_out": 3,
+            "forecast_all_out": false,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 3,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 0,
+            "forecast_unknown_exposure_person_s": 0,
+            "forecast_downtime_s": 1800
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "debf13dba29b0987eb3e151f400a30e8a1c5e926005641c27b4763f582088699",
+          "finished_at_sim_s": 960,
+          "zones": {
+            "zone-a": {
+              "work_state": "stopped",
+              "withdrawal_state": "incomplete",
+              "production_rate": 0,
+              "downtime_s": 900
+            },
+            "zone-b": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "waiting",
+              "at_working": "w-07",
+              "offset_m": 20,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
+            "worker-a2": {
+              "status": "waiting",
+              "at_working": "w-07",
+              "offset_m": 40,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
+            "worker-a3": {
+              "status": "waiting",
+              "at_working": "w-07",
+              "offset_m": 60,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
+            "worker-b1": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "preset": "p-sensor",
+      "label": "Потерян датчик",
+      "decision_tick": 74,
+      "event_tick": 60,
+      "scope": [
+        "zone-a"
+      ],
+      "causes": [
+        "data_lost:zone-a"
+      ],
+      "cohort": [
+        "worker-a1",
+        "worker-a2",
+        "worker-a3",
+        "worker-b1",
+        "worker-b2",
+        "worker-b3"
+      ],
+      "checkpoint_hash": "30b90e7a734e512deadbcb321b01ec8edd7e35ad6fd99f1eb9d27c0a207590bc",
+      "comparison_key": "d3c414ae3c1dbe82405d9ceba7166fcd1c82c1874be00164e662f5770834da0f",
+      "initial_routes": {
+        "worker-a1": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 641.8857807434961
+        },
+        "worker-a2": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 661.8857807434961
+        },
+        "worker-a3": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 681.8857807434961
+        },
+        "worker-b1": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1021.3590999637015
+        },
+        "worker-b2": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1041.3590999637015
+        },
+        "worker-b3": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1061.3590999637015
+        }
+      },
+      "decision_routes": {
+        "worker-a1": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 641.8857807434961,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-a2": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 661.8857807434961,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-a3": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 681.8857807434961,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b1": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1021.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b2": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1041.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-b3": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1061.3590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        }
+      },
+      "horizon_s": 900,
+      "rows": [
+        {
+          "option": "observe",
+          "label": "Наблюдать",
+          "target_zones": [],
+          "targeted_workers": 0,
+          "target_out_s": null,
+          "actual": {
+            "out": 0,
+            "all_out": false,
+            "in_danger": 0,
+            "no_route": 0,
+            "unknown": 3,
+            "danger_exposure_person_s": 0,
+            "unknown_exposure_person_s": 2700,
+            "downtime_s": 0
+          },
+          "peak": {
+            "in_danger": 0,
+            "unknown": 3,
+            "no_route": 0
+          },
+          "downtime_since_decision_zone_s": 0,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "d3c414ae3c1dbe82405d9ceba7166fcd1c82c1874be00164e662f5770834da0f",
+            "forecast_tick": 74,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "partial",
+            "forecast_out": 0,
+            "forecast_all_out": false,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 0,
+            "forecast_unknown": 3,
+            "forecast_danger_exposure_person_s": 0,
+            "forecast_unknown_exposure_person_s": 2700,
+            "forecast_downtime_s": 0
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "d3c414ae3c1dbe82405d9ceba7166fcd1c82c1874be00164e662f5770834da0f",
+          "finished_at_sim_s": 974,
+          "zones": {
+            "zone-a": {
+              "work_state": "working",
+              "withdrawal_state": "none",
+              "production_rate": 30,
+              "downtime_s": 0
+            },
+            "zone-b": {
+              "work_state": "working",
+              "withdrawal_state": "none",
+              "production_rate": 30,
+              "downtime_s": 0
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 20,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a2": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 40,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a3": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b1": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 20,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 40,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        },
+        {
+          "option": "stop_withdraw_zone",
+          "label": "Вывести затронутые участки",
+          "target_zones": [
+            "zone-a"
+          ],
+          "targeted_workers": 3,
+          "target_out_s": 546,
+          "actual": {
+            "out": 3,
+            "all_out": false,
+            "in_danger": 0,
+            "no_route": 0,
+            "unknown": 0,
+            "danger_exposure_person_s": 0,
+            "unknown_exposure_person_s": 96,
+            "downtime_s": 900
+          },
+          "peak": {
+            "in_danger": 0,
+            "unknown": 3,
+            "no_route": 0
+          },
+          "downtime_since_decision_zone_s": 900,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "d3c414ae3c1dbe82405d9ceba7166fcd1c82c1874be00164e662f5770834da0f",
+            "forecast_tick": 74,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "partial",
+            "forecast_out": 3,
+            "forecast_all_out": false,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 0,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 0,
+            "forecast_unknown_exposure_person_s": 96,
+            "forecast_downtime_s": 900
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "d3c414ae3c1dbe82405d9ceba7166fcd1c82c1874be00164e662f5770834da0f",
+          "finished_at_sim_s": 974,
+          "zones": {
+            "zone-a": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            },
+            "zone-b": {
+              "work_state": "working",
+              "withdrawal_state": "none",
+              "production_rate": 30,
+              "downtime_s": 0
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a2": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a3": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b1": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 20,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 40,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        },
+        {
+          "option": "withdraw_all",
+          "label": "Вывести всех",
+          "target_zones": [
+            "zone-a",
+            "zone-b"
+          ],
+          "targeted_workers": 6,
+          "target_out_s": 850,
+          "actual": {
+            "out": 6,
+            "all_out": true,
+            "in_danger": 0,
+            "no_route": 0,
+            "unknown": 0,
+            "danger_exposure_person_s": 0,
+            "unknown_exposure_person_s": 96,
+            "downtime_s": 1800,
+            "last_out_s": 850
+          },
+          "peak": {
+            "in_danger": 0,
+            "unknown": 3,
+            "no_route": 0
+          },
+          "downtime_since_decision_zone_s": 1800,
+          "forecast": {
+            "decision_id": "run-0002-d1",
+            "comparison_key": "d3c414ae3c1dbe82405d9ceba7166fcd1c82c1874be00164e662f5770834da0f",
+            "forecast_tick": 74,
+            "forecast_horizon_s": 900,
+            "forecast_quality": "partial",
+            "forecast_out": 6,
+            "forecast_all_out": true,
+            "forecast_in_danger": 0,
+            "forecast_no_route": 0,
+            "forecast_unknown": 0,
+            "forecast_danger_exposure_person_s": 0,
+            "forecast_unknown_exposure_person_s": 96,
+            "forecast_downtime_s": 1800,
+            "forecast_last_out_s": 850
+          },
+          "forecast_matches_actual": true,
+          "comparison_key": "d3c414ae3c1dbe82405d9ceba7166fcd1c82c1874be00164e662f5770834da0f",
+          "finished_at_sim_s": 974,
+          "zones": {
+            "zone-a": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            },
+            "zone-b": {
+              "work_state": "stopped",
+              "withdrawal_state": "done",
+              "production_rate": 0,
+              "downtime_s": 900
+            }
+          },
+          "workers": {
+            "worker-a1": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a2": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a3": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b1": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b2": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b3": {
+              "status": "out",
+              "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
