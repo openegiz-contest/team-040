@@ -1,0 +1,54 @@
+services:
+  telegraf:
+    volumes:
+      - ../../team/history/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - ../../team/history/ditto_scalar.star:/etc/telegraf/ditto_scalar.star:ro
+
+  team-simulator:
+    build:
+      context: ../..
+      dockerfile: team/Dockerfile
+    image: openegiz/team040:local
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      DITTO_URL: http://ditto-nginx:80
+      DITTO_PASSWORD: ${DITTO_PASSWORD}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      STATE_PATH: /state/model.json
+    volumes:
+      - team040-state:/state
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import pathlib,time; assert time.time()-float(pathlib.Path('/state/heartbeat').read_text()) < 10"]
+      interval: 10s
+      timeout: 3s
+      start_period: 90s
+      retries: 3
+
+  team-ui:
+    image: openegiz/team040:local
+    pull_policy: never
+    restart: unless-stopped
+    mem_limit: 128m
+    command: ["python", "-m", "team.gateway.server"]
+    ports:
+      - "127.0.0.1:${TEAM_UI_PORT:-8088}:8088"
+    environment:
+      DITTO_URL: http://ditto-nginx:80
+      DITTO_PASSWORD: ${DITTO_PASSWORD}
+      UI_BIND: 0.0.0.0
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  team040-state:

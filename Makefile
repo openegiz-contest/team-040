@@ -9,7 +9,7 @@ COMPOSE_BASE := docker compose -f deploy/compose/docker-compose.yml
 # `make clean` forgets it.
 MINE_MARKER  := deploy/compose/.example-mine
 MINE_COMPOSE := examples/mine/compose.yml
-COMPOSE := $(COMPOSE_BASE)$(if $(wildcard $(MINE_MARKER)), -f $(MINE_COMPOSE))
+COMPOSE := $(COMPOSE_BASE) -f team/compose.yml$(if $(wildcard $(MINE_MARKER)), -f $(MINE_COMPOSE))
 
 ## Start the whole platform with Docker Compose (first run: generates credentials)
 up:

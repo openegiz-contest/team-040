@@ -9,6 +9,8 @@ cat <<TXT
 
 OpenEgiz is up.
 
+  Team 040 UI    http://127.0.0.1:${TEAM_UI_PORT:-8088}
+
   Grafana        http://$H:$GRAFANA_PORT        admin / $GRAFANA_ADMIN_PASSWORD
   Ditto API      http://$H:$DITTO_PORT/api/2    ditto / $DITTO_PASSWORD   (devops / $DITTO_DEVOPS_PASSWORD)
   Extended API   http://$H:$EXTENDED_API_PORT
