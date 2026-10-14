@@ -1,0 +1,286 @@
+/* Shared tokens and controls of the dispatcher screen. One light theme, system
+   fonts only, no shadows, no gradients, no filters. A state is never told by
+   colour alone: every badge and banner also differs by outline and carries text. */
+
+:root {
+  --font-sans: system-ui, "Segoe UI", Roboto, Ubuntu, "DejaVu Sans", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+
+  --fs-xs: 11px;
+  --fs-s: 12px;
+  --fs-m: 13px;
+  --fs-l: 15px;
+  --fs-xl: 18px;
+  --lh: 1.35;
+
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+
+  --c-bg: #e9ece9;
+  --c-panel: #ffffff;
+  --c-panel-2: #f4f6f4;
+  --c-border: #b4bbb6;
+  --c-border-strong: #4f5853;
+  --c-text: #141816;
+  --c-muted: #535d58;
+
+  --c-ok: #1b5a38;
+  --c-ok-bg: #edf5ef;
+  --c-attention: #6f4300;
+  --c-attention-bg: #fff2c9;
+  --c-attention-border: #a86c00;
+  --c-danger: #96181b;
+  --c-danger-bg: #fde6e3;
+  --c-danger-border: #96181b;
+  --c-unknown: #38424f;
+  --c-unknown-bg: #e9edf2;
+  --c-unknown-border: #5f6b7a;
+  --c-info: #1a4b78;
+  --c-info-bg: #e4eef8;
+  --c-info-border: #2f6ea8;
+
+  --c-accent: #0a56a3;
+  --c-focus: #0a56a3;
+  --c-selected-bg: #d9e9fb;
+
+  /* The two groups of the left panel must never be confused: they differ by
+     hue, by border style and by the shape of their buttons. */
+  --c-stand: #45396d;
+  --c-stand-bg: #f0edf8;
+  --c-stand-border: #7669a6;
+  --c-dispatch: #12443f;
+  --c-dispatch-bg: #e6f2ef;
+  --c-dispatch-border: #1d6a62;
+
+  --radius: 2px;
+  --control-h: 26px;
+  --move-ms: 600ms;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { font-size: var(--fs-m); }
+
+body {
+  margin: 0;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font: var(--fs-m)/var(--lh) var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+h1, h2, h3, h4, p, ul, ol, dl, dd, figure { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+[hidden] { display: none !important; }
+
+:focus { outline: none; }
+:focus-visible {
+  outline: 3px solid var(--c-focus);
+  outline-offset: 1px;
+}
+/* SVG shapes take no outline-offset in every engine: scheme objects get a stroke from their own stylesheet as well. */
+svg :focus-visible { outline: 3px solid var(--c-focus); }
+
+.mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--c-muted); }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+.glyph {
+  flex: none;
+  width: 16px; height: 16px;
+  stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  vertical-align: -3px;
+}
+
+/* Moving markers may glide between two published positions. The glide is
+   switched off the moment the link is not ok: a stale picture must not move. */
+.move-transition { transition: transform var(--move-ms) linear; }
+body:not([data-link="ok"]) .move-transition,
+body[data-old-data] .move-transition { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .move-transition { transition: none; }
+}
+
+/* ---- panels ------------------------------------------------------------ */
+
+.panel {
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+}
+.panel__title {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--c-text);
+}
+.panel__subtitle { font-size: var(--fs-s); color: var(--c-muted); }
+.empty-note { padding: var(--sp-4); color: var(--c-muted); }
+
+/* ---- buttons ----------------------------------------------------------- */
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  min-height: var(--control-h);
+  padding: 2px 10px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--radius);
+  background: var(--c-panel);
+  color: var(--c-text);
+  font: inherit; font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { background: var(--c-panel-2); border-color: var(--c-text); }
+.btn:active:not(:disabled) { background: var(--c-selected-bg); }
+.btn:disabled, .btn[aria-disabled="true"] {
+  border-style: dashed;
+  border-color: var(--c-border);
+  color: var(--c-muted);
+  background: var(--c-panel-2);
+  cursor: not-allowed;
+}
+.btn--small { min-height: 22px; padding: 1px 7px; font-size: var(--fs-s); }
+.btn--block { display: flex; width: 100%; }
+.btn--primary { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
+.btn--primary:hover:not(:disabled) { background: #084684; border-color: #084684; }
+.btn--danger { border-color: var(--c-danger-border); border-width: 2px; color: var(--c-danger); }
+.btn--danger:hover:not(:disabled) { background: var(--c-danger-bg); border-color: var(--c-danger-border); }
+/* Stand conditions: rounded, dashed. Dispatcher actions: square, solid and heavy. */
+.btn--stand { border: 1px dashed var(--c-stand-border); border-radius: 13px; color: var(--c-stand); background: var(--c-panel); }
+.btn--stand:hover:not(:disabled) { background: var(--c-stand-bg); border-color: var(--c-stand); }
+.btn--dispatch { border: 2px solid var(--c-dispatch-border); border-radius: 0; color: var(--c-dispatch); background: var(--c-panel); }
+.btn--dispatch:hover:not(:disabled) { background: var(--c-dispatch-bg); border-color: var(--c-dispatch); }
+
+/* ---- form controls ----------------------------------------------------- */
+
+.field { font-size: var(--fs-s); color: var(--c-muted); }
+.select, .input {
+  min-height: var(--control-h);
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--radius);
+  background: var(--c-panel);
+  color: var(--c-text);
+  font: inherit;
+}
+.select:disabled, .input:disabled { border-style: dashed; color: var(--c-muted); background: var(--c-panel-2); }
+
+/* ---- tabs -------------------------------------------------------------- */
+
+.tab {
+  min-height: 28px;
+  padding: 3px 14px;
+  border: 1px solid var(--c-border);
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: var(--c-panel-2);
+  color: var(--c-muted);
+  font: inherit; font-weight: 600;
+  cursor: pointer;
+}
+.tab + .tab { margin-left: -1px; }
+.tab:hover { color: var(--c-text); background: var(--c-panel); }
+.tab.is-current {
+  background: var(--c-panel);
+  color: var(--c-text);
+  border-bottom-color: var(--c-text);
+}
+.tab--small { min-height: 24px; padding: 2px 10px; font-size: var(--fs-s); }
+
+/* ---- badges and chips --------------------------------------------------
+   Outline tells the state without colour: none (ok), dashed (attention),
+   double (danger), dotted (unknown), inverted (blocked). */
+
+.badge {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+.badge--ok { padding: 0; border: 0; color: var(--c-text); }
+.badge--attention { border: 1px dashed var(--c-attention-border); background: var(--c-attention-bg); color: var(--c-attention); font-weight: 600; }
+.badge--danger { border: 3px double var(--c-danger-border); background: var(--c-danger-bg); color: var(--c-danger); font-weight: 700; }
+.badge--unknown { border: 1px dotted var(--c-unknown-border); background: var(--c-unknown-bg); color: var(--c-unknown); font-style: italic; }
+.badge--blocked { border: 1px solid var(--c-text); background: var(--c-text); color: #fff; font-weight: 600; }
+.badge--info { border: 1px solid var(--c-info-border); background: var(--c-info-bg); color: var(--c-info); }
+
+.chips { display: inline-flex; flex-wrap: wrap; gap: var(--sp-2); vertical-align: middle; }
+.chip {
+  display: inline-block;
+  padding: 0 7px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 10px;
+  background: var(--c-panel);
+  font-size: var(--fs-s);
+  line-height: 1.55;
+  white-space: nowrap;
+}
+.chip--stand { border: 1px dashed var(--c-stand-border); background: var(--c-stand-bg); color: var(--c-stand); font-weight: 600; }
+
+/* ---- banners ----------------------------------------------------------- */
+
+.banner {
+  display: flex; align-items: flex-start; gap: var(--sp-3);
+  padding: 5px var(--sp-4);
+  border-bottom: 1px solid var(--c-border-strong);
+  border-left: 6px solid var(--c-border-strong);
+  background: var(--c-panel);
+}
+.banner__glyph { flex: none; line-height: 1; padding-top: 1px; }
+.banner__words { min-width: 0; }
+.banner__title { font-weight: 700; }
+.banner--danger { border-left: 6px double var(--c-danger-border); background: var(--c-danger-bg); color: var(--c-danger); }
+.banner--danger .banner__text { color: var(--c-text); }
+.banner--attention { border-left: 6px dashed var(--c-attention-border); background: var(--c-attention-bg); color: var(--c-attention); }
+.banner--attention .banner__text { color: var(--c-text); }
+.banner--info { border-left: 6px solid var(--c-info-border); background: var(--c-info-bg); color: var(--c-info); }
+.banner--info .banner__text { color: var(--c-text); }
+
+/* ---- tables ------------------------------------------------------------ */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-s);
+}
+.table th, .table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--c-border);
+  text-align: left;
+  vertical-align: top;
+}
+.table th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--c-panel-2);
+  border-bottom: 2px solid var(--c-border-strong);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.table td.num, .table th.num { text-align: right; }
+.table tbody tr:hover { background: var(--c-panel-2); }
+.table .row { cursor: pointer; }
+.table .row:focus-visible { outline-offset: -3px; }
+/* The selected row: a heavy bar on the left and the word in the code cell, not only a tint. */
+.table .row.is-selected { background: var(--c-selected-bg); }
+.table .row.is-selected td:first-child { border-left: 5px solid var(--c-accent); padding-left: 3px; }
+.table .row.is-selected td { font-weight: 600; }
+
+/* ---- key-value lists (cards) ------------------------------------------- */
+
+.kv { display: grid; grid-template-columns: minmax(90px, 40%) 1fr; gap: 1px var(--sp-3); font-size: var(--fs-s); }
+.kv dt { color: var(--c-muted); }
+.kv dd { min-width: 0; overflow-wrap: anywhere; }
+
+.noscript { margin: var(--sp-5); font-weight: 700; }

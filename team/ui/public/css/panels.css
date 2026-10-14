@@ -1,0 +1,176 @@
+/* Conditions, actions, pending commands, decision panel, journal, runs archive,
+   dialog. Tokens and the shapes of the two button families come from base.css. */
+
+/* ---- shared pieces of the groups ----------------------------------------- */
+
+.group__part { margin-top: var(--sp-3); }
+.group__sub { font-size: var(--fs-s); font-weight: 700; }
+.stack { display: grid; gap: var(--sp-2); }
+.note { display: block; font-size: var(--fs-xs); color: var(--c-muted); }
+/* Why a control is off: always in words next to it. */
+.note--why { padding-left: var(--sp-2); border-left: 3px dotted var(--c-border-strong); color: var(--c-text); font-style: italic; }
+.block-note {
+  margin: var(--sp-2) 0;
+  padding: 1px 6px;
+  border: 1px solid var(--c-text);
+  background: var(--c-text);
+  color: #fff;
+  font-size: var(--fs-s);
+  font-weight: 600;
+}
+/* Off, but still focusable: dotted outline and plain weight, not only a paler colour. */
+.btn[aria-disabled="true"] { border-style: dotted; font-weight: 400; }
+
+.pick { display: flex; align-items: center; gap: var(--sp-2); }
+.pick .select { flex: 1 1 0; min-width: 0; }
+.pick .btn { flex: none; }
+.group .field { display: block; }
+.pick .field { flex: none; }
+.active { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); }
+.active .note { flex-basis: 100%; }
+.act { margin-top: var(--sp-2); }
+.group .kv { margin: var(--sp-2) 0; }
+.kv__row { display: contents; }
+.group--reset .btn { margin-top: var(--sp-2); }
+
+/* ---- pending commands ---------------------------------------------------- */
+
+/* The outcome of a command must be in sight wherever the left panel is scrolled:
+   the group sticks to the bottom of the panel instead of pushing the buttons away.
+   It takes at most 30 % of the panel and scrolls inside, so that the zone select and
+   the three dispatcher actions can always be brought into view above it. */
+.group--pending { position: sticky; bottom: 0; z-index: 3; flex: none; max-height: 30%; overflow-y: auto; border-width: 2px; }
+/* The heading stays in place while the entries scroll under it; an entry or a button that is scrolled
+   to (also by the keyboard focus) stops below the heading, not behind it. */
+.group--pending { scroll-padding-top: 26px; }
+.group--pending > .panel__title { position: sticky; top: 0; z-index: 1; background: var(--c-panel-2); }
+.pending-list { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
+.pending {
+  padding: 2px 6px;
+  border: 1px solid var(--c-border-strong);
+  border-left-width: 5px;
+  background: var(--c-panel);
+  font-size: var(--fs-s);
+}
+.pending[data-phase="sending"], .pending[data-phase="sent"] { border-left-style: dashed; }
+.pending[data-phase="no_ack"], .pending[data-phase="delivery_unknown"] { border-left-style: dotted; background: var(--c-attention-bg); }
+.pending[data-phase="rejected"], .pending[data-phase="not_sent"] { border-left-style: double; border-color: var(--c-danger-border); }
+.pending[data-phase="applied"] { border-left-color: var(--c-ok); }
+.pending__head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 var(--sp-2); }
+.pending__id { color: var(--c-muted); font-size: var(--fs-xs); }
+.pending__state { display: flex; gap: var(--sp-2); }
+.pending__buttons { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-1); }
+.pending__buttons:has(> :not([hidden])) { margin-bottom: var(--sp-1); }
+.pending__buttons .btn { white-space: normal; }
+
+/* ---- decision panel ------------------------------------------------------ */
+
+.decision { display: grid; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); }
+.decision > [hidden], .decision__facts:empty { display: none; }
+.decision__state { text-transform: none; letter-spacing: 0; font-size: var(--fs-m); }
+.decision__causes { font-weight: 600; }
+.decision__pause {
+  padding: 2px 6px;
+  border: 1px solid var(--c-info-border);
+  border-left-width: 6px;
+  background: var(--c-info-bg);
+  color: var(--c-info);
+}
+.decision__pause .note { color: var(--c-text); }
+.decision__alert {
+  padding: 2px 6px;
+  border: 2px solid var(--c-text);
+  background: var(--c-panel-2);
+  font-weight: 600;
+}
+.decision__facts { display: grid; gap: var(--sp-3); }
+.decision__fact { padding: var(--sp-2) var(--sp-3); border: 2px solid var(--c-border-strong); }
+.decision__forecast { display: grid; gap: var(--sp-2); }
+.decision__captions { font-size: var(--fs-s); font-weight: 600; }
+.decision__picked { font-weight: 700; }
+/* The run button stays in sight while the table scrolls under it. */
+.decision__run {
+  position: sticky; bottom: 0; z-index: 2;
+  display: grid; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 3px solid var(--c-dispatch-border);
+  background: var(--c-dispatch-bg);
+}
+.decision__run .block-note { margin: 0; }
+
+.table--metrics th, .table--metrics td { padding: 2px 6px; }
+.table--metrics thead th { vertical-align: top; white-space: normal; letter-spacing: 0; text-transform: none; font-size: var(--fs-s); }
+.table tbody th {
+  position: static;
+  background: none;
+  border-bottom: 1px solid var(--c-border);
+  font-size: inherit; font-weight: 400;
+  letter-spacing: 0; text-transform: none;
+  white-space: normal;
+}
+.table--metrics th:first-child { width: 37%; }
+.th-pick { display: flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+.th-pick:has(input:not([hidden], :disabled)) { cursor: pointer; }
+.th-pick input { flex: none; margin: 0; }
+.th-sub { display: block; font-weight: 400; }
+.th-sub:empty { display: none; }
+.th-sub + .th-sub { color: var(--c-muted); font-style: italic; }
+th[data-state="executing"] .th-sub + .th-sub, th[data-state="done"] .th-sub + .th-sub { color: var(--c-text); font-weight: 700; }
+/* The chosen column: a heavy frame on both sides, next to the checked radio button and the line above the run button. */
+.table--metrics .is-chosen { border-left: 3px solid var(--c-dispatch-border); border-right: 3px solid var(--c-dispatch-border); background: var(--c-dispatch-bg); }
+
+/* ---- journal ------------------------------------------------------------- */
+
+.journal-line {
+  padding: 1px var(--sp-4);
+  border-bottom: 1px solid var(--c-border);
+  font-size: var(--fs-s);
+  line-height: 1.5;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.journal-line__time { margin-right: var(--sp-3); }
+.journal-line--gap { border-bottom: 1px dashed var(--c-attention-border); background: var(--c-attention-bg); color: var(--c-attention); font-weight: 700; }
+
+/* ---- runs ---------------------------------------------------------------- */
+
+.table--runs .runs-group th { padding-top: var(--sp-3); border-bottom: 2px solid var(--c-border-strong); background: var(--c-panel-2); font-weight: 700; }
+.table--runs .runs-about { width: 24%; border-bottom-color: var(--c-border-strong); }
+.runs-about > * { display: block; width: fit-content; max-width: 100%; }
+.runs-row--actual td, .runs-row--actual .runs-series { font-weight: 600; }
+.runs-row--forecast td, .runs-row--forecast th { border-bottom-color: var(--c-border-strong); color: var(--c-muted); font-style: italic; }
+.table--runs tbody tr:hover { background: none; }
+
+/* ---- dialog -------------------------------------------------------------- */
+
+.dialog-backdrop {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(20, 24, 22, .5);
+}
+.dialog {
+  width: min(460px, calc(100vw - 32px));
+  padding: var(--sp-5);
+  border: 3px solid var(--c-text);
+  background: var(--c-panel);
+}
+.dialog__title { font-size: var(--fs-l); }
+.dialog__message { margin-top: var(--sp-3); }
+.dialog__buttons { display: flex; justify-content: flex-end; gap: var(--sp-3); margin-top: var(--sp-5); }
+
+/* ---- compact layout ------------------------------------------------------ */
+
+@media (max-width: 1599px), (max-height: 899px) {
+  /* The «Решение» tab is never a blank area: the words come from text.js through the attribute. */
+  .right__part--decision:empty::before { content: attr(data-empty-note); display: block; padding: var(--sp-4); color: var(--c-muted); }
+  .decision { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); }
+  .table--metrics th, .table--metrics td { padding: 1px 4px; }
+  .table--metrics th:first-child { width: 31%; }
+  /* Four columns in 300 px. The state of an option is one word that cannot be broken («исполняется»,
+     «недоступен»): it is set smaller, and the headings stand closer, so that the table never gets wider than the panel. */
+  .table--metrics thead th { padding-inline: 3px; }
+  .th-sub + .th-sub { font-size: var(--fs-xs); }
+  .th-pick { flex-direction: column; align-items: flex-start; gap: 1px; }
+  /* Folded journal: one line, the newest entry. */
+  body:not([data-journal="open"]) .journal-line { height: var(--h-journal-bar); padding-block: 0; border-bottom: 0; line-height: var(--h-journal-bar); }
+  .table--runs .runs-about { width: 26%; }
+}

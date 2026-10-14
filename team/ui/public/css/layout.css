@@ -1,0 +1,386 @@
+/* The regions of the screen (DESIGN.md 2.3 and 2.5): a grid that fills the
+   viewport. The page itself never scrolls; every region scrolls inside.
+
+   Wide layout (from 1600x900): left 300, right 440, journal 220.
+   Compact layout (1280x720): left 230, right 320 with the decision panel and
+   the card as tabs, the journal folded to its latest entry under the centre
+   column, run and seed behind the «Прогон» button. Never folded: the notice, link and data age,
+   the incident numbers, the legend, the two groups of the left panel. */
+
+:root {
+  --w-left: 300px;
+  --w-right: 440px;
+  --h-journal: 220px;
+  --h-journal-bar: 28px;
+}
+
+html, body { height: 100%; overflow: hidden; }
+
+.app {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  grid-template-columns: var(--w-left) minmax(0, 1fr) var(--w-right);
+  grid-template-rows: auto auto auto minmax(0, 1fr) var(--h-journal);
+  grid-template-areas:
+    "top      top      top"
+    "incident incident incident"
+    "banners  banners  banners"
+    "left     centre   right"
+    "left     journal  journal";
+  overflow: hidden;
+}
+
+/* ---- top bar: two rows here, the incident strip is the third ------------ */
+
+.topbar {
+  grid-area: top;
+  min-width: 0;
+  background: var(--c-panel);
+  border-bottom: 1px solid var(--c-border);
+}
+.topbar__row {
+  display: flex; align-items: center; gap: var(--sp-4);
+  min-height: 34px;
+  padding: 3px var(--sp-4);
+  min-width: 0;
+}
+.topbar__row--notice { border-bottom: 1px solid var(--c-border); }
+.topbar__right { display: flex; align-items: center; gap: var(--sp-4); margin-left: auto; min-width: 0; }
+
+.notice {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--c-border-strong);
+  border-left-width: 6px;
+  background: var(--c-panel-2);
+  font-size: var(--fs-s);
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.status { display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+.status__glyph { display: inline-flex; }
+.status__label { color: var(--c-muted); }
+.status--link { font-weight: 700; }
+.status--link[data-link="ok"] { color: var(--c-ok); }
+.status--link[data-link="degraded"] { color: var(--c-attention); }
+.status--link[data-link="stale"],
+.status--link[data-link="unavailable"] {
+  padding: 0 6px;
+  border: 3px double var(--c-danger-border);
+  background: var(--c-danger-bg);
+  color: var(--c-danger);
+}
+.status--age { min-width: 15ch; text-align: right; font-variant-numeric: tabular-nums; }
+.status[data-publications="alive"] { color: var(--c-muted); }
+.status[data-publications="stopped"] { font-weight: 700; color: var(--c-danger); text-decoration: underline; }
+.status[data-publications="unknown"] { color: var(--c-unknown); font-style: italic; }
+.status--commands {
+  padding: 0 6px;
+  border: 1px solid var(--c-text);
+  background: var(--c-text);
+  color: #fff;
+  font-weight: 600;
+}
+.status--commands .status__reason { margin-left: -4px; }
+.status--model { font-weight: 600; }
+.status--conditions { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; white-space: normal; }
+
+.old-tag {
+  flex: none;
+  padding: 0 6px;
+  border: 1px dotted var(--c-unknown-border);
+  background: var(--c-unknown-bg);
+  color: var(--c-unknown);
+  font-size: var(--fs-s);
+  font-style: italic;
+}
+
+.run-box { position: relative; display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+.run-box::before { content: ""; align-self: stretch; border-left: 1px solid var(--c-border); margin-right: var(--sp-3); }
+.run-box::after { content: ""; align-self: stretch; border-left: 1px solid var(--c-border); margin-left: var(--sp-3); }
+.run-box__toggle { display: none; }
+
+/* ---- incident strip ----------------------------------------------------- */
+
+.incident {
+  grid-area: incident;
+  min-width: 0;
+  background: var(--c-panel);
+  border-bottom: 2px solid var(--c-border-strong);
+}
+.incident__strip {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 2px var(--sp-5);
+  min-height: 38px;
+  padding: 4px var(--sp-4);
+}
+.incident__head { display: inline-flex; align-items: center; gap: var(--sp-3); font-weight: 700; font-size: var(--fs-l); min-width: 0; }
+.incident__glyph { display: inline-flex; }
+/* An open incident is a call for a decision, not a hazard state: a heavy plain frame, not the danger outline. */
+.incident__strip[data-incident-state="active"] .incident__head,
+.incident__strip[data-incident-state="executing"] .incident__head {
+  padding: 1px 8px;
+  border: 2px solid var(--c-text);
+  background: var(--c-attention-bg);
+  color: var(--c-text);
+}
+.incident__note { margin-left: auto; font-size: var(--fs-s); }
+
+.counter { display: inline-flex; align-items: baseline; gap: var(--sp-2); white-space: nowrap; }
+.counter__label { color: var(--c-muted); }
+.counter__value {
+  min-width: 2.2ch;
+  padding: 0 5px;
+  border: 1px solid var(--c-border);
+  background: var(--c-panel-2);
+  font-size: var(--fs-l);
+  text-align: center;
+}
+/* A counter above zero is framed heavily and inverted: readable without colour. */
+.counter.is-alert .counter__label { color: var(--c-text); font-weight: 700; }
+.counter.is-alert .counter__value { border: 2px solid var(--c-text); background: var(--c-text); color: #fff; }
+
+/* ---- banners ------------------------------------------------------------ */
+
+.banners {
+  grid-area: banners;
+  min-width: 0;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+/* ---- left panel: two groups that must not be confused -------------------- */
+
+.left {
+  grid-area: left;
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  min-width: 0; min-height: 0;
+  padding: var(--sp-3);
+  overflow-y: auto;
+  background: var(--c-panel);
+  border-right: 1px solid var(--c-border-strong);
+}
+.group { min-width: 0; padding: var(--sp-3); }
+.group:empty { display: none; }
+.group--stand { border: 2px dashed var(--c-stand-border); background: var(--c-stand-bg); }
+.group--dispatch { border: 3px solid var(--c-dispatch-border); background: var(--c-dispatch-bg); }
+.group--pending { border: 1px solid var(--c-border-strong); background: var(--c-panel-2); }
+.group--reset { margin-top: auto; border: 1px solid var(--c-danger-border); border-top-width: 4px; background: var(--c-panel); }
+
+/* ---- centre -------------------------------------------------------------- */
+
+.centre {
+  grid-area: centre;
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  /* The frame is always there, so that marking old data does not shift the content. */
+  border: 3px solid var(--c-panel);
+  background: var(--c-panel);
+}
+.centre__bar {
+  flex: none;
+  display: flex; align-items: flex-end; gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-3) 0;
+  border-bottom: 1px solid var(--c-border-strong);
+  background: var(--c-panel-2);
+}
+.tabs { display: flex; margin-bottom: -1px; }
+.centre__controls { display: flex; align-items: center; gap: var(--sp-3); margin-left: auto; padding-bottom: var(--sp-2); min-width: 0; }
+
+/* The mark of old data: a dashed frame around the centre and a line that
+   names the moment of the data. Shown whenever the picture is not current. */
+.old-data {
+  flex: none;
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: 3px var(--sp-4);
+  border-bottom: 1px dashed var(--c-unknown-border);
+  background: var(--c-unknown-bg);
+  color: var(--c-unknown);
+  font-weight: 700;
+}
+.old-data__glyph { display: inline-flex; }
+body[data-old-data] .centre { border-color: var(--c-unknown-border); border-style: dashed; }
+/* The last model time, run, conditions and counters stay readable but are set apart as not current. */
+body[data-old-data] .topbar__row--model,
+body[data-old-data] .incident { background: var(--c-unknown-bg); }
+body[data-old-data] .incident { border-bottom-style: dashed; }
+
+.centre__body { flex: 1 1 auto; position: relative; min-width: 0; min-height: 0; }
+.view {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+}
+.view__bar {
+  flex: none;
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--c-border);
+}
+.view__bar .panel__title { margin-right: var(--sp-4); }
+.view__scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+
+.scheme { flex: 1 1 auto; position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.legend {
+  flex: none;
+  max-height: 34%;
+  overflow-y: auto;
+  border-top: 1px solid var(--c-border-strong);
+  background: var(--c-panel-2);
+}
+.legend:empty { display: none; }
+
+.table--list .cell-note { display: block; width: fit-content; margin-top: 2px; }
+.table--list td:nth-child(1) { color: var(--c-muted); }
+.table--list td:nth-child(2) { font-weight: 700; }
+.table--list td:nth-child(3) { min-width: 96px; }
+.table--list td:nth-child(8), .table--list td:nth-child(9) { white-space: nowrap; }
+
+/* ---- right panel --------------------------------------------------------- */
+
+.right {
+  grid-area: right;
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  background: var(--c-panel);
+  border-left: 1px solid var(--c-border-strong);
+}
+.right__tabs { display: none; }
+.right__part { min-width: 0; min-height: 0; overflow-y: auto; }
+/* While an incident is open the decision is the main content of the right panel: it may take up to
+   72 % of the height (the whole table with its run button at 1920x1080). The card keeps the rest,
+   at least 28 %, and scrolls. */
+.right__part--decision { flex: 0 1 auto; max-height: 72%; border-bottom: 2px solid var(--c-border-strong); }
+.right__part--decision:empty { display: none; }
+.right__part--card { flex: 1 1 0; }
+
+/* ---- journal ------------------------------------------------------------- */
+
+.journal {
+  grid-area: journal;
+  position: relative;
+  min-width: 0; min-height: 0;
+}
+.journal__panel {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; flex-direction: column;
+  height: 100%;
+  background: var(--c-panel);
+  border-top: 2px solid var(--c-border-strong);
+}
+.journal__bar {
+  flex: none;
+  display: flex; align-items: center; gap: var(--sp-4);
+  min-height: var(--h-journal-bar);
+  padding: 2px var(--sp-4);
+  background: var(--c-panel-2);
+  border-bottom: 1px solid var(--c-border);
+}
+.journal__toggle { display: none; margin-left: auto; }
+.journal__body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; }
+
+/* In the wide layout the list has fixed column shares: automatic sizing gives
+   the rarely long last text column the room the state columns need. A state
+   of the hazard and knowledge columns stays on one line, so a row is one or
+   two lines high. */
+@media (min-width: 1600px) and (min-height: 900px) {
+  .table--list { table-layout: fixed; }
+  .table--list td { overflow-wrap: anywhere; }
+  .table--list th { white-space: normal; }
+  .table--list th, .table--list td { padding-inline: 6px; }
+  .table--list th:nth-child(1) { width: 6.2%; }
+  .table--list th:nth-child(2) { width: 7.6%; }
+  .table--list th:nth-child(3) { width: 12%; }
+  .table--list th:nth-child(4) { width: 13.2%; }
+  .table--list th:nth-child(5) { width: 11.8%; }
+  .table--list th:nth-child(6) { width: 19%; }
+  .table--list th:nth-child(7) { width: 10.2%; }
+  .table--list th:nth-child(8) { width: 12%; }
+  .table--list th:nth-child(9) { width: 8%; }
+  .table--list td:nth-child(4) .badge, .table--list td:nth-child(5) .badge { white-space: nowrap; }
+  .table--list td:nth-child(8), .table--list td:nth-child(9) { font-size: var(--fs-xs); }
+}
+
+/* ---- compact layout ------------------------------------------------------ */
+
+@media (max-width: 1599px), (max-height: 899px) {
+  :root {
+    --w-left: 230px;
+    --w-right: 320px;
+    --h-journal: 30px;
+    --h-journal-bar: 28px;
+  }
+
+  /* The journal stays under the centre column: unfolded, it covers the lower part of the scheme and
+     never the right panel. */
+  .app {
+    grid-template-areas:
+      "top      top      top"
+      "incident incident incident"
+      "banners  banners  banners"
+      "left     centre   right"
+      "left     journal  right";
+  }
+
+  .topbar__row { min-height: 30px; gap: var(--sp-3); padding: 2px var(--sp-3); }
+  .topbar__right { gap: var(--sp-3); }
+  .notice { font-size: var(--fs-xs); letter-spacing: 0; }
+  .status--age { min-width: 0; }
+  /* The reason of the block is in the banner below; the top row keeps the fact. */
+  .status__reason { display: none; }
+  .incident__strip { min-height: 34px; gap: 2px var(--sp-4); padding: 3px var(--sp-3); }
+  .incident__head { font-size: var(--fs-m); }
+  .incident__note { display: none; }
+
+  /* Run and seed go behind a button. */
+  .run-box__toggle { display: inline-flex; }
+  .run-box__info { display: none; }
+  .run-box.is-open .run-box__info {
+    display: block;
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+    padding: 4px 10px;
+    border: 2px solid var(--c-border-strong);
+    background: var(--c-panel);
+  }
+
+  /* Decision panel and card share the right panel as tabs. */
+  .right__tabs {
+    flex: none;
+    display: flex;
+    padding: var(--sp-2) var(--sp-3) 0;
+    border-bottom: 1px solid var(--c-border-strong);
+    background: var(--c-panel-2);
+  }
+  .right__tabs .tab { margin-bottom: -1px; }
+  .right__part { flex: 1 1 0; max-height: none; border-bottom: 0; }
+  .right__part--decision:empty { display: block; }
+  body[data-right="card"] .right__part--decision,
+  body[data-right="decision"] .right__part--card { display: none; }
+
+  /* The journal is one line with its latest entry; the button unfolds it over the bottom of the centre. */
+  .journal__panel { flex-direction: row; align-items: stretch; z-index: 20; }
+  .journal__bar { order: 2; border-bottom: 0; border-left: 1px solid var(--c-border); padding: 1px var(--sp-3); }
+  .journal__order { display: none; }
+  .journal__title { display: none; }
+  .journal__toggle { display: inline-flex; margin-left: 0; }
+  .journal__body { order: 1; overflow: hidden; }
+  body[data-journal="open"] .journal__panel { flex-direction: column; height: 240px; }
+  body[data-journal="open"] .journal__bar { order: 0; border-left: 0; border-bottom: 1px solid var(--c-border); }
+  body[data-journal="open"] .journal__title { display: block; }
+  body[data-journal="open"] .journal__toggle { margin-left: auto; }
+  body[data-journal="open"] .journal__body { order: 1; overflow-y: auto; }
+
+  .left { padding: var(--sp-2); gap: var(--sp-2); }
+  .group { padding: var(--sp-2) var(--sp-3); }
+  .view__bar { padding: var(--sp-2) var(--sp-3); }
+  .table th, .table td { padding: 2px 5px; }
+  .table th { white-space: normal; letter-spacing: 0; }
+  /* Nine columns in 730 px: the headings are not what sets the width of a column. */
+  .table--list th { text-transform: none; }
+  .table--list td:nth-child(6), .table--list td:nth-child(7) { overflow-wrap: anywhere; }
+  .table--list td:nth-child(8), .table--list td:nth-child(9) { white-space: normal; font-size: var(--fs-xs); }
+  .table--list td:nth-child(3) { min-width: 80px; }
+}

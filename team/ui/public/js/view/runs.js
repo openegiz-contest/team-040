@@ -1,0 +1,138 @@
+// The archive of finished runs. Runs are grouped by the comparison key the
+// service published; only complete runs of one key are called a comparison.
+// The fact and the forecast of a run are two labelled rows, never one value;
+// a run cut short by a reset keeps a dash where it has no result.
+
+import {h, setAttrs, setText} from '../dom.js';
+import {localName} from '../model.js';
+import {METRIC_ORDER, hasMetrics, metricCell} from './decision.js';
+
+/** The completion reasons that mean a run came to its end with a result. */
+export const COMPLETED_REASONS = ['withdrawal_done', 'horizon_reached'];
+
+/**
+ * Archive runs by comparison key, the group of the latest run first.
+ *
+ * A run takes part in a comparison only when all of this is published: it is
+ * `finished`, its `completion_reason` is one of COMPLETED_REASONS, and the
+ * service did not mark it incomparable. Of the others, `interrupted` is a run
+ * cut short by a reset and `unclassified` a run whose ending is absent or not
+ * known to this interface: neither is ever counted as a completed run.
+ * @param {import('../store.js').ArchiveRun[]} runs
+ * @param {string[]} order run names, oldest first; local names or full thingIds
+ * @returns {Array<{key: (string|null), comparable: number,
+ *           runs: Array<{run: Object, interrupted: boolean, unclassified: boolean, takesPart: boolean}>}>}
+ */
+export function groupRuns(runs, order) {
+  const names = order.map((name) => (typeof name === 'string' ? localName(name) : name));
+  const position = (run) => {
+    const at = names.indexOf(run.name);
+    return at < 0 ? names.length : at;
+  };
+  const groups = new Map();
+  for (const run of [...runs].sort((a, b) => position(a) - position(b))) {
+    const {values} = run;
+    const key = typeof values.comparison_key === 'string' ? values.comparison_key : null;
+    const group = groups.get(key) || {key, runs: [], comparable: 0, latest: 0};
+    const interrupted = values.completion_reason === 'reset';
+    const completed = values.state === 'finished' && COMPLETED_REASONS.includes(values.completion_reason);
+    const takesPart = key !== null && completed && values.comparable !== false;
+    group.runs.push({run, interrupted, unclassified: !interrupted && !completed, takesPart});
+    group.comparable += takesPart ? 1 : 0;
+    group.latest = position(run);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => b.latest - a.latest);
+}
+
+/**
+ * @param {HTMLElement} root the element of index.html this view owns
+ * @param {Object} ctx store, text, roots and the action functions
+ */
+export function mount(root, ctx) {
+  const {store, text} = ctx;
+  const {UI} = text;
+  const status = h('span', {class: 'badge', 'data-testid': 'runs-status', hidden: true});
+  const note = h('p', {class: 'empty-note', hidden: true});
+  const table = h('table', {class: 'table table--runs', 'data-testid': 'runs-table'},
+    h('thead', null, h('tr', null,
+      h('th', {scope: 'col', text: UI.runs.run}), h('th', {scope: 'col', text: UI.runs.series}),
+      METRIC_ORDER.map((metric) => h('th', {scope: 'col', text: text.metricLabel(metric, true), title: text.metricLabel(metric)})))));
+  root.append(
+    h('div', {class: 'view__bar'}, h('h2', {class: 'panel__title', text: UI.runs.title}),
+      h('span', {class: 'muted', text: UI.runs.limit}), status),
+    h('div', {class: 'view__scroll'}, table, note));
+
+  function seriesRow(run, prefix, label, interrupted, published) {
+    return h('tr', {class: `runs-row runs-row--${prefix ? 'forecast' : 'actual'}`, 'data-run': run.name, 'data-series': prefix ? 'forecast' : 'actual'},
+      h('th', {scope: 'row', class: 'runs-series', text: label}),
+      METRIC_ORDER.map((metric) => {
+        const cell = published ? metricCell(text, run, prefix, metric, interrupted) : {text: text.DASH, badge: null};
+        return h('td', {'data-metric': metric}, h('span', {class: cell.badge ? `badge badge--${cell.badge}` : null, text: cell.text}));
+      }));
+  }
+
+  function runRows({run, interrupted, unclassified, takesPart}, group, model) {
+    const {values} = run;
+    // A run without a classified ending has no final result either: its missing values stay dashes.
+    const cut = interrupted || unclassified;
+    const option = typeof values.executed_option === 'string' ? (model && model.byName[values.executed_option]) : null;
+    const optionText = option ? `${option.label} — ${text.codeLabel('optionKind', option.attrs.option_kind)}`
+      : (values.executed_option === undefined ? text.DASH : String(values.executed_option));
+    // The ending as published: its code in words, or as it came. A twin that is not `finished` says that as well.
+    const stateWords = text.label('archiveRunState', values.state);
+    let ending = stateWords;
+    if (values.completion_reason !== undefined) {
+      ending = text.codeLabel('completionReason', values.completion_reason);
+      if (values.state !== 'finished') ending += ` · ${text.fieldLabel('state')}: ${stateWords}`;
+    }
+    let mark = '';
+    if (interrupted) mark = UI.runs.interrupted;
+    else if (unclassified) mark = UI.runs.unclassified;
+    else if (values.comparable === false) mark = UI.runs.incomparable(text.codeLabel('incomparableReason', values.incomparable_reason));
+    else if (group.comparable < 2) mark = UI.runs.alone;
+    const about = h('th', {scope: 'rowgroup', rowspan: 2, class: 'runs-about'},
+      h('strong', {class: 'mono', text: run.label}),
+      h('span', {class: cut ? 'badge badge--blocked' : null, 'data-testid': 'run-ending', text: ending}),
+      h('span', {class: 'note', text: `${UI.status.seed} ${text.num(values.seed)} · ${optionText}`}),
+      mark ? h('span', {class: 'badge badge--unknown', 'data-testid': 'run-mark', text: mark}) : null);
+    const forecast = hasMetrics(values, 'forecast_');
+    // Forecast numbers never stand without a word on how complete the forecast was.
+    let forecastLabel = UI.decision.notPublished;
+    if (forecast) {
+      const quality = values.forecast_quality;
+      forecastLabel = quality === 'full' ? UI.decision.forecast
+        : `${UI.decision.forecast}: ${quality === undefined ? UI.decision.qualityNotPublished : text.label('forecastQuality', quality)}`;
+    }
+    const actual = seriesRow(run, '', UI.decision.actual, cut, true);
+    actual.prepend(about);
+    setAttrs(actual, {
+      'data-completion': values.completion_reason, 'data-comparable': String(takesPart),
+      'data-comparison-key': group.key,
+    });
+    return [actual, seriesRow(run, 'forecast_', forecastLabel, false, forecast)];
+  }
+
+  // The archive changes only when a run ends: the table is built anew then, not on every poll.
+  store.watch((state) => [state.archive, state.attributes], () => {
+    const {archive, model} = store.getState();
+    const groups = groupRuns(archive.runs, archive.ids);
+    table.replaceChildren(table.tHead, ...groups.map((group) => {
+      const title = group.key === null ? UI.runs.noKey
+        : (group.comparable >= 2 ? UI.runs.comparison(text.counted(group.comparable, text.FORMS.run), group.key) : UI.runs.single(group.key));
+      return h('tbody', {'data-comparison-key': group.key, 'data-group': group.comparable >= 2 ? 'comparison' : 'single'},
+        h('tr', {class: 'runs-group'}, h('th', {scope: 'rowgroup', colspan: METRIC_ORDER.length + 2, text: title})),
+        group.runs.flatMap((item) => runRows(item, group, model)));
+    }));
+    table.hidden = groups.length === 0;
+
+    let words = '';
+    if (archive.status === 'loading') words = UI.runs.loading;
+    else if (archive.status === 'error') words = [UI.runs.error, text.failureText(archive.failure)].filter(Boolean).join(': ');
+    status.hidden = words === '';
+    setText(status, words);
+    setAttrs(status, {class: `badge badge--${archive.status === 'error' ? 'danger' : 'info'}`, 'data-status': archive.status});
+    note.hidden = groups.length > 0 || archive.status === 'loading' || archive.status === 'error';
+    setText(note, archive.status === 'ready' ? UI.runs.empty : text.shownDataText(null));
+  });
+}
