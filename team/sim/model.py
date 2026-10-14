@@ -6,6 +6,8 @@ import json
 import re
 
 from .routing import route
+from .journal import observe
+from .parameters import validate
 from .topology import MODEL_VERSION, PARAMETERS, build_attributes
 
 
@@ -15,9 +17,11 @@ def fingerprint(value):
 
 
 class Mine:
-    def __init__(self):
-        self.attributes = build_attributes()
+    def __init__(self, parameters=None):
         self.parameters = copy.deepcopy(PARAMETERS)
+        if parameters is not None:
+            self.parameters.update(parameters)
+        validate(self.parameters)
         self.publication_seq = 0
         self.run_number = 0
         self.journal_seq = 0
@@ -28,6 +32,8 @@ class Mine:
         self._new_run()
 
     def _new_run(self, preset=None):
+        self.attributes = build_attributes(self.parameters)
+        self._journal_state = None
         self.run_number += 1
         self.run = f"run-{self.run_number:04d}"
         self.tick = 0
@@ -58,7 +64,7 @@ class Mine:
                                        hazard_state="normal", data_quality="fresh", routing_restriction="allowed",
                                        last_known_hazard_state="normal", last_known_hazard_tick=0)
             elif kind == "sensor":
-                self.sensors[key] = dict(value=0.0, rate=0.2, measured_at_tick=0, measured_at_sim_s=0,
+                self.sensors[key] = dict(value=0.0, rate=self.parameters["baseline_rate_mm_h"], measured_at_tick=0, measured_at_sim_s=0,
                                          link_state="online", quality="fresh")
             elif kind == "worker":
                 self.workers[key] = dict(status="working", at_working=a["initial_working"],
@@ -69,11 +75,15 @@ class Mine:
         self._refresh()
         self._event("run.started", "shift")
 
-    def _event(self, code, subject, arg="", command_id=""):
+    def _event(self, code, subject, arg="", command_id="", *, details=None):
+        if getattr(self, "_forecast_only", False):
+            return
         self.journal_seq += 1
         self.events.append(dict(seq=self.journal_seq, run=self.run, tick=self.tick,
                                 sim_time_s=self.tick, code=code, subject=subject,
-                                arg=arg, command_id=command_id))
+                                arg=arg, command_id=command_id or getattr(self, "_active_command_id", "")))
+        if details is not None:
+            self.events[-1]["details"] = copy.deepcopy(details)
         self.events = self.events[-50:]
 
     def _refresh(self):
@@ -139,6 +149,7 @@ class Mine:
                     "incomplete" if any(w["status"] == "waiting" for w in people) else "in_progress")
         for key, e in self.exits.items():
             e["workers_out"] = sum(w.get("at_exit") == key for w in self.workers.values())
+        observe(self)
 
     def _causes(self):
         return sorted(["passage_closed:" + k for k, w in self.workings.items() if w["passability"] == "closed"] +
@@ -173,6 +184,9 @@ class Mine:
             zones=self.zones, sensors=self.sensors, workers=self.workers, exits=self.exits,
             cohort=self.cohort, conditions=sorted(self.conditions), schedule=self.schedule))
         self.comparable = True
+        self._event("decision.opened", "incident", "Варианты рассчитаны из одного состояния",
+                    details=dict(causes=causes, decision_id=self.incident["decision_id"],
+                                 comparison_key=self.comparison_key))
         self.forecasts = self.forecast()
 
     def forecast(self):
@@ -180,6 +194,7 @@ class Mine:
         horizon = self.parameters["forecast_horizon_s"]
         for kind in ("observe", "stop_withdraw_zone", "withdraw_all"):
             trial = copy.deepcopy(self)
+            trial._forecast_only = True
             trial.forecasts = {}
             trial.ledger = {}
             trial._execute(kind)
@@ -192,6 +207,8 @@ class Mine:
         return predictions
 
     def _execute(self, kind):
+        self._event("decision.selected", "incident", kind,
+                    details=dict(decision_id=self.incident.get("decision_id"), option=kind))
         self.selected_option = kind
         self.incident.update(state="executing", selected_option=kind)
         scope = list(self.zones) if kind == "withdraw_all" else self.incident.get("scope", [])
@@ -262,6 +279,7 @@ class Mine:
     def _archive(self, reason):
         if self.archived_current:
             return
+        self._event("run.finished", "shift", reason, details=self.metrics())
         result = dict(id=self.run, state="finished", seed=self.seed, scenario_key=self.scenario_key,
             tick=self.tick, sim_time_s=self.tick, idSimulationRun=self.run,
             completion_reason=reason, finished_at_sim_s=self.tick, comparable=self.comparable,
@@ -343,7 +361,11 @@ class Mine:
             # The ack run/tick describe where the rejection was processed.
             ack["requested_run"] = body["run"]
         else:
-            reason = self._apply(body)
+            self._active_command_id = command_id
+            try:
+                reason = self._apply(body)
+            finally:
+                self._active_command_id = ""
         ack["reason"] = reason
         if reason in ("none", "already_in_state"):
             ack["status"] = "applied"
@@ -352,7 +374,9 @@ class Mine:
         self.commands = [a for a in self.commands if a["id"] != command_id][-31:] + [ack]
         if not previous:
             self.ledger[command_id] = dict(digest=digest, ack=copy.deepcopy(ack))
-        self._event("command." + ack["status"], body.get("target", ""), reason, command_id)
+        self._event("command." + ack["status"], body.get("target", ""),
+                    body.get("type", "") if ack["status"] == "applied" else reason,
+                    command_id, details=dict(reason=reason, status=ack["status"]))
         return copy.deepcopy(ack)
 
     def _apply(self, body):

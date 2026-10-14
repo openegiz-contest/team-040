@@ -6,24 +6,15 @@ geotechnical safety limit. See README.md before interpreting model outputs.
 
 from collections import Counter
 from math import dist
+from .parameters import PARAMETERS, registry
 
 NAMESPACE = "team040.mine"
 MODEL_VERSION = "0.1"
 TOPOLOGY_VERSION = "t1"
-PARAMETERS = {
-    "walking_speed_m_s": 1.25,
-    "attention_rate_mm_h": 1.0,
-    "danger_rate_mm_h": 2.0,
-    "baseline_rate_mm_h": 0.2,
-    "unstable_rate_mm_h": 2.6,
-    "stale_after_s": 15,
-    "lost_after_s": 30,
-    "forecast_horizon_s": 900,
-    "speedup": 10,
-}
 
 
-def build_attributes():
+def build_attributes(parameters=None):
+    p = PARAMETERS if parameters is None else parameters
     nodes = {
         "surface-a": (0, 0, 0, "surface", "exit"),
         "surface-b": (420, 180, 0, "surface", "exit"),
@@ -80,7 +71,7 @@ def build_attributes():
             required_workers=3)
         add(sensor, "sensor", f"Э-{suffix.upper()}", parent=zone, zone=zone,
             sensor_kind="extensometer", working=edge, offset_m=40,
-            stale_after_s=PARAMETERS["stale_after_s"], lost_after_s=PARAMETERS["lost_after_s"])
+            stale_after_s=p["stale_after_s"], lost_after_s=p["lost_after_s"])
         for number in range(1, 4):
             key = f"worker-{suffix}{number}"
             add(key, "worker", f"Р-{suffix.upper()}{number}", parent=zone,
@@ -98,8 +89,9 @@ def build_attributes():
         crs="local", units="m", contract_version=1, topology_version=TOPOLOGY_VERSION,
         nodes={key: dict(zip(("x", "y", "z", "level", "node_kind"), row))
                for key, row in nodes.items()},
-        thresholds={"attention_rate": {"value": 1.0, "unit": "mm/h"},
-                    "danger_rate": {"value": 2.0, "unit": "mm/h"}},
+        parameter_registry=registry(p),
+        thresholds={"attention_rate": {"value": p["attention_rate_mm_h"], "unit": "mm/h"},
+                    "danger_rate": {"value": p["danger_rate_mm_h"], "unit": "mm/h"}},
         presets=[
             dict(id="p-instability", label="Рост нестабильности", at_s=60,
                  type="condition.instability_on", target="zone-a"),

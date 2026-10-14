@@ -151,6 +151,12 @@ run.reset завершает текущий прогон и начинает ч�
 
 ## Источники технической проверки
 
+Добавление от 14 октября: [контракт журнала](research/event-journal.md) описывает
+новые коды переходов и необязательное details. Старые обязательные поля остаются.
+Происхождение параметров доступно в mine.attributes.parameter_registry;
+[реестр и ограничения](research/parameters.md). События прогнозных копий не
+попадают в фактический журнал. Скалярная история не заменяет архив событий.
+
 - Репозиторий: deploy/compose/init/mosquitto-target-connection.json, mosquitto-source-connection.json, deploy/compose/telegraf/telegraf.conf. Подтверждены топики, QoS и широкая подписка истории.
 - [HTTP API Messages, Ditto](https://eclipse.dev/ditto/httpapi-messages.html): timeout=0 означает 202 без ожидания ответа устройства. Это поведение подтверждено на закреплённом Ditto 3.3.7 сквозным team.smoke 14 октября.
 - [Telegraf json_v2, исходники версии 1.37.0](https://github.com/influxdata/telegraf/blob/v1.37.0/plugins/parsers/json_v2/README.md): массивы разворачиваются в метрики, объекты поддерживаются. В нашем overlay исходный парсер заменён скалярным Starlark-экспортом из team/history; запись значений в InfluxDB подтверждена team.history_smoke и общим make smoke 14 октября.

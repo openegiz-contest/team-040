@@ -8,6 +8,8 @@ import tempfile
 
 from .model import Mine
 from .topology import MODEL_VERSION
+from .journal import capture
+from .parameters import registry
 
 
 class Store:
@@ -21,6 +23,10 @@ class Store:
                 raise ValueError("checkpoint model version mismatch; explicit migration required")
             self.model = Mine.__new__(Mine)
             self.model.__dict__.update(data["state"])
+            # Additive metadata/observer migration; keep run, physics and ledger intact.
+            if not hasattr(self.model, "_journal_state"):
+                self.model._journal_state = capture(self.model)
+            self.model.attributes["mine"]["parameter_registry"] = registry(self.model.parameters)
         else:
             self.model = Mine()
 

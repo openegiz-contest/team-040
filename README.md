@@ -41,6 +41,8 @@ Example Mine запускать не требуется. Внешние API-кл
 
 ```sh
 python3 -m unittest team.sim.test_model team.gateway.test_gateway -v
+python3 -m unittest team.sim.test_journal team.sim.test_parameters -v
+python3 -m team.sim.sensitivity
 make smoke
 python3 -m team.smoke
 python3 -m team.restart_smoke
