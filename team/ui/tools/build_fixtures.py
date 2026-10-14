@@ -48,8 +48,8 @@ FIRST_SEQ = 48211     # nominal publication_seq of the first publication
 FIRST_REVISION = 52140
 
 SCENARIOS = [
-    "normal", "detour", "no_path", "sensor_lost_after_danger", "paused_heartbeat",
-    "frozen_seq", "frozen_seq_old", "invalid_missing_id", "invalid_duplicate_id",
+    "normal", "detour", "no_path", "sensor_lost_after_danger", "danger_zone",
+    "paused_heartbeat", "frozen_seq", "frozen_seq_old", "invalid_missing_id", "invalid_duplicate_id",
     "invalid_mixed_tick", "invalid_missing_field", "invalid_contract_version",
     "invalid_no_metadata", "topology_mismatch", "topology_change", "commands",
     "reset", "withdrawal_incomplete", "no_forecast", "partial_forecast",
@@ -114,8 +114,13 @@ class Mine:
 
     LEVELS = [("level-260", -260, 1), ("level-320", -320, 2), ("level-380", -380, 3)]
 
-    def __init__(self, topology: str = "t1"):
+    def __init__(self, topology: str = "t1", tidy_routes: bool = False):
         self.topology = topology
+        # A 12.5 m step that lands exactly on a node leaves the worker at offset 0 of the next
+        # working, and the plain route then lists that working twice (a zero-length walk to
+        # the node and back). The older scenarios keep that output byte for byte; a Mine built
+        # with tidy_routes=True drops the zero-length first segment.
+        self.tidy_routes = tidy_routes
         elev = {name: z for name, z, _ in self.LEVELS}
         self.nodes: dict[str, dict] = {}
         self.workings: dict[str, dict] = {}
@@ -337,6 +342,9 @@ class Mine:
             wid, following = nxt[node]
             segments.append((wid, node, following))
             node = following
+        if (self.tidy_routes and len(segments) > 1
+                and segments[1] == (at, segments[0][2], segments[0][1])):
+            segments.pop(0)
         return {"segments": segments, "length": total, "exit": self.exit_nodes[node]}, "none"
 
     # --- attributes -------------------------------------------------------------
@@ -414,6 +422,16 @@ class Mine:
 # ---------------------------------------------------------------------------
 
 HAZARD_RANK = {"normal": 0, "attention": 1, "unknown": 2, "danger": 3}
+
+# danger_zone: zone D readings per running publication (ticks 1200 ... 1250) and at the
+# decision point (tick 1260): extensometer Э-04 value mm and rate mm/h, convergence К-03
+# value mm and rate mm/h, instability index. Thresholds: rate 1.0 / 2.0 mm/h, index 0.4 / 0.7.
+DZ_PRELUDE = [
+    (6.7, 1.3, 4.9, 0.4, 0.46), (6.8, 1.4, 5.0, 0.6, 0.49), (6.9, 1.5, 5.1, 0.9, 0.53),
+    (7.1, 1.7, 5.3, 1.2, 0.58), (7.3, 1.8, 5.5, 1.5, 0.63), (7.5, 1.9, 5.8, 1.8, 0.67),
+]
+DZ_DANGER = (7.9, 2.4, 6.0, 2.1, 0.74)
+DZ_SILENT_SINCE = BASE_TICK - 5       # last measurement of the sensor that becomes stale
 ARCHIVE_BASE = ["run-0001", "run-0002", "run-0003", "run-0004"]
 
 
@@ -1075,6 +1093,72 @@ def then_violated(mutate) -> dict:
             "violated": state([frame], "run", **extra)}
 
 
+def danger_zone_story():
+    """States of 'zone D reaches danger on fresh data, one sensor elsewhere goes stale'.
+
+    A running prelude (zone D climbs from "attention" to the danger thresholds of
+    mine.attributes.thresholds), then the decision point held, then the three options.
+    """
+    zone, ext, conv, quiet = "zone-d", "sens-ext-04", "sens-conv-03", "sens-ext-05"
+    s = Sim(Mine("t1", tidy_routes=True))
+    frames = []
+    for value, rate, conv_value, conv_rate, index in DZ_PRELUDE:
+        s.sensors[ext].update(value=value, rate=rate)
+        s.sensors[conv].update(value=conv_value, rate=conv_rate)
+        s.sensors[quiet]["measured_at"] = DZ_SILENT_SINCE       # online, but silent
+        s.zones[zone]["hazard"].update(instability_index=index, reason_value=rate)
+        frames.append(s.frame())
+        s.step()
+
+    d = s                                    # tick 1260: both transitions in one publication
+    value, rate, conv_value, conv_rate, index = DZ_DANGER
+    d.sensors[ext].update(value=value, rate=rate)
+    d.sensors[conv].update(value=conv_value, rate=conv_rate)
+    d.zones[zone]["hazard"].update(
+        hazard_state="danger", instability_index=index, reason_code="rate_above_danger",
+        reason_value=rate, reason_threshold=2.0, routing_restriction="blocked")
+    d.ev("hazard.changed", zone, "danger")
+    d.sensors[quiet]["quality"] = "stale"
+    d.ev("quality.changed", quiet, "stale")
+    d.zones["zone-c"]["hazard"].update(
+        hazard_state="unknown", data_quality="stale", reason_code="sensor_stale",
+        reason_sensor=quiet, routing_restriction="blocked", index_at=d.tick - TICK_STEP,
+        last_known_hazard_state="normal", last_known_hazard_tick=d.tick - TICK_STEP)
+    d.ev("hazard.changed", "zone-c", "unknown")
+    d.open_incident("hazard", zone, zone)
+    d.open_incident("data_lost", "zone-c", quiet)
+
+    states = {"initial": state(frames, "run", publications=len(frames), next="decision")}
+    stale = rule("action.execute_option", status="rejected", reason="stale_decision")
+    states["decision"] = state([d.frame()], "hold", rules=[
+        *[rule("action.execute_option", oid, decision_id=d.decision["id"],
+               goto=OPTION_SHORT[oid] + "_exec", bind="exec") for oid in OPTIONS],
+        stale])
+    sims = {"decision": d}
+    for oid, kind in OPTIONS.items():
+        short = OPTION_SHORT[oid]
+        e = d.clone()
+        e.execute(oid, "@exec")
+        out = [e.frame()]
+        publications = None
+        if kind == "observe":
+            # nothing changes until the horizon: one frame repeated, model time running
+            while e.executing:
+                e.step()
+            publications = HORIZON_S // TICK_STEP
+        else:
+            while True:
+                e.step()
+                if not e.executing:
+                    break
+                out.append(e.frame())
+        states[short + "_exec"] = state(out, "run", publications=publications,
+                                        next=short + "_done")
+        states[short + "_done"] = state([e.frame()], "run")
+        sims[short + "_done"] = e
+    return states, sims
+
+
 def build_all() -> dict[str, dict]:
     out: dict[str, dict] = {}
 
@@ -1179,6 +1263,14 @@ def build_all() -> dict[str, dict]:
     put("sensor_lost_after_danger", "Участок В был в состоянии «опасно», затем потерял "
         "единственный датчик: состояние неизвестно, последнее известное — «опасно», "
         "ограничение маршрутов сохранено. В журнале пропуск номеров seq.", static(s))
+
+    # --- zone D reaches danger on fresh data, a sensor elsewhere is stale ---
+    states, sims = danger_zone_story()
+    put("danger_zone", "Участок Г достигает «опасно» по свежим данным (скорость Э-04 2,4 мм/ч при "
+        "пороге 2,0), вход в участок запрещён моделью, трое работников внутри; в тот же момент "
+        "Э-05 устарел, участок В «неизвестно», последнее известное — «норма». Несколько "
+        "публикаций хода, затем пауза для выбора; исполнение варианта «остановить и вывести "
+        "участок» (Р-11…Р-14 идут к выходу), остальные варианты тоже проигрываются.", states)
 
     # --- invalid snapshots ---
     def missing_id(frame):

@@ -14,8 +14,10 @@
 //   roots       every mount point by name (see ROOTS): a view that also fills a
 //               secondary root reads it here, e.g. `ctx.roots.schemeControls`
 //               (projection and level controls in the centre bar, owned by
-//               view/scheme.js) and `ctx.roots.reset` (the reset block of the
-//               left panel, owned by view/conditions.js).
+//               view/scheme.js), `ctx.roots.reset` (the reset block of the
+//               stand drawer, owned by view/conditions.js) and
+//               `ctx.roots.decisionSummary` (the one-line summary in the bar of
+//               the decision dock, owned by view/decision.js).
 //   select(thingId | null)                    select an object (full thingId) or clear the selection
 //   setView('scheme' | 'list' | 'runs')
 //   setProjection('axo' | 'plan')
@@ -26,6 +28,21 @@
 //   dismissCommand(id)                        stop waiting; removes the entry from state.pending
 //   confirm({title, message, confirmLabel, cancelLabel?, danger?}) -> Promise<boolean>
 //               the modal dialog of view/dialog.js
+//   stage.focus(thingId | levelLocalName) -> boolean, stage.overview() -> boolean
+//               camera requests to the central stage; view/stage.js replaces the
+//               no-op defaults; false when the stage cannot honour the request
+//               (not in 3D: the caller selects the object instead)
+//   stage.screenOf(thingId) -> {x, y, visible, world} | null
+//               read-only: where the 3D stage draws an object, in viewport pixels
+//               (`visible`: in front of the camera and inside the picture; `world`:
+//               its scene point); null when not in 3D or the object is not drawn
+//   stage.info() -> {renderer, triangles, calls, frames, ...} | null
+//               read-only: figures of the 3D renderer; null when not in 3D
+//   shell       state of the frame that is not data and not routed:
+//               `shell.get()` -> {stand: 'open'|'closed', dock: 'none'|'open'|'collapsed'},
+//               `shell.set(change)`, `shell.watch(fn)` (fn(shellState) now and on change).
+//               Mirrored on <body> as data-stand and data-dock. The stand drawer
+//               (view/stand.js) and the decision dock (view/dock.js) own them.
 //
 // A view subscribes itself (prefer `store.watch` with a selector of the slice
 // it shows), re-renders only when that slice changed, and updates existing
@@ -49,6 +66,7 @@ import * as card from './view/card.js';
 import * as conditions from './view/conditions.js';
 import * as decision from './view/decision.js';
 import * as dialog from './view/dialog.js';
+import * as dock from './view/dock.js';
 import * as incident from './view/incident.js';
 import * as journal from './view/journal.js';
 import * as legend from './view/legend.js';
@@ -57,25 +75,54 @@ import * as overlay from './view/overlay.js';
 import * as pending from './view/pending.js';
 import * as runs from './view/runs.js';
 import * as scheme from './view/scheme.js';
+import * as stage from './view/stage.js';
+import * as stand from './view/stand.js';
 import * as statusbar from './view/statusbar.js';
 import * as tabs from './view/tabs.js';
 
 /** Mount points of index.html: name in ctx.roots -> element id. */
 const ROOTS = {
-  statusbar: 'statusbar', incident: 'incident', banners: 'banners', oldData: 'old-data',
-  tabs: 'tabs', schemeControls: 'scheme-controls', rightTabs: 'right-tabs', journalBar: 'journal-bar',
+  statusbar: 'statusbar', situation: 'situation', incident: 'incident', banners: 'banners', oldData: 'old-data',
+  tabs: 'tabs', schemeControls: 'scheme-controls',
   scheme: 'scheme', legend: 'legend', list: 'view-list', runs: 'view-runs',
-  conditions: 'conditions', actions: 'actions', pending: 'pending', reset: 'reset',
-  decision: 'decision', card: 'card', journal: 'journal', dialog: 'dialog-root',
+  stage: 'stage', stage3d: 'stage-3d', stageHud: 'stage-hud',
+  stand: 'stand-drawer', standHead: 'stand-head', conditions: 'conditions', reset: 'reset',
+  dock: 'decision-dock', dockBar: 'dock-bar', decision: 'decision',
+  card: 'card', actions: 'actions', pending: 'pending', journalRegion: 'journal-region', journalBar: 'journal-bar',
+  journal: 'journal', dialog: 'dialog-root',
 };
 
-/** Views in mount order, each with the name of its root. */
+/** Views in mount order, each with the name of its root. The dock bar comes before the decision panel: it
+ * creates the summary slot (`roots.decisionSummary`) the panel fills. */
 const VIEWS = [
   ['statusbar', statusbar], ['incident', incident], ['banners', overlay], ['tabs', tabs], ['list', list],
-  ['scheme', scheme], ['legend', legend], ['card', card],
+  ['scheme', scheme], ['stage', stage], ['legend', legend], ['stand', stand], ['card', card],
   ['conditions', conditions], ['actions', actions], ['pending', pending],
-  ['decision', decision], ['journal', journal], ['runs', runs], ['dialog', dialog],
+  ['dock', dock], ['decision', decision], ['journal', journal], ['runs', runs], ['dialog', dialog],
 ];
+
+/**
+ * The small state of the frame: is the stand drawer open, is the decision dock shown and unfolded.
+ * @returns {{get: () => {stand: string, dock: string}, set: (change: Object) => void, watch: (fn: Function) => () => void}}
+ */
+function createShell() {
+  let current = {stand: 'closed', dock: 'none'};
+  const listeners = new Set();
+  return {
+    get: () => current,
+    set(change) {
+      const next = {...current, ...change};
+      if (Object.keys(next).every((key) => next[key] === current[key])) return;
+      current = next;
+      for (const listener of [...listeners]) listener(current);
+    },
+    watch(listener) {
+      listeners.add(listener);
+      listener(current);
+      return () => listeners.delete(listener);
+    },
+  };
+}
 
 function mirrorOnBody(state) {
   const {snapshot, link} = state;
@@ -106,6 +153,8 @@ function start() {
 
   const roots = {};
   for (const [name, id] of Object.entries(ROOTS)) roots[name] = document.getElementById(id);
+  const shell = createShell();
+  shell.watch((frame) => setAttrs(document.body, {'data-stand': frame.stand, 'data-dock': frame.dock}));
 
   const setUi = (change) => store.update((state) => {
     const ui = {...state.ui, ...change};
@@ -123,6 +172,9 @@ function start() {
     retryCommand: commands.retry,
     dismissCommand: commands.dismiss,
     confirm: (options) => dialog.confirm(options),
+    // Filled by view/stage.js: camera requests from other views (card, incident steps).
+    stage: {focus: () => false, overview: () => false},
+    shell,
   };
 
   store.subscribe(mirrorOnBody);

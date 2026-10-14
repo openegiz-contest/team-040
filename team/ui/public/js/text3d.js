@@ -1,0 +1,71 @@
+// Every user-visible string of the 3D stage (view/stage.js and js/scene3d/).
+// Pure: no DOM. Codes of the platform are named with the vocabularies and
+// formatters of text.js, so the stage and the other views say the same thing.
+
+import {counted, FORMS, num} from './text.js';
+
+export const STAGE = {
+  region: 'Сцена рудника',
+  modeGroup: 'Вид сцены',
+  mode: {'3d': '3D', scheme: 'Схема'},
+  modeHint: {'3d': 'Трёхмерная модель рудника', scheme: 'Схема в SVG: работает без графического ускорителя'},
+  quality: 'Качество',
+  qualityName: {high: 'высокое', low: 'облегчённое'},
+  qualityAuto: (name) => `${name} (авто)`,
+  qualityHint: 'Облегчённое: без сглаживания и ламп, проще материалы',
+  explode: 'Разнести',
+  explodeHint: 'Разнести горизонты: расстояние между плитами (клавиша E)',
+  overview: 'Общий вид',
+  levels: 'Горизонт',
+  levelPick: 'горизонт…',
+  settings: 'Настройки',
+  keysTitle: 'Управление камерой',
+  keyList: [
+    ['мышь', 'перетаскивание — повернуть, с правой кнопкой или Shift — сдвинуть, колесо — приблизить'],
+    ['← → ↑ ↓', 'повернуть'],
+    ['Shift + стрелки', 'сдвинуть'],
+    ['+ / −', 'приблизить, отдалить'],
+    ['Home', 'общий вид'],
+    ['PageUp / PageDown', 'следующий, предыдущий горизонт'],
+    ['E', 'разнести или сблизить горизонты'],
+    ['Esc', 'снять выбор'],
+    ['двойной щелчок', 'показать объект крупно'],
+    ['Tab', 'подписи объектов; Enter выбирает'],
+  ],
+  loading: '3D-модель загружается…',
+  notice: {
+    'no-webgl': 'WebGL 2 недоступен в этом браузере — показана схема',
+    slow: '3D на этом устройстве работает медленно — показана схема',
+    'context-lost': 'Графический контекст потерян — показана схема. 3D вернётся, когда браузер его восстановит',
+    'load-failed': '3D-модель не загрузилась — показана схема',
+  },
+  backTo3d: 'Вернуть 3D',
+  retry3d: 'Попробовать 3D снова',
+};
+
+export const SCENE = {
+  canvas: (parts) => `Трёхмерная модель рудника. ${parts.join('. ')}. Камера: стрелки, Shift и стрелки, плюс и минус, Home. Подписи объектов — кнопки, полный перечень — вкладка «Список»`,
+  levelsCount: (count) => `Горизонтов: ${num(count)}`,
+  workingsCount: (count) => `выработок: ${num(count)}`,
+  workersShown: (count) => `работников на модели: ${num(count)} (по опубликованным положениям)`,
+  inDanger: (count) => `в опасных зонах: ${num(count)}`,
+  noRoute: (count) => `без расчётного маршрута: ${num(count)}`,
+  problems: (count) => `объектов в особом состоянии: ${num(count)}`,
+  noState: 'состояние не получено',
+  north: 'С',
+  scaleAt: 'у центра вида',
+  vertical: (factor) => (Math.abs(factor - 1) < 0.05 ? 'вертикаль в масштабе плана' : `вертикаль ×${num(factor, 1)}`),
+  notToScale: 'толщина плит и ширина выработок условные',
+  oldData: 'Показаны последние полученные данные, движение остановлено',
+  grouped: (count) => `×${num(count)}`,
+  group: (count) => `группа: ${counted(count, FORMS.worker)} на одном отрезке`,
+  inDangerZone: 'в опасной зоне',
+  noSensors: 'без датчиков',
+  lastKnownShort: 'последнее известное: опасно',
+  workers: (count) => `под землёй на модели: ${num(count)}`,
+  between: (kind, code) => `${kind} ${code}`,
+  levelsSpan: (upper, lower) => `${upper} — ${lower}`,
+  decor: (factor) => `ПДМ — элемент оформления, нет данных в модели; масштаб увеличен ×${num(factor, 0)}, как ширина выработок`,
+  decorNote: (factor) => `ПДМ — оформление, увеличена ×${num(factor, 0)}`,
+  noPosition: (codes) => `Без опубликованного положения: ${codes}`,
+};

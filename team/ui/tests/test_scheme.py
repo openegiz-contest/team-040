@@ -1,7 +1,9 @@
 """The scheme, the legend and the card against the mock server.
 
-The page under test is the production static; nothing in it is switched for
-the test. What is drawn is read from the DOM contract (`data-thing-id`,
+The scheme is the «Схема» mode of the stage (the 3D model is the other one):
+every page here is opened with `mode=scheme` in its route, the switch a user
+has too. The page under test is the production static; nothing in it is
+switched for the test. What is drawn is read from the DOM contract (`data-thing-id`,
 `data-kind` and the state attributes of the implementation spec, section 5)
 and compared with the rows of the «Список» view, which show the same twins.
 
@@ -57,6 +59,13 @@ def thing(name):
     return f"{NS}:{name}"
 
 
+def scheme_route(route):
+    """The route with the stage in its scheme mode (`mode=scheme`), as the stage switch sets it."""
+    if not route:
+        return "#/scheme?mode=scheme"
+    return route + ("&" if "?" in route else "?") + "mode=scheme"
+
+
 class SchemeTestCase(BrowserTestCase):
     viewport = (1280, 720)
 
@@ -72,7 +81,7 @@ class SchemeTestCase(BrowserTestCase):
         mock = mock or self.mock
         mock.scenario(scenario)
         self.page.goto("about:blank")
-        self.page.goto(mock.url + "/" + route)
+        self.page.goto(mock.url + "/" + scheme_route(route))
         if ready:
             self.wait_drawn()
 
@@ -682,48 +691,97 @@ class SchemeTestCase(BrowserTestCase):
 
     # ---- legend --------------------------------------------------------------
 
-    def test_legend_lists_the_three_axes_and_the_card_the_thresholds(self):
+    def test_legend_chip_unfolds_into_the_full_legend(self):
+        """The legend is a one-row chip at the bottom left of the stage; Enter unfolds the full legend, Esc folds it."""
         self.open("normal")
-        legend = self.text_of('[data-testid="legend"]')
-        for axis in ("Опасность:", "Знание:", "Достижимость:"):
+        chip = self.page.evaluate("""(() => {
+          const chip = document.querySelector('[data-testid="legend-toggle"]');
+          const box = chip.getBoundingClientRect();
+          const stage = document.getElementById('stage').getBoundingClientRect();
+          const shown = [...chip.querySelectorAll('.legend__item, .legend__title')].filter((node) => node.getClientRects().length > 0);
+          return {
+            expanded: chip.getAttribute('aria-expanded'), tag: chip.tagName, panelHidden: document.getElementById('legend-panel').hidden,
+            titles: [...chip.querySelectorAll('.legend__title')].map((node) => node.textContent),
+            hints: [...chip.querySelectorAll('.legend__item')].map((node) => node.title),
+            height: Math.round(box.height), oneRow: shown.every((node) => {
+              const item = node.getBoundingClientRect(); return item.top >= box.top - 1 && item.bottom <= box.bottom + 1; }),
+            clipped: chip.scrollWidth > chip.clientWidth + 1,
+            corner: [Math.round(box.left - stage.left), Math.round(stage.bottom - box.bottom)],
+            symbols: chip.querySelectorAll('.legend__item svg').length,
+          };
+        })()""")
+        self.assertEqual((chip["tag"], chip["expanded"], chip["panelHidden"]), ("BUTTON", "false", True), "folded at first")
+        # Folded: the three axes and the exit by name, each with its key symbols, the closed passage and the route.
+        self.assertEqual(chip["titles"], ["Опасность:", "Знание:", "Достижимость:", "Выход:"])
+        for words in ("норма", "внимание", "опасно", "состояние неизвестно", "данные актуальны", "данные устарели",
+                      "данные потеряны", "без датчиков, состояние не оценивается", "расчётный маршрут (модель)",
+                      "нет расчётного маршрута", "маршрут не рассчитан", "доступен (модель)", "проход закрыт"):
+            self.assertIn(words, chip["hints"], "every key symbol of the chip names its state")
+        self.assertEqual(chip["symbols"], 14, "4 hazard, 4 knowledge, 3 reachability, the exit, the closed passage, the route")
+        self.assertTrue(chip["oneRow"], "the chip is one row")
+        self.assertLessEqual(chip["height"], 44)
+        self.assertFalse(chip["clipped"], "nothing of the chip is cut off at 1280x720")
+        self.assertTrue(0 <= chip["corner"][0] <= 24 and 0 <= chip["corner"][1] <= 24, f"bottom left corner of the stage: {chip['corner']}")
+
+        # Enter unfolds the full legend above the chip: every state of the three axes, with its sample and its words.
+        self.page.evaluate("document.querySelector('[data-testid=\"legend-toggle\"]').focus()")
+        self.page.press("Enter")
+        self.page.wait_for("!document.getElementById('legend-panel').hidden", timeout=3.0, message="the legend unfolds")
+        self.assertEqual(self.page.evaluate("document.querySelector('[data-testid=\"legend-toggle\"]').getAttribute('aria-expanded')"), "true")
+        legend = self.text_of("#legend-panel")
+        for axis in ("Опасность:", "Знание:", "Достижимость:", "Выход:", "Команды:"):
             self.assertIn(axis, legend)
         for words in ("норма", "внимание", "опасно", "состояние неизвестно", "последнее известное: опасно",
-                      "данные актуальны", "без датчиков, состояние не оценивается",
-                      "расчётный маршрут (модель)", "нет расчётного маршрута", "маршрут не рассчитан",
-                      "проход закрыт", "новый вход запрещён моделью", "команда отправлена, не подтверждена",
-                      "доступен (модель)"):
+                      "данные актуальны", "данные устарели", "данные потеряны", "без датчиков, состояние не оценивается",
+                      "расчётный маршрут (модель)", "нет расчётного маршрута", "маршрут не рассчитан", "работник в опасной зоне",
+                      "идёт к выходу", "проход закрыт", "новый вход запрещён моделью", "команда отправлена, не подтверждена",
+                      "доступен (модель)", "недоступен"):
             self.assertIn(words, legend)
-        # The thresholds and the note on the other codes are in the summary of the shift, not in the legend.
-        self.assertNotIn("Пороги", legend)
+        self.assertNotIn("Пороги", legend, "the thresholds are in the summary of the shift, not in the legend")
+        self.assertEqual(self.page.evaluate("document.querySelectorAll('#legend-panel [data-legend-group]').length"), 5)
+        self.assertGreaterEqual(self.page.evaluate("document.querySelectorAll('#legend-panel .legend__item svg').length"), 20)
+        # The samples are the symbols of the scheme: same parts, same classes, and on the screen.
+        self.assertTrue(self.shown('#legend-panel .worker[data-egress="none"] .worker__none'))
+        self.assertTrue(self.shown('#legend-panel .sensor[data-quality="lost"] .sensor__lost'))
+        self.assertTrue(self.shown('#legend-panel .working .working__barrier'))
+        self.assertIn("url(", self.page.evaluate(
+            "document.querySelector('#legend-panel .working[data-hazard=\"danger\"] .working__band').style.fill"))
+        self.assertTrue(self.page.evaluate("""(() => { const box = document.getElementById('legend-panel').getBoundingClientRect();
+          return box.height > 100 && box.top >= 0 && box.bottom <= window.innerHeight; })()"""), "the unfolded legend is on the screen")
         summary = self.card()
         self.assertIn("Пороги — настройка демонстрации", summary)
         self.assertIn("синтетический индекс нестабильности внимание 0,4, опасно 0,7", summary)
-        self.assertIn("скорость изменения внимание 1 мм/ч, опасно 2 мм/ч", summary)
-        self.assertIn("вкладке «Список»", summary)
-        groups = self.page.evaluate("document.querySelectorAll('[data-testid=\"legend\"] [data-legend-group]').length")
-        self.assertEqual(groups, 5)
-        # At 1280x720 the legend is four lines: the samples it leaves out are said in words in the card.
-        lines = self.page.evaluate("""(() => {
-          const shown = [...document.querySelectorAll('[data-testid="legend"] .legend__item')].filter((node) => node.getClientRects().length > 0);
-          const more = [...document.querySelectorAll('[data-testid="legend"] .legend__item--more')];
-          return {lines: new Set(shown.map((node) => Math.round(node.getBoundingClientRect().top))).size, shown: shown.length,
-                  hidden: more.filter((node) => node.getClientRects().length === 0).length, more: more.length,
-                  notes: [...document.querySelectorAll('[data-testid="card"] .card__note--compact')]
-                    .filter((node) => node.getClientRects().length > 0).length};
-        })()""")
-        self.assertEqual((lines["more"], lines["hidden"], lines["notes"]), (5, 5, 5))
-        self.assertEqual(lines["shown"], 17)
-        self.assertLessEqual(lines["lines"], 4)
-        self.assertGreaterEqual(self.page.evaluate("document.querySelectorAll('[data-testid=\"legend\"] .legend__item svg').length"), 20)
-        # The samples are the symbols of the scheme: same parts, same classes.
-        self.assertTrue(self.shown('[data-testid="legend"] .worker[data-egress="none"] .worker__none'))
-        self.assertTrue(self.shown('[data-testid="legend"] .sensor[data-quality="lost"] .sensor__lost'))
-        self.assertTrue(self.shown('[data-testid="legend"] .working .working__barrier'))
-        self.assertIn("url(", self.page.evaluate(
-            "document.querySelector('[data-testid=\"legend\"] .working[data-hazard=\"danger\"] .working__band').style.fill"))
-        self.assertTrue(self.page.evaluate("""(() => { const legend = document.querySelector('[data-testid="legend"]');
-          const box = legend.getBoundingClientRect(); return box.height > 20 && box.bottom <= window.innerHeight; })()"""),
-                        "the legend is on the screen")
+        # Esc folds it and gives the focus back to the chip.
+        self.page.press("Escape")
+        self.page.wait_for("document.getElementById('legend-panel').hidden", timeout=3.0, message="the legend folds")
+        self.assertEqual(self.page.focus_info()["testid"], "legend-toggle")
+
+    def test_symbols_for_the_stage_are_the_symbols_of_the_scheme(self):
+        """icons.js symbol(): standalone SVG of every state, built by the scheme's own functions, also as self-contained text."""
+        self.open("normal")
+        got = self.js("""
+          const icons = await import('/js/icons.js');
+          const out = {};
+          for (const [kind, states] of Object.entries(icons.SYMBOLS)) {
+            for (const state of states) {
+              const svg = icons.symbol(kind, state, {size: 24});
+              out[kind + ':' + state] = {tag: svg.tagName, height: svg.getAttribute('height'),
+                                          parts: svg.querySelectorAll('path, circle, rect').length, data: svg.dataset.symbol};
+            }
+          }
+          const markup = icons.symbolMarkup('hazard', 'danger');
+          const sample = document.querySelector('#legend-panel .working[data-hazard="danger"]');
+          const symbol = icons.symbol('hazard', 'danger').querySelector('.working');
+          const parts = (node) => [...node.children].map((child) => child.getAttribute('class')).join(' ');
+          return {out, markup, sameParts: parts(sample) === parts(symbol)};""")
+        for name, item in got["out"].items():
+            self.assertEqual((item["tag"], item["height"], item["data"]), ("svg", "24", name))
+            self.assertGreater(item["parts"], 0, name)
+        self.assertTrue(got["sameParts"], "the symbol of a hazard state has the parts of the working on the scheme")
+        markup = got["markup"]
+        self.assertTrue(markup.startswith("<svg") and 'xmlns="http://www.w3.org/2000/svg"' in markup)
+        self.assertIn("<pattern", markup, "the hatch travels with the symbol")
+        self.assertRegex(markup, r'fill="url\((&quot;)?#sym\d+-danger(&quot;)?\)"', "the computed hatch is written into the shape")
 
     # ---- measurements (reported, loosely bounded) -------------------------------
 

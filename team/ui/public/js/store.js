@@ -140,8 +140,10 @@
  * @property {{status: 'idle'|'loading'|'ready'|'error', ids: string[], runs: ArchiveRun[], failure: (Object|null)}} archive
  *           ids: the local run names the list was read for (the last RUNS_LIMIT of shift.runs)
  * @property {{view: 'scheme'|'list'|'runs', projection: 'axo'|'plan', level: (string|null),
- *             selected: (string|null), listType: string}} ui
- *           level: local name of a level for the plan; selected: full thingId; listType: a kind or "all"
+ *             selected: (string|null), listType: string, stageMode: ('3d'|'scheme'|null),
+ *             quality: ('high'|'low'|null), explode: (number|null)}} ui
+ *           level: local name of a level for the plan; selected: full thingId; listType: a kind or "all";
+ *           stageMode, quality, explode: choices of the stage (view/stage.js), null = not chosen (automatic or stored)
  */
 
 /** @returns {State} */
@@ -160,7 +162,7 @@ export function initialState() {
     blockReason: 'not_ready',
     pending: [],
     archive: {status: 'idle', ids: [], runs: [], failure: null},
-    ui: {view: 'scheme', projection: 'axo', level: null, selected: null, listType: 'all'},
+    ui: {view: 'scheme', projection: 'axo', level: null, selected: null, listType: 'all', stageMode: null, quality: null, explode: null},
   };
 }
 

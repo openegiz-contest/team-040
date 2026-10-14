@@ -1,8 +1,11 @@
-// The card. Nothing selected: the summary of the shift as the model published
-// it. An object selected: its state from the same full snapshot the scheme
-// shows (never a separate read), every published value with its label and
-// unit, the reason of the state as a sentence, and the related twins as
-// buttons that select them. Nothing is computed here.
+// The card, unfolding progressively. Nothing selected: the summary of the
+// shift as the model published it. An object selected: a header with its code,
+// kind and the badges of the three axes (hazard, knowledge, reachability); its
+// key figures; the reason of the state in sentences; the related twins as
+// buttons that select them; «Подробнее» reveals every published value with
+// its label and unit; «Показать на модели» asks the stage to show it. All from
+// the same full snapshot the stage shows (never a separate read). Nothing is
+// computed here.
 
 import {unresolvedFor} from '../commands.js';
 import {h, reconcile, setAttrs, setText} from '../dom.js';
@@ -10,6 +13,7 @@ import {
   exitAtNode, knownHazard, labelOf, placeOf, routeOf, sensorsOfWorking, sensorsOfZone, thingByName, thingsOfKind,
   workersAtExit, workersAtWorking, workersInZone, workingsOfZone,
 } from '../model.js';
+import {setSign} from './signs.js';
 
 const BADGE = {normal: 'ok', attention: 'attention', danger: 'danger', unknown: 'unknown'};
 /** Features and attributes whose value is a code: field -> vocabulary of text.js. */
@@ -26,6 +30,16 @@ const STATE_VOCAB = {exit: 'exitState', incident: 'incidentState', option: 'opti
 const TIME_FIELDS = new Set(['tick', 'sim_time_s', 'idSimulationRun']);
 const SKIPPED_ATTRS = new Set(['kind', 'label', '_parents', 'nodes', 'manifest', 'dynamic_ids', 'presets', 'thresholds',
   'counts', 'points', 'workings', 'sensors']);
+/** Key figures of a kind: the numbers set large under the header. */
+const KEY_FIGURES = {
+  zone: ['workers_count', 'instability_index', 'downtime_s'],
+  working: ['instability_index'],
+  sensor: ['value', 'rate', 'events_count'],
+  worker: ['egress_length_m', 'egress_eta_s', 'egress_detour_m'],
+  exit: ['workers_out'],
+};
+const HAZARD_SIGN = {normal: null, attention: 'attention', danger: 'danger', unknown: 'unknown'};
+const QUALITY_BADGE = {fresh: ['fresh', null], stale: ['stale', 'clock'], lost: ['lost', 'lost'], none: ['none', 'none']};
 const PEOPLE = ['workers_total', 'workers_out', 'workers_in_danger', 'workers_no_route', 'workers_unknown',
   'danger_exposure_person_s', 'unknown_exposure_person_s', 'all_out', 'downtime_s'];
 
@@ -33,70 +47,163 @@ export function mount(root, ctx) {
   const {store, text} = ctx;
   const {UI} = text;
 
+  // ---- header: kind, code, the axes, the two tools -------------------------
   const kind = h('span', {class: 'card__kind'});
-  const code = h('span', {class: 'card__code mono'});
-  const close = h('button', {class: 'btn btn--small card__close', type: 'button', 'data-testid': 'card-close', text: UI.card.close});
+  const code = h('span', {class: 'card__code'});
+  const focus = h('button', {class: 'btn btn--small card__focus', type: 'button', 'data-testid': 'card-focus', text: UI.card.focus});
+  const close = h('button', {class: 'btn btn--quiet btn--small card__close', type: 'button', 'data-testid': 'card-close', text: UI.card.close});
   close.addEventListener('click', () => ctx.select(null));
+  let shownId = null;
+  focus.addEventListener('click', () => {
+    // The stage shows the object; when it cannot (not ready, another view), the scheme with the selection does.
+    if (shownId && !ctx.stage.focus(shownId) && store.getState().ui.view !== 'scheme') ctx.setView('scheme');
+  });
+  const badges = h('div', {class: 'card__badges', 'data-testid': 'card-badges'});
   const hint = h('p', {class: 'card__hint'});
+  const figures = h('dl', {class: 'card__figures', 'data-testid': 'card-figures'});
   const lead = h('div', {class: 'card__lead', 'data-testid': 'card-lead'});
-  const sections = h('div');
+  const sections = h('div', {class: 'card__sections'});
+  const more = h('button', {
+    class: 'btn btn--quiet btn--small card__more-toggle', type: 'button', 'data-testid': 'card-more',
+    'aria-expanded': 'false', 'aria-controls': 'card-fields',
+  });
+  const fields = h('div', {class: 'card__fields', id: 'card-fields', 'data-testid': 'card-fields', hidden: true});
   const times = h('p', {class: 'card__times mono', 'data-testid': 'card-times'});
-  root.append(h('div', {class: 'card'}, h('div', {class: 'card__head'}, kind, code, close), hint, lead, sections, times));
+  let expanded = false;
+  more.addEventListener('click', () => {
+    expanded = !expanded;
+    draw(build(store.getState()));
+  });
+  root.append(h('div', {class: 'card'},
+    h('div', {class: 'card__head'}, h('div', {class: 'card__ident'}, kind, ' ', code), ' ', h('div', {class: 'card__tools'}, focus, close)),
+    badges, hint, figures, lead, sections, more, fields, times));
 
-  function draw(view) {
-    setText(kind, view.kind);
-    setText(code, view.code);
-    close.hidden = !view.selected;
-    setText(hint, view.hint);
-    hint.hidden = !view.hint;
-    reconcile(lead, view.lead, (line, index) => index, () => h('span'), (span, line) => {
-      setText(span, line.text);
-      setAttrs(span, {class: [line.main && 'card__main', line.badge && `badge badge--${line.badge}`]});
-    });
-    lead.hidden = view.lead.length === 0;
-    reconcile(sections, view.sections, (section) => section.key, (section) => h('section', {class: 'card__section', 'data-section': section.key},
+  /** Sections: rows (a key-value list), notes (a list), links (buttons that select). */
+  function drawSections(parent, list) {
+    reconcile(parent, list, (section) => section.key, (section) => h('section', {class: 'card__section', 'data-section': section.key},
       h('h3', {class: 'panel__title'}),
       section.rows ? h('dl', {class: 'kv'})
         : (section.notes ? h('ul', {class: 'card__notes'}) : h('div', {class: section.wide ? 'card__rows' : 'card__links'})),
     ), (node, section) => {
       setText(node.firstChild, section.title);
+      node.firstChild.hidden = !section.title;
       const body = node.lastChild;
       if (section.rows) {
-        reconcile(body, section.rows, (row) => row[2], () => h('div', null, h('dt'), h('dd')), (row, [label, value]) => {
+        reconcile(body, section.rows, (row) => row[2], () => h('div', {class: 'kv__row'}, h('dt'), ' ', h('dd')), (row, [label, value]) => {
           setText(row.firstChild, label);
           setText(row.lastChild, value);
         });
       } else if (section.notes) {
-        reconcile(body, section.notes, (note, index) => index, () => h('li'), (item, note) => {
-          setText(item, note.text);
-          setAttrs(item, {class: note.compact ? 'card__note--compact' : null});
-        });
+        reconcile(body, section.notes, (note, index) => index, () => h('li'), (item, note) => setText(item, note.text));
       } else {
         // Buttons keep their node from poll to poll, so the one in focus stays in focus.
         reconcile(body, section.links, (link, index) => link.id || `text-${index}`, (link) => {
           if (!link.id) return h('span', {class: 'chip'});
-          const button = h('button', {class: 'btn btn--small', type: 'button', 'data-select': link.id}, h('span', {class: 'muted'}), h('span'));
+          const button = h('button', {class: 'link-chip', type: 'button', 'data-select': link.id},
+            h('span', {class: 'link-chip__kind'}), h('span', {class: 'link-chip__text'}));
           button.addEventListener('click', () => ctx.select(link.id));
           return button;
-        }, (node_, link) => {
+        }, (item, link) => {
           if (!link.id) {
-            setText(node_, link.text);
-            setAttrs(node_, {class: ['chip', link.stand && 'chip--stand']});
+            setText(item, link.text);
+            setAttrs(item, {class: ['chip', link.stand && 'chip--stand']});
             return;
           }
-          setText(node_.firstChild, link.prefix ? `${link.prefix} ` : '');
-          setText(node_.lastChild, link.text);
-          setAttrs(node_.lastChild, {class: [link.badge && `badge badge--${link.badge}`]});
+          setText(item.firstChild, link.prefix ? `${link.prefix} ` : '');
+          setText(item.lastChild, link.text);
+          setAttrs(item, {'data-badge': link.badge || null});
         });
       }
     });
-    setText(times, view.times.join('  |  '));
+  }
+
+  function draw(view) {
+    setText(kind, view.kind);
+    setText(code, view.code);
+    code.hidden = !view.code;
+    close.hidden = !view.selected;
+    focus.hidden = !view.thingId;
+    shownId = view.thingId;
+    setText(hint, view.hint);
+    hint.hidden = !view.hint;
+
+    reconcile(badges, view.badges, (badge) => badge.axis, () => h('span', {class: 'badge'}, h('span', {class: 'badge__sign'}), h('span')),
+      (node, badge) => {
+        setAttrs(node, {class: ['badge', `badge--${badge.cls}`], 'data-axis': badge.axis});
+        const [holder, words] = node.children;
+        holder.hidden = !badge.sign;
+        if (badge.sign) setSign(holder, badge.sign);
+        setText(words, badge.text);
+      });
+    badges.hidden = view.badges.length === 0;
+
+    reconcile(figures, view.figures, (item) => item.field, () => h('div', {class: 'card__figure'}, h('dt'), ' ', h('dd')), (node, item) => {
+      setText(node.firstChild, item.label);
+      setText(node.lastChild, item.value);
+    });
+    figures.hidden = view.figures.length === 0;
+
+    reconcile(lead, view.lead, (line, index) => index, () => h('span'), (span, line) => {
+      setText(span, line.text);
+      setAttrs(span, {class: [line.main && 'card__main', line.badge && `badge badge--${line.badge}`]});
+    });
+    lead.hidden = view.lead.length === 0;
+
+    drawSections(sections, view.sections);
+    drawSections(fields, view.fields);
+    const count = view.fields.reduce((sum, section) => sum + (section.rows || section.links || []).length, 0);
+    more.hidden = count === 0;
+    fields.hidden = !expanded || count === 0;
+    setAttrs(more, {'aria-expanded': String(expanded && count > 0), text: expanded ? UI.card.less : UI.card.more(count)});
+
+    setText(times, view.times.join('  ·  '));
     times.hidden = view.times.length === 0;
+  }
+
+  /** The badges of the three axes, each with its sign and its words. */
+  function axisBadges(thing) {
+    const {values} = thing;
+    const list = [];
+    const hazard = (state, words) => list.push({axis: 'hazard', cls: state, sign: HAZARD_SIGN[state], text: words});
+    const knowledge = (quality, vocab = 'quality') => {
+      if (quality === undefined) return;
+      const [cls, sign] = QUALITY_BADGE[quality] || ['unknown', 'unknown'];
+      list.push({axis: 'knowledge', cls, sign, text: text.label(vocab, quality)});
+    };
+    if (thing.hazard) {
+      hazard(thing.hazard.state, text.hazardText(thing.hazard) + (thing.hazard.defensive ? UI.card.defensive : ''));
+      knowledge(thing.values.data_quality);
+    }
+    if (thing.kind === 'working' && values.passability !== undefined) {
+      const closed = values.passability === 'closed';
+      list.push({axis: 'reach', cls: closed ? 'blocked' : (values.passability === 'open' ? 'normal' : 'unknown'),
+        sign: closed ? 'closed' : null, text: text.passabilityText(values)});
+    } else if (thing.kind === 'sensor') {
+      knowledge(values.quality);
+    } else if (thing.kind === 'worker') {
+      if (values.location_hazard !== undefined) {
+        hazard(knownHazard(values.location_hazard), `${UI.incident.zone}: ${text.hazardCodeText(values.location_hazard)}`);
+      }
+      knowledge(values.pos_quality, 'posQuality');
+      if (values.status !== 'out') {
+        const status = values.egress_status;
+        const shape = {ok: 'route', none: 'noroute'}[status] || 'unknown';
+        list.push({axis: 'reach', cls: shape, sign: shape, text: text.label('egress', status)});
+      }
+    } else if (thing.kind === 'exit') {
+      const shape = {available: 'route', unavailable: 'blocked'}[values.state] || 'unknown';
+      list.push({axis: 'reach', cls: shape, sign: shape === 'route' ? 'route' : shape, text: text.label('exitState', values.state)});
+    }
+    if (unresolvedFor(store.getState().pending, thing.name).length > 0) {
+      list.push({axis: 'pending', cls: 'pending', sign: 'clock', text: UI.scheme.pending});
+    }
+    return list;
   }
 
   function build(state) {
     const {model, snapshot, ui} = state;
-    const view = {kind: UI.card.title, code: '', selected: false, hint: '', lead: [], sections: [], times: []};
+    const view = {kind: UI.card.title, code: '', selected: false, thingId: null, hint: '', badges: [], figures: [], lead: [],
+      sections: [], fields: [], times: []};
     if (!model) return view;
     const name = (local) => labelOf(model, local);
     const link = (thing, words, badge) => ({
@@ -117,9 +224,11 @@ export function mount(root, ctx) {
 
     const {values, units, attrs} = thing;
     view.selected = true;
+    view.thingId = thing.thingId;
     view.kind = `${UI.card.title} · ${text.label('kind', thing.kind)}`;
     view.code = thing.label;
     if (!thing.hasState && !['level', 'mine'].includes(thing.kind)) view.hint = UI.list.noState;
+    view.badges = axisBadges(thing);
     const say = (words, badge, main) => {
       if (words && words !== text.DASH) view.lead.push({text: words, badge, main});
     };
@@ -147,10 +256,16 @@ export function mount(root, ctx) {
       return JSON.stringify(value);
     };
 
-    // The state in sentences.
+    // Key figures: published numbers only, set large.
+    for (const field of KEY_FIGURES[thing.kind] || []) {
+      const value = values[field];
+      if (typeof value !== 'number') continue;
+      const shown = field === 'egress_eta_s' ? text.duration(value) : text.quantity(value, units[field]);
+      view.figures.push({field, label: text.fieldLabel(field, thing.kind), value: shown});
+    }
+
+    // The state in sentences; what the badges already say is not repeated.
     if (thing.hazard) {
-      say(text.hazardText(thing.hazard) + (thing.hazard.defensive ? UI.card.defensive : ''), BADGE[thing.hazard.state], true);
-      say(text.label('quality', values.data_quality));
       say(text.lastKnownText(values), BADGE[knownHazard(values.last_known_hazard_state)]);
       const reason = text.reasonText(values, name);
       if (reason && values.reason_code !== 'no_sensor') say(`${text.fieldLabel('reason_code')}: ${reason}`);
@@ -163,13 +278,10 @@ export function mount(root, ctx) {
         say(text.label('restriction', values.routing_restriction), values.routing_restriction === 'blocked' ? 'blocked' : 'unknown');
       }
     }
-    if (thing.kind === 'working') {
-      say(text.passabilityText(values), values.passability === 'closed' ? 'blocked' : (values.passability === 'open' ? null : 'unknown'));
-    } else if (thing.kind === 'zone') {
+    if (thing.kind === 'zone') {
       say([text.label('workState', values.work_state), text.label('withdrawal', values.withdrawal_state)]
         .filter((words) => words !== text.DASH).join('; '));
     } else if (thing.kind === 'sensor') {
-      say(text.label('quality', values.quality), {fresh: 'ok', stale: 'attention'}[values.quality] || 'unknown', true);
       say(text.label('linkState', values.link_state));
       if (typeof values.measured_at_sim_s === 'number') {
         say((values.quality === 'fresh' ? UI.card.measuredAt : UI.card.lastMeasurement)(text.modelTime(values.measured_at_sim_s)));
@@ -177,32 +289,18 @@ export function mount(root, ctx) {
     } else if (thing.kind === 'worker') {
       const status = values.egress_status;
       if (values.status === 'out' || status === 'ok') {
-        say(text.egressText(values, name), 'ok', true);
+        say(text.egressText(values, name), null, true);
         say(text.crossesText(values), BADGE[knownHazard(values.egress_crosses)]);
       } else {
         const noPath = status === 'none' && values.egress_reason === 'no_open_path';
-        say(noPath ? UI.card.noRoute(thing.label) : text.egressText(values, name), status === 'none' ? 'blocked' : 'unknown', true);
+        say(noPath ? UI.card.noRoute(thing.label) : text.egressText(values, name), null, true);
         if (status === 'none') say(UI.card.graphOnly);
-      }
-      if (values.location_hazard !== undefined) {
-        say(`${UI.incident.zone}: ${text.hazardCodeText(values.location_hazard)}`, BADGE[knownHazard(values.location_hazard)]);
       }
       say(text.label('workerStatus', values.status));
       say(text.placeText(placeOf(model, thing)));
     } else if (thing.kind === 'exit') {
-      say(text.label('exitState', values.state), {available: 'ok', unavailable: 'blocked'}[values.state] || 'unknown', true);
       if (typeof values.workers_out === 'number') say(UI.scheme.out(values.workers_out));
     }
-    if (unresolvedFor(state.pending, thing.name).length > 0) say(UI.scheme.pending, 'info');
-
-    // Every published value, then the attributes.
-    const stateRows = Object.keys(values).filter((field) => !TIME_FIELDS.has(field) && !field.startsWith('reason_') && field !== 'scene')
-      .map((field) => [text.fieldLabel(field, thing.kind), show(field, values[field], units[field]), field]);
-    if (stateRows.length > 0) view.sections.push({key: 'state', title: UI.card.state, rows: stateRows});
-    const unitOf = (field) => (field.endsWith('_m') ? 'm' : (field.endsWith('_s') ? 's' : undefined));
-    const attrRows = Object.keys(attrs).filter((field) => !SKIPPED_ATTRS.has(field))
-      .map((field) => [text.fieldLabel(field, thing.kind), show(field, attrs[field], unitOf(field)), field]);
-    if (attrRows.length > 0) view.sections.push({key: 'attributes', title: UI.card.attributes, rows: attrRows});
 
     // Related twins.
     const related = [];
@@ -242,6 +340,16 @@ export function mount(root, ctx) {
     }
     add(place.level);
     if (related.length > 0) view.sections.push({key: 'related', title: UI.card.related, links: related.map((other) => link(other))});
+
+    // Every published value, then the attributes: behind «Подробнее».
+    const stateRows = Object.keys(values).filter((field) => !TIME_FIELDS.has(field) && !field.startsWith('reason_') && field !== 'scene')
+      .map((field) => [text.fieldLabel(field, thing.kind), show(field, values[field], units[field]), field]);
+    if (stateRows.length > 0) view.fields.push({key: 'state', title: UI.card.state, rows: stateRows});
+    const unitOf = (field) => (field.endsWith('_m') ? 'm' : (field.endsWith('_s') ? 's' : undefined));
+    const attrRows = Object.keys(attrs).filter((field) => !SKIPPED_ATTRS.has(field))
+      .map((field) => [text.fieldLabel(field, thing.kind), show(field, attrs[field], unitOf(field)), field]);
+    if (attrRows.length > 0) view.fields.push({key: 'attributes', title: UI.card.attributes, rows: attrRows});
+
     if (typeof values.sim_time_s === 'number' && snapshot && values.tick !== snapshot.tick) {
       view.times[0] = `${UI.card.modelTime}: ${text.tickTime(values.sim_time_s, values.tick)}`;
     }
@@ -265,13 +373,6 @@ export function mount(root, ctx) {
     view.kind = UI.card.summary;
     view.hint = model.hasSnapshot ? UI.card.nothingSelected : UI.list.noState;
     const shift = model.shift;
-    if (shift && model.hasSnapshot) {
-      view.sections.push({key: 'people', title: text.VOCAB.kindPlural.worker, rows: PEOPLE.filter((field) => shift.values[field] !== undefined).map((field) => {
-        const value = shift.values[field];
-        const label = text.METRICS.includes(field) ? text.metricLabel(field) : text.fieldLabel(field);
-        return [label, typeof value === 'boolean' ? text.yesNo(value) : text.quantity(value, shift.units[field]), field];
-      })});
-    }
     view.sections.push({key: 'exits', title: text.VOCAB.kindPlural.exit, wide: true, links: thingsOfKind(model, 'exit').map((exit) => link(exit,
       [`${exit.label}: ${text.label('exitState', exit.values.state)}`,
         typeof exit.values.workers_out === 'number' ? UI.scheme.out(exit.values.workers_out) : ''].filter(Boolean).join('; '),
@@ -281,15 +382,26 @@ export function mount(root, ctx) {
         typeof zone.values.workers_count === 'number' ? text.counted(zone.values.workers_count, text.FORMS.worker) : '']
         .filter((words) => words && words !== text.DASH).join('; '),
       zone.hazard.state === 'normal' ? null : BADGE[zone.hazard.state]))});
-    view.sections.push({key: 'conditions', title: UI.status.conditions, links: model.conditions.length > 0
+    if (shift && model.hasSnapshot) {
+      view.fields.push({key: 'people', title: text.VOCAB.kindPlural.worker, rows: PEOPLE.filter((field) => shift.values[field] !== undefined).map((field) => {
+        const value = shift.values[field];
+        const label = text.METRICS.includes(field) ? text.metricLabel(field) : text.fieldLabel(field);
+        return [label, typeof value === 'boolean' ? text.yesNo(value) : text.quantity(value, shift.units[field]), field];
+      })});
+      view.fields.push({key: 'people-note', title: '', notes: [{text: UI.incident.overlap}]});
+    }
+    view.fields.push({key: 'conditions', title: UI.status.conditions, links: model.conditions.length > 0
       ? model.conditions.map((condition) => ({text: text.conditionText(condition, name), stand: true}))
       : [{text: UI.status.noConditions}]});
     const thresholds = thresholdRows(state.attributes ? state.attributes.mine.thresholds : null);
-    if (thresholds.length > 0) view.sections.push({key: 'thresholds', title: UI.card.thresholds, rows: thresholds});
-    view.sections.push({key: 'marks', title: UI.card.marks, notes: [
-      ...UI.card.marksCompact.map((words) => ({text: words, compact: true})), {text: UI.card.otherCodes}]});
+    if (thresholds.length > 0) view.fields.push({key: 'thresholds', title: UI.card.thresholds, rows: thresholds});
+    view.fields.push({key: 'marks', title: UI.card.marks, notes: [{text: UI.card.otherCodes}]});
     return view;
   }
 
+  // A new selection starts folded.
+  store.watch((state) => state.ui.selected, () => {
+    expanded = false;
+  });
   store.watch((state) => [state.model, state.snapshot, state.ui.selected, state.pending], () => draw(build(store.getState())));
 }

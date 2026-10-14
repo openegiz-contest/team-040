@@ -6,24 +6,36 @@ and asserts what a dispatcher would see (texts, `data-*` state, counts) and what
 recorded. The other test files check the same behaviour module by module; this file is the proof
 that the whole screen does it.
 
-    обычный кадр                          NormalFrameTest.test_normal_frame
-    обход                                 PassageClosedTest.test_detour
-    отсутствие пути                       PassageClosedTest.test_no_path
-    потерянный датчик после danger        SensorLostTest.test_sensor_lost_after_danger
-    невалидный/неполный снимок            InvalidSnapshotTest.test_invalid_*
-    несовпадение topology_version         TopologyTest.test_topology_version_mismatch, ..._change_recovers
+The stage in the middle of the screen has two modes: the 3D model (the default) and the SVG scheme.
+The items that show the mine are checked in both: on the scheme (asked for by the route, `mode=scheme`),
+in 3D with Chrome's software WebGL (SwiftShader), and on the no-WebGL path (Chrome with
+--disable-webgl, where the stage falls back to the scheme by itself).
+
+    item                                  scheme                                      3D (Checklist3dTest)                         no WebGL
+    обычный кадр                          NormalFrameTest.test_normal_frame           test_normal_frame                           NormalFrameNoWebglTest
+    обход                                 PassageClosedTest.test_detour               test_detour                                 PassageClosedNoWebglTest
+    отсутствие пути                       PassageClosedTest.test_no_path              test_no_path                                PassageClosedNoWebglTest
+    потерянный датчик после danger        SensorLostTest.test_sensor_lost_after_danger test_sensor_lost_after_danger,             SensorLostNoWebglTest
+                                                                                      test_problem_zone_tags_are_in_sight_in_the_overview
+    опасный участок (danger_zone)         test_composition.NoWebglTest                test_danger_zone
+    сравнение вариантов                   test_panels.PeopleBarTest                   test_options_compared_by_their_people_bars
+    платформа недоступна                  LinkFailureTest                             test_platform_unavailable
+    невалидный/неполный снимок            InvalidSnapshotTest.test_invalid_*          test_invalid_snapshot_keeps_the_last_scene
+    несовпадение topology_version         TopologyTest.test_topology_version_mismatch (both modes), ..._change_recovers
     пауза с живым heartbeat               HeartbeatTest.test_pause_with_live_heartbeat
     застывший publication_seq             HeartbeatTest.test_frozen_publication_seq, ..._old_at_first_load
     pending/rejected/timeout команды      CommandsTest.test_pending_rejected_and_timeout_commands,
                                           CommandsTest.test_post_timeout_is_unknown_delivery_then_retry
     повтор с тем же id                    CommandsTest.test_retry_with_the_same_id
     reset                                 ResetTest.test_reset
-    неполный вывод без last_out_s         ResultsTest.test_incomplete_withdrawal_without_last_out_s
-    отсутствие прогноза                   ResultsTest.test_no_forecast
+    неполный вывод без last_out_s         ResultsTest.test_incomplete_withdrawal_without_last_out_s     (and ResultsNoWebglTest)
+    отсутствие прогноза                   ResultsTest.test_no_forecast                                  (and ResultsNoWebglTest)
     несколько пакетов manifest            NormalFrameTest.test_manifest_batches_with_scrambled_order
 
 and the cross-cutting checks of the task and of DESIGN.md 6.1: LinkFailureTest, KeyboardTest,
-ColourIndependenceTest, LayoutTest, HygieneTest, StaticSourcesTest, EveryScenarioTest.
+ColourIndependenceTest, LayoutTest, HygieneTest, StaticSourcesTest, EveryScenarioTest. The composition
+around the stage (situation strip, stand drawer, top bar, dock, page scroll, keyboard and reduced motion
+in 3D) is test_composition.py; the 3D stage module itself is test_scene3d.py.
 
 Everything here is verified against the mock server only; its numbers are invented for tests.
 
@@ -40,8 +52,8 @@ import unittest
 
 from browser_support import OUTPUT_DIR, PUBLIC_DIR, BrowserTestCase, MockServer, read_png, wait_until
 from screenshots import (
-    CLOSE, EXECUTE, RESET, REWRITE_SHIFT, STATES_PATCH, WORKING_SELECT, choose, close_working, execute_option, show_right,
-    wait_decision,
+    CLOSE, EXECUTE, RESET, REWRITE_SHIFT, STATES_PATCH, WORKING_SELECT, choose, close_working, execute_option, set_stand,
+    show_right, wait_decision,
 )
 
 NS = "team040.mine"
@@ -61,7 +73,7 @@ SCENARIOS = (
     "normal", "detour", "no_path", "sensor_lost_after_danger", "paused_heartbeat", "frozen_seq", "frozen_seq_old",
     "invalid_missing_id", "invalid_duplicate_id", "invalid_mixed_tick", "invalid_missing_field",
     "invalid_contract_version", "invalid_no_metadata", "topology_mismatch", "topology_change", "commands", "reset",
-    "withdrawal_incomplete", "no_forecast", "partial_forecast", "route_segments", "unknown_enum", "empty",
+    "withdrawal_incomplete", "no_forecast", "partial_forecast", "route_segments", "unknown_enum", "empty", "danger_zone",
 )
 
 # The state attributes of every twin drawn in the scheme, by thingId (one snapshot, read in one step).
@@ -120,6 +132,8 @@ class ScenarioTestCase(BrowserTestCase):
     """One mock server per class; a test switches the scenario through the control API."""
 
     mock_args = ()
+    # The SVG scheme is asked for by the route (`mode=scheme`); on the no-WebGL path the stage falls back to it by itself.
+    scheme_by_route = True
 
     @classmethod
     def setUpClass(cls):
@@ -155,6 +169,19 @@ class ScenarioTestCase(BrowserTestCase):
         return self.body(page)
 
     def wait_drawn(self, timeout=10.0):
+        """Wait for the SVG scheme. It is the «Схема» mode of the stage: the route asks for it (`mode=scheme`), as a link does;
+        without WebGL the stage shows it by itself, with its notice."""
+        if self.scheme_by_route:
+            self.page.evaluate("""(() => {
+              if (/[?&]mode=scheme/.test(location.hash)) return;
+              const hash = location.hash && location.hash !== '#' ? location.hash : '#/scheme';
+              location.hash = hash + (hash.includes('?') ? '&' : '?') + 'mode=scheme';
+            })()""")
+        else:
+            self.page.wait_for("document.querySelector('#stage').dataset.fallback === 'no-webgl'"
+                               " && document.querySelector('#stage').dataset.stageMode === 'scheme'"
+                               " && !document.querySelector('[data-testid=\"stage-notice\"]').hidden", timeout=timeout,
+                               message="without WebGL the stage falls back to the scheme, with its notice")
         self.page.wait_for("document.querySelector('[data-testid=\"scheme-svg\"]').dataset.drawn === 'true'"
                            " && !!document.querySelector('#scheme .worker')", timeout=timeout, message="the scheme is drawn")
 
@@ -259,7 +286,11 @@ class ScenarioTestCase(BrowserTestCase):
             f"[...document.querySelector({json.dumps(self.row(name))}).cells].map((cell) => cell.innerText)")]
 
     def select_on_scheme(self, name):
-        """Select a twin by a click on its mark in the scheme."""
+        """Select a twin by a click on its mark in the scheme. The decision dock unfolded over the stage
+        (1280x720) is folded first, as a user would: it covers the lower part of the picture."""
+        if self.body().get("dock") == "open" and self.page.evaluate(
+                "getComputedStyle(document.getElementById('decision-dock')).position") == "absolute":
+            self.page.click('[data-testid="dock-toggle"]')
         self.page.click(self.scheme(name), force=True)
         self.page.wait_for(f"location.hash.includes('{name}')", timeout=3.0, message=f"{name} is selected")
 
@@ -326,7 +357,8 @@ class ScenarioTestCase(BrowserTestCase):
         origin = mock.url + "/"
         for request in list(page.requests):
             url = request["url"]
-            if url == "about:blank":
+            # A data: URL is an image the page drew itself, not a request to any server.
+            if url == "about:blank" or url.startswith("data:"):
                 continue
             self.assertTrue(url.startswith(origin), f"a request outside the origin: {url}")
             path = "/" + url[len(origin):]
@@ -334,7 +366,8 @@ class ScenarioTestCase(BrowserTestCase):
             if path.startswith("/ditto/"):
                 self.assertIn(request["type"], ("Fetch", "XHR"), path)
             else:
-                self.assertRegex(path, r"^/(?:(?:css|js)/[\w./-]+\.(?:css|js))?$", f"not a static file of the page: {path}")
+                self.assertRegex(path, r"^/(?:(?:css|js)/[\w./-]+\.(?:css|js)|fonts/[\w.-]+\.(?:css|woff2)|vendor/[\w./-]+\.js"
+                                       r"|models/[\w.-]+\.glb)?$", f"not a static file of the page: {path}")
         entries = self.platform_log(mock)
         self.assertTrue(entries, "the page read the platform")
         for entry in entries:
@@ -375,9 +408,11 @@ class NormalFrameTest(ScenarioTestCase):
                          "Прогон run-0005 · seed 42")
         self.assertEqual(self.text('[data-testid="status-conditions"]'), "Условия стенда: нет")
 
-        # The incident strip stays, with the three numbers of the model and the total.
+        # No incident and no banner: the situation strip gives its room to the stage; the people figures of the
+        # model stay in the top bar, the incident state stays in the DOM.
         self.assertEqual(self.attr('[data-testid="incident-strip"]', "data-incident-state"), "none")
-        self.assertIn("Инцидентов нет", self.text('[data-testid="incident-strip"]'))
+        self.assertIn("Инцидентов нет", plain(self.page.evaluate("document.querySelector('[data-testid=\"incident-strip\"]').textContent")))
+        self.assertFalse(self.visible('[data-testid="situation-strip"]'))
         self.assertEqual(self.counters(), {"in-danger": "0", "no-route": "0", "unknown": "0", "out": "0", "total": "14"})
 
         # The scheme: every placed twin once, with the published state and nothing normal by default.
@@ -532,7 +567,7 @@ class PassageClosedTest(ScenarioTestCase):
         self.assertEqual(self.attr(route, "data-reason"), "selection")
         sentence = "расчётный маршрут (модель): 655 м (длиннее на 243 м), около 8 мин 44 с, выход Съезд"
         self.assertIn(sentence, self.card())
-        self.assertEqual(self.body()["right"], "card", "the user's selection keeps the card in the compact layout")
+        self.assertTrue(self.visible(f"{CARD} .card__head"), "the card is on the screen next to the decision dock")
 
         # The decision panel: three offered options with the forecast of the model.
         panel = self.decision()
@@ -585,7 +620,8 @@ class PassageClosedTest(ScenarioTestCase):
         self.assertIn("Инцидент: Участок В — закрыт проход (В-07)", self.text('[data-testid="incident-strip"]'))
 
         # The decision panel says what the model cannot do.
-        self.assertEqual(self.body()["right"], "decision", "an incident brings the decision panel forward")
+        self.assertEqual(self.body()["dock"], "collapsed", "an incident brings the decision dock; at 1280x720 its bar lies over the stage")
+        show_right(self.page, "decision")
         self.assertEqual(self.text('[data-testid="decision-no-path"]'),
                          "В графе модели нет открытого пути до выхода для Р-07, Р-08. Модель не рассчитывает, как выводить этих работников")
         self.assertEqual(self.text('[data-testid="decision-nobody-left"]'), "Ни один вариант модели не выводит этих работников")
@@ -620,8 +656,9 @@ class SensorLostTest(ScenarioTestCase):
         """Потерянный датчик после danger: unknown now, and the last known danger stays in sight."""
         self.open("sensor_lost_after_danger")
         self.wait_drawn()
-        self.assertEqual(self.body()["right"], "decision",
-                         "loaded in the middle of an incident with nothing selected: the decision panel is in front")
+        self.assertEqual(self.body()["dock"], "collapsed",
+                         "loaded in the middle of an incident: the decision dock is there (its bar, at 1280x720)")
+        self.assertTrue(self.visible('[data-testid="situation-step-1"]'), "what changed is in sight")
         drawn = self.drawn()
         zone = drawn[thing("zone-c")]
         self.assertEqual((zone["hazard"], zone["quality"], zone["lastKnownHazard"]), ("unknown", "lost", "danger"))
@@ -654,9 +691,12 @@ class SensorLostTest(ScenarioTestCase):
 
         # Card: selected by a click on the tag of the zone.
         self.select_on_scheme("zone-c")
-        self.assertEqual(self.body()["right"], "card", "a selection of the user brings the card forward")
+        self.assertEqual(self.text(f"{CARD} .card__code"), "Участок В", "the card shows the selection of the user")
+        # The three axes are the badges of the card's head; the sentences under them start with the last known danger.
+        badges = self.texts(f"{CARD} [data-testid='card-badges'] .badge")
+        self.assertEqual(badges[:2], ["состояние неизвестно", "данные потеряны"])
         lead = self.texts(f"{CARD} [data-testid='card-lead'] span")
-        self.assertEqual(lead[:3], ["состояние неизвестно", "данные потеряны", "последнее известное: опасно (тик 810)"])
+        self.assertEqual(lead[0], "последнее известное: опасно (тик 810)")
         self.assertIn("новый вход запрещён моделью", lead)
         self.assertIn("причина состояния: данные датчика потеряны: датчик Э-05", lead)
         self.select_on_scheme("sens-ext-05")
@@ -688,7 +728,10 @@ class InvalidSnapshotTest(BrowserTestCase):
     """Each `invalid_*` scenario: the last full snapshot stays, the specific reason is shown, commands are blocked.
 
     The six scenarios turn invalid three seconds after their start, so they run side by side:
-    one mock server and one page per scenario, started together.
+    one mock server and one page per scenario, started together. The pages show the stage in its
+    scheme mode (`mode=scheme`): six 3D scenes booting at once in one software-rendered browser
+    would not have their first valid publications drawn within those three seconds. The same rule
+    in 3D is checked by Checklist3dTest.test_invalid_snapshot_keeps_the_last_scene.
     """
 
     CASES = {
@@ -699,16 +742,16 @@ class InvalidSnapshotTest(BrowserTestCase):
         "invalid_contract_version": ("contract_version", "версия контракта данных 2, интерфейс работает с версией 1"),
         "invalid_no_metadata": ("no_metadata", "ответ платформы без метаданных (_modified): его нельзя считать актуальным"),
     }
-    WATCH = """(() => {
-      window.__marker = 'same document';
+    # From before the first script of the page: the moment of the last full snapshot it showed, and how many
+    # people the scheme drew then. (Recorded from the start: a page may turn invalid before the others are loaded.)
+    WATCH = """
       window.__full = [];
-      const note = () => {
+      new MutationObserver(() => {
+        if (!document.body) return;
         const {snapshot, tick, seq} = document.body.dataset;
         if (snapshot === 'ok' && tick) window.__full = [tick, seq, document.querySelectorAll('#scheme .worker').length];
-      };
-      note();
-      new MutationObserver(note).observe(document.body, {attributes: true});
-    })()"""
+      }).observe(document, {attributes: true, childList: true, subtree: true});
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -719,12 +762,14 @@ class InvalidSnapshotTest(BrowserTestCase):
             cls.addClassCleanup(mock.stop)
             page = cls.browser.new_page()
             cls.addClassCleanup(page.close)
-            page.goto(mock.url + "/")
+            page.add_init_script(cls.WATCH)
+            mock.scenario(scenario)    # its three valid publications start now
+            page.goto(mock.url + "/#/scheme?mode=scheme")
             cls.cases[scenario] = (mock, page)
-        for _, page in cls.cases.values():
-            page.wait_for("document.body.dataset.boot === 'ready' && document.body.dataset.snapshot === 'ok'", timeout=10.0,
-                          message="a full snapshot before the damaged ones")
-            page.evaluate(cls.WATCH)
+        for scenario, (_, page) in cls.cases.items():
+            page.wait_for("document.body.dataset.boot === 'ready' && window.__full.length > 0", timeout=10.0,
+                          message=f"{scenario}: a full snapshot before the damaged ones")
+            page.evaluate("window.__marker = 'same document'")
 
     def check(self, scenario):
         code, reason = self.CASES[scenario]
@@ -753,9 +798,11 @@ class InvalidSnapshotTest(BrowserTestCase):
         self.assertFalse(old[0], "the scheme is marked with the time of its data")
         self.assertRegex(plain(old[1]), rf"^Показаны данные на \d\d:\d\d:\d\d UTC, тик {tick}\. Текущее состояние неизвестно$")
 
-        # Commands are blocked, visibly, and a press sends nothing.
+        # Commands are blocked, visibly, and a press sends nothing: the dispatcher's actions and, in the stand drawer, the
+        # conditions and the reset.
         self.assertEqual(plain(page.evaluate("document.querySelector('#actions .block-note').textContent")),
                          "Команды заблокированы: последний снимок отклонён")
+        set_stand(page)
         buttons = page.evaluate("""[...document.querySelectorAll('button[data-command-type]')].filter((button) => button.getClientRects().length > 0)
           .map((button) => button.getAttribute('aria-disabled'))""")
         self.assertGreaterEqual(len(buttons), 8)
@@ -889,6 +936,7 @@ class UnexpectedFormTest(ScenarioTestCase):
           .map((node) => [node.dataset.preset, node.querySelector('button').textContent])""")
         self.assertEqual([item[0] for item in presets], ["p-detour", "p-no-path"])
         self.assertNotIn("the same id again", [item[1] for item in presets])
+        set_stand(self.page)
         self.assertTrue(self.visible(f'{CONDITIONS} select'))
         self.wait_seq(2)
         self.assertEqual(self.page.console_errors, [])
@@ -900,7 +948,7 @@ class UnexpectedFormTest(ScenarioTestCase):
 
 class TopologyTest(ScenarioTestCase):
     def test_topology_version_mismatch(self):
-        """Несовпадение topology_version: no scheme, a list without states, no commands."""
+        """Несовпадение topology_version: no picture of the mine in either mode of the stage, a list without states, no commands."""
         self.open("topology_mismatch", ready=False)
         state = self.wait_body(10.0, boot="ready", snapshot="invalid")
         self.assertEqual((state["snapshotReason"], state["commands"]), ("topology_mismatch", "blocked"))
@@ -908,6 +956,19 @@ class TopologyTest(ScenarioTestCase):
         banner = self.wait_banner("topology_mismatch", 3.0)
         self.assertEqual(banner["text"], "Схема не показана: версия топологии в двойниках (t1) не совпадает с версией модели (t2). "
                                          "Вид «Список» доступен. Команды заблокированы")
+
+        # The 3D stage (the default mode): the banner says why, and no model of the wrong topology is built.
+        self.assertEqual(self.attr("#stage", "data-stage-mode"), "3d")
+        time.sleep(2.0)    # time for a scene to be built, if one were going to be
+        stage = self.page.evaluate("Object.assign({}, document.getElementById('stage').dataset)")
+        self.assertIn(stage.get("levels"), (None, "0"), f"no slab of a topology the model does not use: {stage}")
+        self.assertIn(stage.get("workings"), (None, "0"), f"and no working: {stage}")
+        self.assertEqual(self.count("#stage-3d [data-thing-id]"), 0, "no label of an object of the wrong topology")
+        self.assertTrue(self.visible('[data-testid="overlay-banner"][data-code="topology_mismatch"]'), "the banner is in sight")
+
+        # The SVG scheme, its other mode (by the route, as a link opens it).
+        self.page.evaluate("location.hash = '#/scheme?mode=scheme'")
+        self.page.wait_for("document.querySelector('#stage').dataset.stageMode === 'scheme'", timeout=3.0)
         self.assertEqual(self.attr('[data-testid="scheme-svg"]', "data-drawn"), "false")
         self.assertEqual(self.count("#scheme [data-thing-id]"), 0, "a scheme of the wrong topology is not drawn")
         self.assertEqual(self.text("#scheme .scheme__empty"), "Схема не показана")
@@ -1001,8 +1062,11 @@ class HeartbeatTest(ScenarioTestCase):
         self.assertEqual(self.wait_banner("paused_decision", 1.0)["text"],
                          "Модель на паузе для выбора действия. Время модели стоит, публикации идут")
         self.assertRegex(self.text('[data-testid="status-model-time"]'), r"модель на паузе для выбора действия$")
-        self.assertEqual(self.text('[data-testid="status-publications"]'), "публикации идут")
+        # At 1280x720 the top bar says the publications only when they are not going on; the words are in the DOM.
+        self.assertEqual(plain(self.page.evaluate("document.querySelector('[data-testid=\"status-publications\"]').textContent")),
+                         "публикации идут")
         self.assertRegex(self.text('[data-testid="status-age"]'), r"^данные [0-2] с назад$")
+        show_right(self.page, "decision")
         self.assertEqual(self.text('[data-testid="decision-pause"]'), "Модель на паузе для выбора действия")
         self.assertNotIn("data-old-data", self.page.evaluate("document.body.getAttributeNames()"))
         self.assertFalse(self.is_off(STOP), "commands are accepted during the pause")
@@ -1076,7 +1140,8 @@ class LinkFailureTest(ScenarioTestCase):
         const event = {link: value, at: Math.round(performance.now()), failed: failed(), place: place(),
           glide: getComputedStyle(document.querySelector('#scheme .worker')).transitionDuration, later: []};
         window.__link.push(event);
-        for (const delay of [150, 450]) setTimeout(() => event.later.push(place()), delay);
+        // Read twice after the strip took the banner's line and the picture was fitted anew.
+        for (const delay of [500, 900]) setTimeout(() => event.later.push(place()), delay);
       }).observe(document.body, {attributes: true, attributeFilter: ['data-link']});
       let seq = document.body.dataset.seq;
       window.__fullAt = Math.round(performance.now());
@@ -1136,11 +1201,11 @@ class LinkFailureTest(ScenarioTestCase):
         self.assertRegex(self.text("#old-data"), rf"^Показаны данные на \d\d:\d\d:\d\d UTC, тик {tick}\. Текущее состояние неизвестно$")
         box = self.page.evaluate("""(() => {
           const mark = document.getElementById('old-data').getBoundingClientRect();
-          const scheme = document.getElementById('scheme').getBoundingClientRect();
-          return [mark.bottom <= scheme.top + 1, mark.left >= scheme.left - 4 && mark.right <= scheme.right + 4,
-                  getComputedStyle(document.getElementById('centre')).borderTopStyle];
+          const stage = document.getElementById('stage').getBoundingClientRect();
+          return [mark.bottom <= stage.top + 1, mark.left >= stage.left - 4 && mark.right <= stage.right + 4,
+                  getComputedStyle(document.getElementById('centre')).outlineStyle];
         })()""")
-        self.assertEqual(box, [True, True, "dashed"], "the mark stands right above the scheme, inside its dashed frame")
+        self.assertEqual(box, [True, True, "dashed"], "the mark stands right above the stage, inside its dashed frame")
         self.assertEqual(self.text(".old-tag"), "последние полученные данные:")
         self.assertEqual(self.drawn(), before, "every drawn state is the one of the last full snapshot")
         time.sleep(1.2)
@@ -1294,11 +1359,12 @@ class ResetTest(ScenarioTestCase):
         """Reset: resetting state, a new run, the acknowledgement found in the new run, the interrupted run in the archive."""
         self.open("reset")
         self.wait_drawn()
-        self.assertEqual((self.body()["run"], self.body()["right"]), ("run-0005", "decision"))
+        self.assertEqual((self.body()["run"], self.body()["dock"]), ("run-0005", "collapsed"))
         self.assertEqual(self.drawn()[thing("w-12")]["passability"], "closed")
         self.page.evaluate("window.__marker = 'same document'")
 
-        # The dialog names the run; «Отмена» sends nothing.
+        # The dialog names the run; «Отмена» sends nothing. The reset is in the stand drawer.
+        set_stand(self.page)
         self.page.click(RESET)
         self.wait_for_selector('[data-testid="dialog"]', 3.0)
         dialog = self.text('[data-testid="dialog"]')
@@ -1337,8 +1403,8 @@ class ResetTest(ScenarioTestCase):
         self.assertNotIn("resetting", self.banner_codes())
         self.assertEqual(self.text('[data-testid="status-conditions"]'), "Условия стенда: нет")
         self.assertEqual(self.drawn()[thing("w-12")]["passability"], "open")
-        self.assertIn("Инцидентов нет", self.text('[data-testid="incident-strip"]'))
-        self.assertEqual(self.body()["right"], "card", "the incident is gone: the summary of the shift is back")
+        self.assertIn("Инцидентов нет", plain(self.page.evaluate("document.querySelector('[data-testid=\"incident-strip\"]').textContent")))
+        self.assertEqual(self.body()["dock"], "none", "the incident is gone: so is the decision dock")
         self.assertEqual(self.page.evaluate("window.__marker"), "same document")
         ack = next(record for record in self.mock.state()["acknowledgements"] if record["id"] == sent["id"])
         self.assertEqual((ack["run"], ack["new_run"], ack["status"]), ("run-0005", "run-0006", "applied"))
@@ -1374,10 +1440,11 @@ class ResultsTest(ScenarioTestCase):
         """Неполный вывод без last_out_s: not everyone is out, so no time «until everyone is out» is shown anywhere."""
         self.open("withdrawal_incomplete")
         self.wait_drawn()
-        self.assertEqual(self.body()["right"], "decision", "an incident that is over is shown with its result, not hidden behind the card")
+        self.assertEqual(self.body()["dock"], "collapsed", "an incident that is over keeps its dock with the result")
         self.assertEqual(self.counters(), {"in-danger": "0", "no-route": "2", "unknown": "0", "out": "12", "total": "14"})
         self.assertIn("Инцидент завершён", self.text('[data-testid="incident-strip"]'))
 
+        show_right(self.page, "decision")
         fact = f'{DECISION} [data-testid="decision-fact"][data-option="option-withdraw-all"]'
         self.assertEqual(self.text(fact + " .decision__alert"),
                          "Вывод не завершён: 2 работника без расчётного маршрута. Это за пределами того, что решает модель")
@@ -1409,7 +1476,7 @@ class ResultsTest(ScenarioTestCase):
         self.assertIn("факт: все вышли нет", option)
         self.assertNotIn("факт: время выхода всех", option, "the list names no time of the fact")
         self.page.click(self.row("option-withdraw-all"))
-        self.page.wait_for("document.body.dataset.right === 'card'", timeout=3.0)
+        self.page.wait_for("location.hash.includes('sel=')", timeout=3.0)
         card = self.card()
         self.assertIn("факт: все вышли нет", card)
         self.assertNotIn("факт: время выхода всех", card)
@@ -1422,7 +1489,8 @@ class ResultsTest(ScenarioTestCase):
         """Отсутствие прогноза: the words «Прогноз не опубликован» and not one digit where a forecast would be."""
         self.open("no_forecast")
         self.wait_drawn()
-        self.assertEqual(self.body()["right"], "decision")
+        self.assertEqual(self.body()["dock"], "collapsed")
+        show_right(self.page, "decision")
         self.assertEqual(self.text('[data-testid="decision-no-forecast"]'), "Прогноз не опубликован")
         forecast = '[data-testid="decision-forecast"]'
         self.assertEqual(self.page.evaluate(f"""[...document.querySelectorAll('{forecast} td[data-metric]')]
@@ -1443,7 +1511,8 @@ class ResultsTest(ScenarioTestCase):
             self.assertNotIn("прогноз:", value)
             self.assertNotRegex(value, r"\d", value)
         self.page.click(self.row("option-withdraw-all"))
-        self.page.wait_for("document.body.dataset.right === 'card'", timeout=3.0)
+        self.page.wait_for("location.hash.includes('sel=')", timeout=3.0)
+        show_right(self.page, "card")
         fields = self.texts(f"{CARD} [data-section='state'] dt")
         self.assertTrue(fields)
         self.assertEqual([field for field in fields if field.startswith(("прогноз", "факт"))], [])
@@ -1469,6 +1538,7 @@ class KeyboardTest(ScenarioTestCase):
       return {tag: node.tagName.toLowerCase(), id: node.id || null, testid: node.dataset.testid || null,
               command: node.dataset.commandType || null, target: node.dataset.commandTarget || null,
               thing: node.dataset.thingId || null, name: node.getAttribute('name'),
+              control: node.matches('button, select, input, summary, [tabindex="0"]'), cls: (node.getAttribute('class') || '').split(' ')[0],
               ring, keyboard: node.matches(':focus-visible')};
     })()"""
 
@@ -1482,7 +1552,7 @@ class KeyboardTest(ScenarioTestCase):
 
     def assert_focus_ring(self, focus, what):
         self.assertTrue(focus["keyboard"], f"{what}: reached by keyboard")
-        self.assertRegex(focus["ring"], r"^(outline|frame) rgb\(10, 86, 163\)$", f"{what}: a visible focus ring in the focus colour")
+        self.assertRegex(focus["ring"], r"^(outline|frame) rgb\(200, 131, 79\)$", f"{what}: a visible focus ring in the focus colour (copper)")
 
     def test_keyboard_reaches_and_activates_the_main_controls(self):
         """Tab reaches the main controls, Enter and Space activate them, the focus is visible and survives polls."""
@@ -1518,7 +1588,10 @@ class KeyboardTest(ScenarioTestCase):
         self.assertTrue(self.page.evaluate("document.activeElement === window.__focused && window.__focused.isConnected"),
                         "two polls later the focus is on the same object")
 
-        # A condition of the stand: choose the working with the arrow keys, Tab to «Задать», Enter.
+        # A condition of the stand: open the drawer from its button, choose the working with the arrow keys, Tab to «Задать», Enter.
+        self.tab_to('[data-testid="stand-toggle"]', 220, shift=True)
+        self.page.press("Enter")
+        self.page.wait_for("document.body.dataset.stand === 'open'", timeout=2.0)
         self.tab_to(WORKING_SELECT)
         choose(self.page, WORKING_SELECT, "w-12")
         button = self.tab_to(f'{CONDITIONS} button[data-command-type="condition.close_working"]', 3)
@@ -1556,7 +1629,11 @@ class KeyboardTest(ScenarioTestCase):
         time.sleep(0.4)
         self.assertEqual(self.commands_logged("run.reset"), [], "a cancelled reset sends nothing")
 
-        # The choice of an option: arrow keys move through the radio group, Tab goes to «Запустить вариант».
+        # The choice of an option: the dock unfolds from its button; arrow keys move through the radio group,
+        # Tab goes to «Запустить вариант».
+        self.tab_to('[data-testid="dock-toggle"]')
+        if self.attr('[data-testid="dock-toggle"]', "aria-expanded") == "false":
+            self.page.press("Enter")
         radio = self.tab_to('input[name="decision-option"]')
         self.assert_focus_ring(radio, "option")
         self.page.press("Space")
@@ -1593,6 +1670,15 @@ class KeyboardTest(ScenarioTestCase):
         """One round of Tab through the screen at the decision point: nothing that can be pressed is skipped."""
         self.open("paused_heartbeat")
         self.wait_drawn()
+        # The stand drawer open and the decision dock unfolded: then every control of the screen is on it.
+        set_stand(self.page)
+        show_right(self.page, "decision")
+        set_stand(self.page)
+        # The focus is in the drawer now: Tab to the end of the document first, so that the round starts at its top.
+        for _ in range(200):
+            self.page.press("Tab")
+            if self.page.evaluate(self.FOCUS) is None:
+                break
         seen = []
         for _ in range(400):
             self.page.press("Tab")
@@ -1604,10 +1690,13 @@ class KeyboardTest(ScenarioTestCase):
                 break
             seen.append(key)
         reached = [json.loads(item) for item in seen]
-        expected = self.page.evaluate("""[...document.querySelectorAll('button, select, input, [tabindex="0"]')]
+        # A disclosure (<summary> of a <details>) is a control too: the decision panel unfolds its details with one.
+        expected = self.page.evaluate("""[...document.querySelectorAll('button, select, input, summary, [tabindex="0"]')]
           .filter((node) => node.getClientRects().length > 0 && !node.disabled && getComputedStyle(node).visibility !== 'hidden').length""")
         # A radio group is one stop of the Tab order.
         radios = self.count('input[name="decision-option"]:not([disabled])')
+        others = [item for item in reached if not item["control"]]
+        self.assertEqual(others, [], "a Tab stop that is not a control (a scrolling box the browser made focusable?)")
         self.assertEqual(len(reached), expected - max(radios - 1, 0), "every visible control is one Tab stop")
         without_ring = [item for item in reached if not item["keyboard"] or item["ring"] == "none"]
         self.assertEqual(without_ring, [], "every stop shows the focus")
@@ -1620,7 +1709,7 @@ class KeyboardTest(ScenarioTestCase):
         ids = {item["testid"] or item["id"] for item in reached}
         for control in ("tab-scheme", "tab-list", "tab-runs", "projection-axo", "projection-plan", "level-select",
                         "condition-working_closed", "condition-sensor_lost", "condition-instability", "action-zone",
-                        "btn-reset", "btn-execute", "right-tab-decision", "right-tab-card", "journal-toggle"):
+                        "btn-reset", "btn-execute", "stand-toggle", "stand-close", "dock-toggle", "card-more", "journal-toggle"):
             self.assertIn(control, ids)
 
 
@@ -1642,6 +1731,9 @@ class ColourIndependenceTest(ScenarioTestCase):
     LEGEND = """(() => {
       %s
       const legend = document.querySelector('[data-testid="legend"]');
+      // The full legend unfolds from its chip; its samples are the ones read here.
+      const toggle = legend.querySelector('[data-testid="legend-toggle"]');
+      if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click();
       const sample = (selector) => {
         const node = legend.querySelector(selector);
         return {cues: cues(node), text: node.closest('.legend__item').textContent, shown: node.getClientRects().length > 0};
@@ -1819,29 +1911,29 @@ class ColourIndependenceTest(ScenarioTestCase):
 class LayoutTest(ScenarioTestCase):
     NEVER_FOLDED = ('[data-testid="status-notice"]', '[data-testid="status-link"]', '[data-testid="status-age"]',
                     '[data-testid="incident-in-danger"]', '[data-testid="incident-no-route"]', '[data-testid="incident-unknown"]',
-                    '[data-testid="legend"]')
-    GROUPS = ('[data-testid="conditions-panel"]', '[data-testid="actions-panel"]')
+                    '[data-testid="legend"]', '[data-testid="stand-toggle"]')
     PAGE = """(() => {
       const root = document.documentElement;
-      const legend = document.querySelector('[data-testid="legend"]');
-      const titles = [...legend.querySelectorAll('.legend__title')];
-      const inside = (node) => { const box = node.getBoundingClientRect(); const frame = legend.getBoundingClientRect();
-        return box.height > 0 && box.top >= frame.top - 1 && box.bottom <= frame.bottom + 1; };
-      const stand = getComputedStyle(document.getElementById('conditions'));
-      const dispatch = getComputedStyle(document.getElementById('actions'));
+      const box = (id) => { const rect = document.getElementById(id).getBoundingClientRect();
+        return {left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height}; };
+      const stage = box('stage');
+      const legend = box('legend');
+      const drawer = document.getElementById('stand-drawer');
       return {
         scroll: [root.scrollWidth - innerWidth, root.scrollHeight - innerHeight, document.body.scrollWidth - innerWidth,
                  document.body.scrollHeight - innerHeight],
         overflow: [getComputedStyle(root).overflow, scrollX, scrollY],
-        legendAxes: titles.filter(inside).map((node) => node.textContent),
-        legendFits: legend.scrollHeight <= legend.clientHeight + 1,
-        legendLines: new Set([...legend.querySelectorAll('.legend__item')].filter((node) => node.getClientRects().length > 0)
-          .map((node) => Math.round(node.getBoundingClientRect().top))).size,
-        groups: [stand.borderTopStyle, dispatch.borderTopStyle,
-                 document.getElementById('conditions').getBoundingClientRect().bottom <= document.getElementById('actions').getBoundingClientRect().top],
-        scheme: [Math.round(document.getElementById('scheme').getBoundingClientRect().width),
-                 Math.round(document.getElementById('scheme').getBoundingClientRect().height)],
-        legendHeight: Math.round(legend.getBoundingClientRect().height),
+        stage: [Math.round(stage.width), Math.round(stage.height)],
+        share: stage.width * stage.height / (innerWidth * innerHeight),
+        legendOnStage: legend.left >= stage.left - 1 && legend.right <= stage.right + 1 && legend.top >= stage.top - 1
+          && legend.bottom <= stage.bottom + 1,
+        legendHeight: Math.round(legend.height),
+        // The two families: the stand in a drawer of chalk mark-up, closed by default; the dispatcher's actions in the right column.
+        groups: [getComputedStyle(drawer).borderRightStyle, getComputedStyle(drawer).visibility,
+                 getComputedStyle(document.getElementById('actions')).borderTopStyle,
+                 document.getElementById('right').contains(document.getElementById('actions')),
+                 drawer.contains(document.getElementById('conditions')) && drawer.contains(document.getElementById('reset'))],
+        incident: document.querySelector('[data-testid="incident-strip"]').dataset.open === 'true',
       };
     })()"""
 
@@ -1852,20 +1944,19 @@ class LayoutTest(ScenarioTestCase):
         self.assertEqual(page["overflow"], ["hidden", 0, 0], where)
         for selector in self.NEVER_FOLDED:
             self.assertTrue(self.visible(selector), f"{where}: {selector} is in the viewport and in sight")
-        for group in self.GROUPS:
-            if crowded:
-                # With a banner and a list of commands the left panel scrolls inside: a group is one scroll away.
-                self.page.evaluate(f"document.querySelector('{group}').scrollIntoView({{block: 'start'}})")
-            self.assertTrue(self.visible(group + " .panel__title"), f"{where}: the heading of {group} is in sight")
-        self.assertEqual(page["legendAxes"], ["Опасность:", "Знание:", "Достижимость:", "Выход:"], f"{where}: the three axes of the legend")
-        self.assertTrue(page["legendFits"], f"{where}: the legend is shown whole, without its own scrolling")
-        self.assertEqual(page["groups"], ["dashed", "solid", True], f"{where}: the two groups of the left panel are apart and differ by their frame")
-        self.assertEqual(self.texts("#left .panel__title")[:2], ["Условия сценария (стенд)", "Действия диспетчера"], where)
+        if page["incident"]:
+            self.assertTrue(self.visible('[data-testid="situation-step-1"]'), f"{where}: what changed is in sight")
+        self.assertTrue(self.visible("#actions .panel__title"), f"{where}: the heading of the dispatcher's actions is in sight")
+        self.assertTrue(page["legendOnStage"], f"{where}: the legend chip lies on the stage")
+        self.assertEqual(page["groups"], ["dashed", "hidden", "solid", True, True],
+                         f"{where}: the stand controls (a closed drawer of chalk mark-up) and the dispatcher's actions are apart")
+        if size == (1280, 720):
+            self.assertGreaterEqual(page["share"], 0.58 if crowded else 0.6, f"{where}: the stage keeps the largest area")
         self.assertEqual(self.text('[data-testid="status-notice"]'), "Синтетические данные. Расчёт модели, не сведения о реальной шахте")
         return page
 
     def test_both_sizes_without_page_scroll_and_with_what_never_folds(self):
-        """1280x720 and 1920x1080: no page scroll, and what DESIGN.md 2.3 never folds is in the viewport."""
+        """1280x720 and 1920x1080: no page scroll, the stage is the largest area, and what never folds is in the viewport."""
         measured = {}
         for size in ((1280, 720), (1920, 1080)):
             self.page.set_viewport(*size)
@@ -1893,13 +1984,12 @@ class LayoutTest(ScenarioTestCase):
             self.mock.fault("none")
         compact = measured[((1280, 720), "normal")]
         wide = measured[((1920, 1080), "normal")]
-        self.assertLessEqual(compact["legendLines"], 4, "the legend takes at most four lines at 1280x720")
-        self.assertLessEqual(compact["legendHeight"], 76)
-        self.assertGreaterEqual(compact["scheme"][1], 470, f"room for the scheme at 1280x720: {compact['scheme']}")
-        self.assertGreaterEqual(wide["scheme"][1], 600, f"room for the scheme at 1920x1080: {wide['scheme']}")
+        self.assertLessEqual(compact["legendHeight"], 76, "the legend chip stays small at 1280x720")
+        self.assertGreaterEqual(compact["stage"][1], 470, f"room for the stage at 1280x720: {compact['stage']}")
+        self.assertGreaterEqual(wide["stage"][1], 600, f"room for the stage at 1920x1080: {wide['stage']}")
 
     def test_sent_commands_leave_the_dispatcher_actions_in_reach_at_1280(self):
-        """S11: with three listed commands the zone select and the three actions can be brought into view."""
+        """S11: with three listed commands the zone select and the three actions stay in sight."""
         self.page.set_viewport(1280, 720)
         self.open("commands")
         self.wait_drawn()
@@ -1917,22 +2007,24 @@ class LayoutTest(ScenarioTestCase):
         for part in (".pending__what", ".pending__text"):
             self.assertTrue(self.visible(f"{newest} {part}"), f"the command just sent and its outcome are in sight without scrolling: {part}")
         measured = self.page.evaluate("""(() => {
-          const left = document.getElementById('left');
+          const right = document.getElementById('right');
           const group = document.getElementById('pending');
-          document.getElementById('actions').scrollIntoView({block: 'start'});
           return {
             entries: group.querySelectorAll('[data-testid="pending"]').length,
-            share: group.getBoundingClientRect().height / left.clientHeight,
+            share: group.getBoundingClientRect().height / right.clientHeight,
             scrollsInside: group.scrollHeight > group.clientHeight + 1,
             overflow: getComputedStyle(group).overflowY,
-            stuck: Math.round(left.getBoundingClientRect().bottom - group.getBoundingClientRect().bottom),
+            journal: [...document.querySelectorAll('[data-testid="journal-entry"]')].filter((node) => node.getClientRects().length > 0
+              && node.getBoundingClientRect().bottom <= right.getBoundingClientRect().bottom + 1).length,
           };
         })()""")
+        os.makedirs(os.path.join(OUTPUT_DIR, "fix"), exist_ok=True)
         self.page.screenshot(os.path.join(OUTPUT_DIR, "fix", "three-sent-commands-1280x720.png"))
         self.assertEqual(measured["entries"], 3)
-        self.assertLessEqual(measured["share"], 0.305, "the list of sent commands takes at most 30 % of the left panel")
+        self.assertLessEqual(measured["share"], 0.33, "the list of sent commands takes at most a third of the right column")
         self.assertTrue(measured["scrollsInside"], "three entries do not fit: the list scrolls inside its own frame")
         self.assertEqual(measured["overflow"], "auto")
+        self.assertGreaterEqual(measured["journal"], 1, "the journal keeps its latest line under the list")
         actions = (ZONE_SELECT, STOP, f'{ACTIONS} button[data-command-type="action.withdraw_zone"]',
                    f'{ACTIONS} button[data-command-type="action.resume_zone"]')
         for selector in actions:
@@ -1944,69 +2036,59 @@ class LayoutTest(ScenarioTestCase):
             inside = f'[data-testid="pending"][data-command-target="{target}"] {part}'
             self.page.evaluate(f"document.querySelector({json.dumps(inside)}).scrollIntoView({{block: 'nearest'}})")
             self.assertTrue(self.visible(inside), f"{inside} can be scrolled into view")
-        self.page.evaluate("document.getElementById('actions').scrollIntoView({block: 'start'})")
         for selector in actions:
             self.assertTrue(self.visible(selector), selector)
         # At 1920x1080 the same holds.
         self.page.set_viewport(1920, 1080)
-        self.page.evaluate("document.getElementById('actions').scrollIntoView({block: 'start'})")
         for selector in actions:
             self.assertTrue(self.visible(selector), f"1920x1080: {selector}")
         self.page.screenshot(os.path.join(OUTPUT_DIR, "fix", "three-sent-commands-1920x1080.png"))
 
     def test_compact_layout_folds_what_the_design_folds(self):
-        """1280x720: run and seed behind «Прогон», decision and card as tabs, the journal folded and unfolded over the centre only."""
+        """1280x720: the run folds away, the decision dock folds to its bar over the stage and unfolds over it,
+        the card stays beside it, and the journal shows its latest three lines and unfolds inside the right column."""
         self.page.set_viewport(1280, 720)
         self.open("sensor_lost_after_danger")
         self.wait_drawn()
         self.assertFalse(self.visible('[data-testid="status-run"]'))
-        self.page.click(".run-box__toggle")
-        self.assertEqual(self.text('[data-testid="status-run"]'), "Прогон run-0005 · seed 42")
-        self.page.click(".run-box__toggle")
+        self.assertEqual(plain(self.page.evaluate("document.querySelector('[data-testid=\"status-run\"]').textContent")),
+                         "Прогон run-0005 · seed 42", "the run is still in the document")
 
-        self.assertEqual(self.body()["right"], "decision")
-        self.assertTrue(self.visible('[data-testid="right-tab-decision"]'))
-        self.assertFalse(self.visible(f"{CARD} .card__head"))
-        # A link that selects an object is a choice of the user as well: it opens on the card.
-        self.open("sensor_lost_after_danger", "#/scheme?sel=" + thing("zone-c"))
-        self.wait_drawn()
-        self.assertEqual(self.body()["right"], "card")
-        self.assertIn("Участок В", self.text(f"{CARD} .card__head"))
-        self.page.click('[data-testid="right-tab-decision"]')
-        self.assertEqual(self.body()["right"], "decision")
-        self.assertTrue(self.visible(f"{DECISION} .panel__title"))
-        self.page.click('[data-testid="right-tab-card"]')
+        # The dock: its bar over the stage, the options unfolded on request («к вариантам» of the strip), the stage keeps its size.
+        stage = """(() => { const rect = document.getElementById('stage').getBoundingClientRect(); return [rect.width, rect.height]; })()"""
+        before = self.page.evaluate(stage)
+        self.assertEqual(self.body()["dock"], "collapsed")
+        self.assertTrue(self.visible('[data-testid="dock-toggle"]'))
+        self.assertTrue(self.visible(f"{CARD} .card__head"), "the card is on the screen with the dock")
+        self.assertEqual(self.page.evaluate("document.getElementById('decision').getClientRects().length"), 0)
+        self.page.click('[data-testid="situation-show-4"]')
+        self.page.wait_for("document.body.dataset.dock === 'open'", timeout=2.0)
+        self.assertTrue(self.visible("#decision"))
+        self.assertEqual(self.page.evaluate(stage), before, "the dock lies over the stage; the stage does not shrink")
         self.assertTrue(self.visible(f"{CARD} .card__head"))
-        self.assertFalse(self.visible(f"{DECISION} .panel__title"))
+        self.assertTrue(self.visible('[data-testid="legend"]'), "the legend chip moves above the unfolded dock")
+        self.page.click('[data-testid="dock-toggle"]')
+        self.assertEqual(self.body()["dock"], "collapsed")
 
         boxes = """(() => {
           const box = (id) => { const rect = document.getElementById(id).getBoundingClientRect();
             return {left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, height: rect.height}; };
-          const panel = document.querySelector('.journal__panel').getBoundingClientRect();
-          const right = document.getElementById('right').getBoundingClientRect();
-          const hit = document.elementFromPoint(right.left + right.width / 2, right.bottom - 40);
-          return {centre: box('centre'), right: box('right'), scheme: box('scheme'),
-                  journal: {left: panel.left, right: panel.right, top: panel.top, bottom: panel.bottom, height: panel.height},
-                  rightIsFree: !!hit && document.getElementById('right').contains(hit),
+          const journal = box('journal-region');
+          return {centre: box('centre'), right: box('right'), journal,
                   lines: [...document.querySelectorAll('.journal-line')].filter((node) => node.getClientRects().length > 0
-                    && node.getBoundingClientRect().bottom <= panel.bottom + 1 && node.getBoundingClientRect().top >= panel.top - 1).length};
+                    && node.getBoundingClientRect().bottom <= journal.bottom + 1 && node.getBoundingClientRect().top >= journal.top - 1).length};
         })()"""
         folded = self.page.evaluate(boxes)
-        self.assertLessEqual(folded["journal"]["height"], 32, "folded: one line")
-        self.assertEqual(folded["lines"], 1, "folded: the latest entry")
+        self.assertEqual(folded["lines"], 3, "folded: the latest three entries")
         self.page.click('[data-testid="journal-toggle"]')
         self.page.wait_for("document.body.dataset.journal === 'open'", timeout=2.0)
         unfolded = self.page.evaluate(boxes)
-        journal, centre = unfolded["journal"], unfolded["centre"]
-        self.assertGreater(journal["height"], 150)
+        journal, right = unfolded["journal"], unfolded["right"]
+        self.assertGreater(journal["height"], 250)
         self.assertGreaterEqual(unfolded["lines"], 6)
-        self.assertGreaterEqual(journal["left"], centre["left"] - 1, "the unfolded journal stays in the centre column")
-        self.assertLessEqual(journal["right"], centre["right"] + 1, "the unfolded journal never covers the right panel")
-        self.assertLessEqual(journal["right"], unfolded["right"]["left"] + 1)
-        self.assertTrue(unfolded["rightIsFree"], "the bottom of the right panel is still the right panel")
-        self.assertGreater(journal["top"], centre["top"] + centre["height"] * 0.45, "it covers only the lower part of the centre")
-        self.assertEqual(unfolded["right"], folded["right"], "the right panel does not move")
-        self.assertTrue(self.visible('[data-testid="journal-gap"]'))
+        self.assertGreaterEqual(journal["left"], right["left"] - 1, "the unfolded journal stays in the right column")
+        self.assertEqual(unfolded["centre"], folded["centre"], "the centre column does not move")
+        self.assertEqual(self.count('[data-testid="journal-gap"]'), 1, "the missing events are said in their own line")
         self.page.click('[data-testid="journal-toggle"]')
         self.assertEqual(self.body()["journal"], "collapsed")
 
@@ -2066,7 +2148,8 @@ class HygieneTest(ScenarioTestCase):
         self.select_on_scheme("worker-03")
         self.page.click('[data-testid="journal-toggle"]')
         self.page.click('[data-testid="journal-toggle"]')
-        self.page.click(".run-box__toggle")
+        set_stand(self.page)
+        set_stand(self.page, False)
         close_working(self.page, "w-12")
         wait_decision(self.page)
         self.page.click(STOP)
@@ -2086,23 +2169,25 @@ class HygieneTest(ScenarioTestCase):
         # A second story on the same tab: a preset that starts a new run, then the archive. (Switching the
         # scenario empties the log of the mock, so each story is checked on its own.)
         self.open("detour")
+        set_stand(self.page)
         self.page.click(f'{CONDITIONS} button[data-command-type="run.start_preset"][data-command-target="p-detour"]', timeout=3.0)
         self.wait_for_selector('[data-testid="dialog-confirm"]', 3.0)
         self.page.click('[data-testid="dialog-confirm"]')
         self.wait_body(12.0, run="run-0006", runState="running")
+        set_stand(self.page, False)    # the open drawer lies over the view tabs
         self.show("runs")
         self.wait_for_selector('[data-testid="runs-table"] tr[data-run="run-0005"]', 6.0)
         self.assert_only_contract_requests()
         self.assertEqual([post["body"]["type"] for post in self.commands_logged()], ["run.start_preset"])
         self.assertEqual([entry for entry in self.mock.log()["entries"] if not entry["allowed"]], [])
-        kinds = {request["type"] for request in list(self.page.requests)}
-        self.assertEqual(kinds, {"Document", "Stylesheet", "Script", "Fetch"}, "no images, fonts or other resources")
-        probe = self.page.evaluate("window.__probe")
-        self.assertEqual(probe["canvas"], 0, "no canvas context is ever asked for")
-        self.assertEqual(self.count("canvas"), 0)
+        # The page's own fonts and model are local files (their paths are checked above); an image only as a data: URL.
+        kinds = {request["type"] for request in list(self.page.requests) if not request["url"].startswith("data:")}
+        self.assertLessEqual(kinds, {"Document", "Stylesheet", "Script", "Fetch", "Font"}, "no other kind of resource")
+        self.assertEqual(self.page.evaluate("[...document.querySelectorAll('canvas')].filter((node) => !node.closest('#stage-3d')).length"), 0,
+                         "a canvas only as the 3D stage")
 
     def test_no_canvas_context_and_no_animation_frames_while_data_do_not_change(self):
-        """No `getContext` call at all, and no `requestAnimationFrame` during five seconds of unchanged data, in any view."""
+        """A canvas only as the 3D stage, and no `requestAnimationFrame` during five seconds of unchanged data, in any view."""
         self.page.add_init_script(PROBE)
         self.open("paused_heartbeat")
         self.wait_drawn()
@@ -2121,7 +2206,8 @@ class HygieneTest(ScenarioTestCase):
         self.assertEqual(later["tick"], first["tick"], "the data did not change")
         self.assertGreaterEqual(int(later["seq"]) - int(first["seq"]), 4, "while the page went on polling and rendering")
         self.assertEqual(probe["raf"], 0, "no animation frame is requested")
-        self.assertEqual(probe["canvas"], 0, "no canvas context is created")
+        self.assertEqual(self.page.evaluate("[...document.querySelectorAll('canvas')].filter((node) => !node.closest('#stage-3d')).length"), 0,
+                         "a canvas only as the 3D stage")
         animated = self.page.evaluate("""[...document.querySelectorAll('*')].filter((node) => {
           const style = getComputedStyle(node);
           return style.animationName !== 'none' || style.filter !== 'none' || style.backdropFilter !== 'none' || style.boxShadow !== 'none';
@@ -2204,30 +2290,51 @@ class StaticSourcesTest(unittest.TestCase):
                r"\bn-\d{2}\b", r"\bd-\d{4}-\d{2}\b", r"Участок [А-ЯЁ]\b", r"(?<![\w-])[РВЭКГ]-\d{2}\b", r"Гор\. ",
                r"\b(?:Ствол|Съезд|Восстающий)\b", r"Вариант \d", r"\bseed 42\b", r"Рудник \(условный\)")
 
+    # Third-party code, vendored as published (three.js, see vendor/three/SOURCE.md): not searched for our rules.
+    VENDOR = "vendor/"
+    # The 3D stage (redesign spec 3): WebGL and a canvas are allowed there and only there.
+    SCENE = ("js/scene3d/", "js/view/stage.js", "js/text3d.js", "css/scene3d.css")
+
     @classmethod
     def setUpClass(cls):
         cls.files = {}
+        cls.others = []
         for folder, _, names in os.walk(PUBLIC_DIR):
             for name in names:
                 path = os.path.join(folder, name)
+                relative = os.path.relpath(path, PUBLIC_DIR).replace(os.sep, "/")
+                if relative.rsplit(".", 1)[-1] not in ("html", "css", "js"):
+                    cls.others.append(relative)
+                    continue
                 with open(path, encoding="utf-8") as handle:
-                    cls.files[os.path.relpath(path, PUBLIC_DIR).replace(os.sep, "/")] = handle.read()
+                    cls.files[relative] = handle.read()
+
+    def own(self):
+        """The files of the team: everything but the vendored code."""
+        return {name: source for name, source in self.files.items() if not name.startswith(self.VENDOR)}
 
     def test_only_html_css_and_javascript_are_served(self):
-        self.assertGreaterEqual(len(self.files), 30)
-        self.assertEqual({name.rsplit(".", 1)[-1] for name in self.files}, {"html", "css", "js"},
-                         "no images, fonts, data files or a build output")
+        self.assertGreaterEqual(len(self.own()), 30)
+        # Besides the code: the bundled fonts with their licence, the vendored three.js with its licence, the model.
+        for name in self.others:
+            self.assertRegex(name, r"^(?:fonts/(?:[\w.-]+\.woff2|LICENSE-[\w-]+|SOURCE\.md)|vendor/three/(?:LICENSE|SOURCE\.md)"
+                                   r"|models/[\w.-]+\.glb)$", f"not a file the page may serve: {name}")
 
     def test_no_html_injection_no_control_api_no_canvas_no_external_url(self):
-        for name, source in self.files.items():
+        for name, source in self.own().items():
             with self.subTest(file=name):
                 for word in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "__mock__", "eval(", "new Function"):
                     self.assertNotIn(word, source, f"{name} contains {word}")
-                self.assertNotRegex(source, r"(?i)canvas|webgl|getContext", f"{name} mentions a canvas")
-                self.assertNotIn("requestAnimationFrame", source, f"{name}: no animation loop, not even an idle one")
+                if not name.startswith(self.SCENE):
+                    self.assertNotRegex(source, r"(?i)\bcanvas\b|webgl|getContext", f"{name} mentions a canvas outside the 3D stage")
+                    self.assertNotIn("requestAnimationFrame", source, f"{name}: no animation loop outside the 3D stage")
                 for url in re.findall(r"""(?:https?:)?//[\w.-]+\.[a-z]{2,}[^\s'"`)]*""", source):
                     self.assertIn(url, self.NAMESPACES, f"{name} contains the URL {url}")
-                self.assertNotRegex(source, r"@import|@font-face|url\(\s*['\"]?(?!#)", f"{name} loads a resource from CSS")
+                if name == "fonts/fonts.css":
+                    # The bundled fonts: every url() is a file next to it.
+                    self.assertEqual(re.findall(r"url\((?!\./[\w.-]+\.woff2\))", source), [], name)
+                    continue
+                self.assertNotRegex(source, r"@import|@font-face|url\(\s*['\"]?(?!#|data:)", f"{name} loads a resource from CSS")
                 self.assertNotRegex(source, r"(?i)backdrop-filter|box-shadow|text-shadow|@keyframes|feGaussianBlur|<filter",
                                     f"{name}: filters, shadows and animations are not used")
                 if name.endswith(".css"):
@@ -2239,21 +2346,21 @@ class StaticSourcesTest(unittest.TestCase):
         Comments are left out (they quote the examples of DESIGN.md, such as «В-12»); everything
         else, strings included, is searched.
         """
-        for name, source in self.files.items():
+        for name, source in self.own().items():
             code = _strip_comments(source, name.rsplit(".", 1)[-1])
             with self.subTest(file=name):
                 self.assertTrue(code.strip(), "the comments were stripped, not the code")
                 for pattern in self.FIXTURE:
                     found = re.findall(pattern, code)
                     self.assertEqual(found, [], f"{name}: {found[:3]} looks like a twin of the fixture mine")
-        js = "".join(_strip_comments(source, "js") for name, source in self.files.items() if name.endswith(".js"))
+        js = "".join(_strip_comments(source, "js") for name, source in self.own().items() if name.endswith(".js"))
         self.assertIn("export function mount", js)
         self.assertNotRegex(js, r"(?m)^\s*//", "the stripper removes line comments")
         self.assertIn("'http://www.w3.org/2000/svg'", js, "and keeps strings whole")
 
     def test_wording_rules(self):
         """DESIGN.md 2.2: the words that are never written, in any production file."""
-        for name, source in self.files.items():
+        for name, source in self.own().items():
             with self.subTest(file=name):
                 lowered = _strip_comments(source, name.rsplit(".", 1)[-1]).lower()
                 for word in ("безопасн", "вероятност", "риск обрушения", "выхода нет", "заблокирован ", "ожидаемый результат"):
@@ -2264,9 +2371,9 @@ class StaticSourcesTest(unittest.TestCase):
             self.assertIn(words, text)
 
     def test_user_visible_strings_live_in_text_js(self):
-        """No Russian text in the code of any other module: views take their words from text.js."""
-        for name, source in self.files.items():
-            if not name.endswith(".js") or name == "js/text.js":
+        """No Russian text in the code of any other module: views take their words from text.js (the 3D stage from text3d.js)."""
+        for name, source in self.own().items():
+            if not name.endswith(".js") or name in ("js/text.js", "js/text3d.js"):
                 continue
             with self.subTest(file=name):
                 self.assertEqual(re.findall(r"[А-Яа-яЁё]+", _strip_comments(source, "js")), [], name)
@@ -2280,7 +2387,7 @@ class EveryScenarioTest(ScenarioTestCase):
     mock_args = ("--publication-ms", "100")
 
     def test_no_console_errors_in_any_scenario_with_each_view_opened(self):
-        """All 23 scenarios, each with the scheme, the list and the runs opened: no console error, the notice always there."""
+        """All 24 scenarios, each with the stage (in its 3D mode), the list and the runs opened: no console error, the notice always there."""
         self.assertEqual(sorted(item["name"] for item in self.mock.scenarios()["scenarios"]), sorted(SCENARIOS),
                          "the mock has exactly the scenarios this test goes through")
         self.allow_console_errors = True    # checked here, per scenario
@@ -2311,3 +2418,450 @@ class EveryScenarioTest(ScenarioTestCase):
             if errors:
                 problems.append((scenario, errors[:2]))
         self.assertEqual(problems, [])
+
+
+
+# --------------------------------------------------------------------------
+# the checklist on the no-WebGL path
+# --------------------------------------------------------------------------
+
+class NoWebgl:
+    """Chrome without WebGL: the stage falls back to the SVG scheme by itself (no `mode=scheme` in the route), and the
+    checklist items run there unchanged. The notice and the strip on this path: test_composition.NoWebglTest."""
+
+    chrome_args = ("--disable-webgl",)
+    scheme_by_route = False
+
+
+class NormalFrameNoWebglTest(NoWebgl, NormalFrameTest):
+    test_manifest_batches_with_scrambled_order = None    # not about the stage
+
+
+class PassageClosedNoWebglTest(NoWebgl, PassageClosedTest):
+    pass
+
+
+class SensorLostNoWebglTest(NoWebgl, SensorLostTest):
+    pass
+
+
+class ResultsNoWebglTest(NoWebgl, ResultsTest):
+    pass
+
+
+# --------------------------------------------------------------------------
+# the checklist in the 3D stage
+# --------------------------------------------------------------------------
+
+# Chrome's software WebGL: what a judge's machine without a GPU is expected to resemble.
+SWIFTSHADER = ("--use-angle=swiftshader", "--enable-unsafe-swiftshader")
+
+# Every test starts with the stage's own remembered choices (mode, quality, spread of the slabs) forgotten.
+FORGET_STAGE = """
+try {
+  if (!sessionStorage.getItem('stage-choices-forgotten')) {
+    localStorage.removeItem('mine-ui.stage');
+    sessionStorage.setItem('stage-choices-forgotten', '1');
+  }
+} catch (error) {}
+"""
+
+# The label buttons of the 3D stage by thingId: their state attributes (the same as the rows of the list),
+# their lines of text, and whether a reader sees them (placed, not hidden by the decluttering, and on top
+# at their centre, so not under the dock or the HUD).
+LABELS = r"""(() => {
+  const out = {};
+  for (const node of document.querySelectorAll('#stage-3d .s3-label[data-thing-id]')) {
+    const {thingId, label, rank, culled, group, ...state} = node.dataset;
+    const box = node.getBoundingClientRect();
+    const hit = box.width > 0 ? document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) : null;
+    out[thingId] = {
+      ...state, group: group || null,
+      shown: !node.hasAttribute('data-culled') && box.width > 0 && !!hit && node.contains(hit),
+      lines: [...node.querySelectorAll('.s3-label__line')].map((line) => line.textContent.replace(/\u00a0/g, ' ')),
+      signs: [...node.querySelectorAll('[data-symbol]')].map((sign) => sign.dataset.symbol.replace(/^sign:/, '')),
+      aria: node.getAttribute('aria-label'), pressed: node.getAttribute('aria-pressed'), cls: node.className,
+    };
+  }
+  return out;
+})()"""
+
+SCENE_DRAWN = """(() => {
+  const s = document.querySelector('#stage').dataset;
+  return s.stageMode === '3d' && Number(s.frames) > 0 && s.measuredMs !== undefined && s.rendering === 'idle' && Number(s.levels) > 0;
+})()"""
+
+APP = "(await import('/js/main.js')).app"
+HAZARD_SIGNS = ("attention", "danger", "unknown", "lastDanger")
+
+
+class Stage3dScenarioCase(ScenarioTestCase):
+    """The page with the stage in its 3D mode, rendered by SwiftShader; the scene is the subject."""
+
+    chrome_args = SWIFTSHADER
+
+    def setUp(self):
+        super().setUp()
+        self.page.add_init_script(FORGET_STAGE)
+
+    def open3d(self, scenario, route=""):
+        self.open(scenario, route)
+        self.wait_scene()
+
+    def wait_scene(self, timeout=30.0):
+        try:
+            self.page.wait_for(SCENE_DRAWN, timeout=timeout, message="the 3D stage is drawn")
+        except AssertionError as error:
+            raise AssertionError(f"{error}\nstage: {self.stage()}") from None
+
+    def wait_idle(self, timeout=10.0):
+        self.page.wait_for("document.querySelector('#stage').dataset.rendering === 'idle'", timeout=timeout,
+                           message="the 3D stage stopped rendering")
+        return self.stage()
+
+    def stage(self):
+        return self.page.evaluate("Object.assign({}, document.getElementById('stage').dataset)")
+
+    def labels(self):
+        return self.page.evaluate(LABELS)
+
+    def label(self, name):
+        return self.labels().get(thing(name))
+
+    def label_selector(self, name):
+        return f'#stage-3d .s3-label[data-thing-id="{thing(name)}"]'
+
+    def wait_label(self, name, condition, timeout=8.0, message=""):
+        """Wait until the label of `name` satisfies a JS condition on `node` (the button); return the label."""
+        try:
+            self.page.wait_for(f"(() => {{ const node = document.querySelector({json.dumps(self.label_selector(name))});"
+                               f" return !!node && ({condition}); }})()", timeout=timeout, message=message or f"label {name}: {condition}")
+        except AssertionError as error:
+            raise AssertionError(f"{error}\nlabel: {self.label(name)}") from None
+        return self.label(name)
+
+    def wait_label_shown(self, name, timeout=8.0):
+        """Wait until the label of `name` is placed and readable (labels are placed on the next frame of the scene)."""
+        deadline = time.monotonic() + timeout
+        while True:
+            label = self.label(name)
+            if label and label["shown"]:
+                return label
+            if time.monotonic() > deadline:
+                self.fail(f"the label of {name} is not in sight: {label}")
+            time.sleep(0.1)
+
+    def camera(self):
+        return self.stage()["camera"]
+
+    def screen_of(self, name):
+        return self.js(f"return {APP}.ctx.stage.screenOf({json.dumps(thing(name))});")
+
+    def published(self):
+        """The shift as the mock publishes it now, read by the test itself: {local name: {feature: value}}, "shift" for the shift."""
+        answer = self.mock.request("GET", SHIFT_PATH)
+        values = {"shift": {name: feature["properties"]["value"] for name, feature in answer["features"].items()}}
+        for item in values["shift"]["scene"]:
+            values[item["thingId"].split(":")[1]] = {name: feature["properties"]["value"]
+                                                     for name, feature in item["features"].items()}
+        return values
+
+    def assert_labels_match_the_list(self, labels):
+        """The state attributes of the label buttons are those of the rows of «Список» (the same twins, the same codes)."""
+        self.show("list")
+        rows = self.page.evaluate("""(() => {
+          const out = {};
+          for (const node of document.querySelectorAll('[data-testid="list"] tr[data-thing-id]')) {
+            const {thingId, ...state} = node.dataset;
+            out[thingId] = state;
+          }
+          return out;
+        })()""")
+        self.show("scheme")
+        keys = ("kind", "hazard", "quality", "lastKnownHazard", "passability", "restriction", "pending", "workState", "withdrawal",
+                "link", "status", "egress", "locationHazard", "posQuality", "state")
+        compared = 0
+        for thing_id, state in labels.items():
+            if thing_id in rows:
+                self.assertEqual({key: state.get(key) for key in keys}, {key: rows[thing_id].get(key) for key in keys}, thing_id)
+                compared += 1
+        self.assertGreaterEqual(compared, 20, "labels and rows were compared")
+
+
+class Checklist3dTest(Stage3dScenarioCase):
+    """The checklist items that show the mine, read from the 3D stage: its label buttons (the accessible
+    mirror of the scene) and the attributes it mirrors on #stage. The scheme versions are the tests above."""
+
+    def test_normal_frame(self):
+        """Обычная смена in 3D: three slabs, every working and every person under ground, quiet labels."""
+        self.page.add_init_script(PROBE)
+        self.open3d("normal")
+        stage = self.stage()
+        self.assertEqual((stage["stageMode"], stage["renderer"], stage["quality"]), ("3d", "software", "low"),
+                         "SwiftShader is a software renderer: the light quality is chosen by itself")
+        self.assertNotIn("fallback", stage)
+        self.assertEqual((stage["levels"], stage["workings"], stage["workersDrawn"], stage["routes"]), ("3", "36", "14", "0"),
+                         "one slab per level, every working, the 14 people under ground, no route until something is selected")
+        self.assertEqual(self.page.evaluate("getComputedStyle(document.getElementById('scheme')).display"), "none",
+                         "the SVG scheme is not drawn under the model")
+        self.assertEqual(self.banners(), [])
+
+        labels = self.labels()
+        by_kind = {}
+        for state in labels.values():
+            by_kind.setdefault(state["kind"], []).append(state)
+        self.assertEqual({kind: len(items) for kind, items in by_kind.items()},
+                         {"level": 3, "zone": 4, "exit": 3, "working": 36, "sensor": 10, "worker": 14},
+                         "one label button per placed twin (in `normal` nobody shares a stretch)")
+        for kind in ("level", "zone", "exit"):
+            self.assertTrue(all(item["shown"] for item in by_kind[kind]), f"every {kind} is labelled in the overview")
+        zones = {name: labels[thing(name)] for name in ("zone-a", "zone-b", "zone-c", "zone-d")}
+        self.assertEqual({name: item["hazard"] for name, item in zones.items()},
+                         {"zone-a": "normal", "zone-b": "normal", "zone-c": "normal", "zone-d": "attention"})
+        self.assertEqual(zones["zone-d"]["lines"][0], "Участок Г: внимание")
+        self.assertEqual(zones["zone-d"]["signs"], ["attention"], "attention has its triangle, not only a colour")
+        self.assertEqual([sign for sign in zones["zone-a"]["signs"] if sign in HAZARD_SIGNS], [], "a normal zone has no hazard sign")
+        self.assertTrue(all(item["state"] == "available" for item in by_kind["exit"]))
+        self.assertTrue(all((item["egress"], item["status"]) == ("ok", "working") for item in by_kind["worker"]))
+        problems = [thing_id for thing_id, item in labels.items() if "s3-label--problem" in item["cls"] or "s3-label--noroute" in item["cls"]]
+        self.assertEqual(problems, [], "nothing is marked as a problem in an undisturbed shift")
+        self.assertEqual(self.counters(), {"in-danger": "0", "no-route": "0", "unknown": "0", "out": "0", "total": "14"})
+        self.assert_labels_match_the_list(labels)
+
+        # The model time goes on and the still picture draws nothing new.
+        self.wait_idle()
+        self.page.evaluate("window.__probe.raf = 0")
+        tick = int(self.body()["tick"])
+        self.wait_seq(2)
+        self.assertGreater(int(self.body()["tick"]), tick)
+        self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "no frame while nothing visible changes")
+        self.assertEqual(self.commands_logged(), [], "a plain look at the screen sends no command")
+        self.assert_only_contract_requests()
+
+    def test_detour(self):
+        """Обход in 3D: the selected worker's route is drawn on the model; after В-12 closes, a barricade and the longer route."""
+        self.open3d("detour")
+        # The zone by its label, closer with «Показать на модели» of the card, then the worker by his label.
+        self.page.click(self.label_selector("zone-b"))
+        self.page.wait_for(f"location.hash.includes('sel={thing('zone-b')}')", timeout=3.0)
+        self.page.wait_for("document.querySelector('#stage').dataset.routes === '4'", timeout=3.0,
+                           message="the routes of the four people of the zone are drawn while it is selected")
+        overview = self.camera()
+        self.page.click('[data-testid="card-focus"]')
+        self.page.wait_for(f"document.querySelector('#stage').dataset.camera !== {json.dumps(overview)}", timeout=3.0,
+                           message="«Показать на модели» moves the camera")
+        self.wait_idle()
+        self.wait_label_shown("worker-03")
+        self.page.click(self.label_selector("worker-03"))
+        self.page.wait_for(f"location.hash.includes('sel={thing('worker-03')}')", timeout=3.0)
+        self.wait_label("worker-03", "node.getAttribute('aria-pressed') === 'true'")
+        self.page.wait_for(f"document.querySelector('#stage').dataset.routes === '1'"
+                           f" && document.querySelector('#stage-3d .s3').dataset.selected === {json.dumps(thing('worker-03'))}",
+                           timeout=3.0, message="the route of the selected worker, and only his")
+        self.assertIn("расчётный маршрут (модель): 412 м, около 5 мин 30 с, выход Ствол", self.card())
+
+        frames = int(self.wait_idle()["frames"])
+        close_working(self.page, "w-12")
+        wait_decision(self.page)
+        closed = self.wait_label("w-12", "node.dataset.passability === 'closed'")
+        self.assertIn("s3-label--closed", closed["cls"])
+        self.assertEqual(closed["lines"], ["В-12", "проход закрыт", "условие стенда"], "the barricade says who closed it")
+        self.assertIn("blocked", closed["signs"])
+        self.assertEqual(self.wait_label_shown("w-12")["passability"], "closed")
+        sentence = "расчётный маршрут (модель): 655 м (длиннее на 243 м), около 8 мин 44 с, выход Съезд"
+        self.page.wait_for(f"document.querySelector('[data-testid=\"card\"]').textContent.replace(/\\u00a0/g, ' ').includes({json.dumps(sentence)})",
+                           timeout=4.0, message="the card names the published detour")
+        stage = self.wait_idle()
+        self.assertEqual(stage["routes"], "1", "the selected worker's new route replaces the old one")
+        self.assertGreater(int(stage["frames"]), frames, "the model was drawn again with the barricade and the new route")
+        self.assertEqual(self.text('[data-testid="status-conditions"]'), "Условия стенда: В-12 закрыта")
+        self.assertEqual(self.counters()["no-route"], "0")
+
+    def test_no_path(self):
+        """Отсутствие пути in 3D: the barricade of В-07 and two labels «нет расчётного маршрута», no route line invented."""
+        self.open3d("no_path")
+        close_working(self.page, "w-07")
+        wait_decision(self.page)
+        closed = self.wait_label("w-07", "node.dataset.passability === 'closed'")
+        self.assertEqual(closed["lines"], ["В-07", "проход закрыт", "условие стенда"])
+        self.wait_label_shown("w-07")
+        for name in ("worker-07", "worker-08"):
+            self.wait_label(name, "node.dataset.egress === 'none'")
+        self.wait_idle()
+        labels = self.labels()
+        stranded = {thing_id: item for thing_id, item in labels.items() if item["kind"] == "worker" and item["egress"] == "none"}
+        self.assertEqual(sorted(stranded), [thing("worker-07"), thing("worker-08")])
+        for thing_id, item in stranded.items():
+            self.assertTrue(item["shown"], f"{thing_id}: a person without a route is labelled in the overview")
+            self.assertEqual(item["lines"][1:], ["нет расчётного маршрута"], thing_id)
+            self.assertIn("s3-label--noroute", item["cls"])
+            self.assertEqual((item["status"], item["locationHazard"]), ("working", "normal"), "the other two axes are their own")
+        self.assertEqual(self.counters(), {"in-danger": "0", "no-route": "2", "unknown": "0", "out": "0", "total": "14"})
+
+        # Enter on the label selects the worker: no route line is drawn for him, and the card says why.
+        self.page.evaluate(f"document.querySelector({json.dumps(self.label_selector('worker-07'))}).focus()")
+        self.page.press("Enter")
+        self.page.wait_for(f"location.hash.includes('sel={thing('worker-07')}')", timeout=3.0)
+        stage = self.wait_idle()
+        self.assertEqual(stage["routes"], "0", "no route line is invented")
+        self.assertIn("Р-07: нет расчётного маршрута. В графе модели нет открытого пути до выхода", self.card())
+
+    def test_sensor_lost_after_danger(self):
+        """Потерянный датчик после danger in 3D: unknown now, and the last known danger in the zone's label."""
+        self.open3d("sensor_lost_after_danger")
+        labels = self.labels()
+        zone = labels[thing("zone-c")]
+        self.assertEqual((zone["hazard"], zone["quality"], zone["lastKnownHazard"]), ("unknown", "lost", "danger"))
+        self.assertEqual(zone["lines"], ["Участок В: состояние неизвестно", "последнее известное: опасно (тик 810)",
+                                         "данные потеряны", "новый вход запрещён моделью"])
+        self.assertEqual(zone["signs"][:2], ["unknown", "lastDanger"], "unknown and the past danger by their signs")
+        self.assertIn("blocked", zone["signs"])
+        self.assertIn("s3-label--unknown", zone["cls"], "unknown is never drawn like normal")
+        sensor = labels[thing("sens-ext-05")]
+        self.assertEqual((sensor["quality"], sensor["link"], sensor["lines"]), ("lost", "offline", ["Э-05 · данные потеряны"]))
+        self.assertTrue(sensor["shown"], "the lost sensor is labelled in the overview")
+        for name in ("w-20", "w-21"):
+            working = labels[thing(name)]
+            self.assertEqual((working["hazard"], working["lastKnownHazard"], working["restriction"]), ("unknown", "danger", "blocked"))
+        self.assertEqual(self.counters(), {"in-danger": "0", "no-route": "0", "unknown": "2", "out": "0", "total": "14"})
+
+        # «показать» of what changed brings the zone and its last known danger into sight.
+        overview = self.camera()
+        self.page.click('[data-testid="situation-show-1"]')
+        self.page.wait_for(f"document.querySelector('#stage').dataset.camera !== {json.dumps(overview)}", timeout=3.0,
+                           message="«показать» moves the camera")
+        self.wait_idle()
+        shown = self.wait_label_shown("zone-c")
+        self.assertIn("последнее известное: опасно (тик 810)", shown["lines"])
+        self.assert_labels_match_the_list(self.labels())
+
+    def test_problem_zone_tags_are_in_sight_in_the_overview(self):
+        """Zone tags with their state are always labelled (redesign spec 3, «Labels»): in the overview, at both sizes,
+        the zone a story is about is not the one left out."""
+        for size in ((1280, 720), (1920, 1080)):
+            self.page.set_viewport(*size)
+            for scenario in ("sensor_lost_after_danger", "danger_zone"):
+                self.open3d(scenario)
+                if scenario == "danger_zone":
+                    self.wait_body(12.0, runState="paused")
+                self.wait_idle()
+                time.sleep(0.5)
+                with self.subTest(size=size, scenario=scenario):
+                    zones = {thing_id.split(":")[1]: (item["hazard"], item["shown"])
+                             for thing_id, item in self.labels().items() if item["kind"] == "zone"}
+                    hidden = sorted(name for name, (_, shown) in zones.items() if not shown)
+                    self.assertEqual(hidden, [], f"zone tags not in sight in the overview: {zones}")
+
+    def test_danger_zone(self):
+        """Опасный участок in 3D: the zone in danger, the three people in it, the top bar and the dock with three options."""
+        self.open3d("danger_zone")
+        self.wait_body(12.0, runState="paused")
+        zone = self.wait_label("zone-d", "node.dataset.hazard === 'danger'")
+        self.assertEqual((zone["quality"], zone["lines"]), ("fresh", ["Участок Г: опасно", "новый вход запрещён моделью"]))
+        self.assertIn("s3-label--danger", zone["cls"])
+        self.assertEqual(zone["signs"][0], "danger", "danger has its octagon, not only a colour")
+        self.wait_idle()
+        labels = self.labels()
+        self.assertTrue(labels[thing("zone-d")]["shown"])
+        people = {thing_id.split(":")[1]: item for thing_id, item in labels.items() if item["kind"] == "worker"
+                  and item["locationHazard"] == "danger"}
+        self.assertEqual(sorted(people), ["worker-11", "worker-12", "worker-13"])
+        for name, item in people.items():
+            self.assertTrue(item["shown"], f"{name}: a person in a danger zone is labelled in the overview")
+            self.assertIn("в опасной зоне", item["lines"])
+            self.assertEqual(item["egress"], "ok", "in a danger zone and with a route: two axes")
+        stale = labels[thing("zone-c")]
+        self.assertEqual((stale["hazard"], stale["quality"], stale["lastKnownHazard"]), ("unknown", "stale", "normal"))
+        self.assertEqual(labels[thing("sens-ext-05")]["quality"], "stale")
+
+        # The top bar: the counters the model published.
+        self.assertEqual(self.counters(), {"in-danger": "3", "no-route": "0", "unknown": "2", "out": "0", "total": "14"})
+        self.assertEqual(plain(self.page.evaluate(
+            "document.querySelector('[data-testid=\"incident-in-danger\"]').closest('.figure').textContent")), "в опасных зонах 3")
+        published = self.published()["shift"]
+        self.assertEqual((published["workers_in_danger"], published["workers_unknown"]), (3, 2))
+
+        # The dock with the three options of the model.
+        show_right(self.page, "decision")
+        self.assertTrue(self.visible("#decision"))
+        self.assertEqual(self.count(f'{DECISION} th[data-state="offered"]'), 3)
+        self.assertEqual(self.page.evaluate(f"[...document.querySelectorAll('{DECISION} th[data-column]')].map((th) => th.dataset.column)"),
+                         ["option-observe", "option-stop-withdraw", "option-withdraw-all"])
+
+    def test_options_compared_by_their_people_bars(self):
+        """Сравнение вариантов: the people bar of each option holds the published forecast, and nothing else."""
+        self.open3d("paused_heartbeat")
+        show_right(self.page, "decision")
+        published = self.published()
+        bars = self.page.evaluate("""[...document.querySelectorAll('[data-testid="decision-options"] [data-testid="people-bar"]')]
+          .map((bar) => ({option: bar.closest('[data-option]').dataset.option, series: bar.dataset.series, out: bar.dataset.out,
+                          inDanger: bar.dataset.inDanger, noRoute: bar.dataset.noRoute, total: bar.dataset.total || null,
+                          cells: bar.querySelectorAll('.pb__cell').length}))""")
+        self.assertEqual(sorted(bar["option"] for bar in bars), ["option-observe", "option-stop-withdraw", "option-withdraw-all"])
+        for bar in bars:
+            values = published[bar["option"]]
+            with self.subTest(option=bar["option"]):
+                self.assertEqual(bar["series"], "forecast")
+                self.assertEqual((bar["out"], bar["inDanger"], bar["noRoute"]),
+                                 (str(values["forecast_out"]), str(values["forecast_in_danger"]), str(values["forecast_no_route"])))
+                self.assertEqual(bar["total"], "14", "the common group: «Вывести всех» publishes everyone out")
+                self.assertEqual(bar["cells"], 14, "one cell per person of the group")
+                self.assertEqual(self.metric(bar["option"], "forecast_out"), str(values["forecast_out"]))
+        self.assertEqual(self.stage()["stageMode"], "3d", "the dock lies beside the model, which stays")
+
+    def test_platform_unavailable(self):
+        """Платформа недоступна in 3D: the model is marked as the last data, and nothing moves."""
+        self.page.add_init_script(PROBE)
+        self.open3d("normal")
+        self.wait_seq(1)
+        workers = ("worker-03", "worker-07", "worker-12")
+        before = {name: self.screen_of(name)["world"] for name in workers}
+        tick = self.body()["tick"]
+        self.mock.fault("http_502")
+        state = self.wait_body(10.0, link="unavailable")
+        self.assertEqual(state["commands"], "blocked")
+        self.page.wait_for("document.querySelector('#stage-3d .s3').hasAttribute('data-old')", timeout=3.0,
+                           message="the scene marks itself as showing the last data")
+        stage = self.wait_idle()
+        tick = self.body()["tick"]
+        self.assertEqual(stage["tweens"], "0")
+        # The caption lets the pointer through (pointer-events: none), so it is checked by its box, not by a hit.
+        inside = self.page.evaluate("""(() => {
+          const caption = document.querySelector('#stage-3d .s3__old-text').getBoundingClientRect();
+          const stage = document.getElementById('stage').getBoundingClientRect();
+          return caption.width > 0 && caption.left >= stage.left && caption.right <= stage.right
+            && caption.top >= stage.top && caption.bottom <= stage.bottom;
+        })()""")
+        self.assertTrue(inside, "the caption of the old data lies on the stage")
+        self.assertIn("последние полученные данные", self.text("#stage-3d .s3__old-text"))
+        self.assertRegex(self.text("#old-data"), rf"^Показаны данные на \d\d:\d\d:\d\d UTC, тик {tick}\. Текущее состояние неизвестно$")
+        self.assertTrue(self.wait_banner("platform_unavailable", 2.0)["text"].startswith("Платформа недоступна (HTTP 502)"))
+        after = {name: self.screen_of(name)["world"] for name in workers}
+        self.page.evaluate("window.__probe.raf = 0")
+        time.sleep(2.2)
+        self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "no frame: motion has stopped")
+        self.assertEqual({name: self.screen_of(name)["world"] for name in workers}, after, "everyone stays at the last read position")
+        self.assertEqual(after, before, "in `normal` nobody walks: the positions are those of the last full snapshot")
+        self.assertEqual(self.labels()[thing("zone-d")]["hazard"], "attention", "nothing becomes anything else while the platform is away")
+
+        self.mock.fault("none")
+        self.wait_body(10.0, link="ok", snapshot="ok", commands="enabled")
+        self.page.wait_for("!document.querySelector('#stage-3d .s3').hasAttribute('data-old')", timeout=3.0,
+                           message="the mark goes with the first full snapshot")
+
+    def test_invalid_snapshot_keeps_the_last_scene(self):
+        """Невалидный снимок in 3D: the last full state stays on the model, marked as old; commands are blocked."""
+        self.open3d("invalid_missing_field")
+        full = self.labels()
+        self.wait_body(10.0, snapshot="invalid")
+        self.page.wait_for("document.querySelector('#stage-3d .s3').hasAttribute('data-old')", timeout=3.0)
+        tick = self.body()["tick"]
+        self.assertEqual(self.wait_banner("snapshot_invalid", 2.0)["reason"], "missing_field")
+        time.sleep(2.0)
+        self.assertEqual(self.body()["tick"], tick, "the state of the rejected snapshots is not shown")
+        stage = self.stage()
+        self.assertEqual((stage["workersDrawn"], stage["levels"]), ("14", "3"), "the last full state stays drawn")
+        keys = ("hazard", "quality", "egress", "status", "state", "passability")
+        self.assertEqual({key: {k: item.get(k) for k in keys} for key, item in self.labels().items()},
+                         {key: {k: item.get(k) for k in keys} for key, item in full.items()})
+        self.assertEqual(self.body()["commands"], "blocked")

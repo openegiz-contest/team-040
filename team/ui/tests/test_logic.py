@@ -1740,7 +1740,8 @@ class RouterStoreDomTest(LogicTestCase):
           const base = initialState().ui;
           const parse = (hash, current = base) => R.parseHash(hash, current);
           const hashes = ['#/scheme', '#/scheme?sel=team040.mine:w-12', '#/scheme?sel=team040.mine:worker-03&view=plan&level=level-320',
-            '#/scheme?view=plan', '#/list', '#/list?type=worker', '#/list?type=sensor&sel=team040.mine:sens-ext-05', '#/runs'];
+            '#/scheme?view=plan', '#/list', '#/list?type=worker', '#/list?type=sensor&sel=team040.mine:sens-ext-05', '#/runs',
+            '#/scheme?mode=scheme', '#/scheme?sel=team040.mine:w-12&view=plan&mode=3d'];
           return {
             parsed: {
               empty: parse(''), scheme: parse('#/scheme?sel=team040.mine:w-12&view=plan&level=level-320'),
@@ -1750,25 +1751,39 @@ class RouterStoreDomTest(LogicTestCase):
               badType: parse('#/list?type=dragon'),
               keepsOtherFields: parse('#/list?type=zone', {...base, projection: 'plan', level: 'level-320'}),
               command: parse('#/scheme?type=run.reset&command=run.reset&target=run'),
+              mode3d: parse('#/scheme?mode=3d'), modeScheme: parse('#/scheme?sel=team040.mine:w-12&mode=scheme'),
+              badMode: parse('#/scheme?mode=vr'),
+              // The stage mode is kept by a route that does not carry it, in every view, and written only in the scheme view.
+              modeKept: parse('#/list?type=zone', {...base, stageMode: 'scheme'}),
+              listHash: R.formatHash({...base, view: 'list', stageMode: 'scheme'}),
             },
             roundTrip: hashes.filter((hash) => R.formatHash(parse(hash)) !== hash),
             types: R.LIST_TYPES,
           };
         """)
         parsed = got["parsed"]
-        default = {"view": "scheme", "projection": "axo", "level": None, "selected": None, "listType": "all"}
+        # The route fields, plus the fields of the stage (redesign): stageMode from the hash (`mode`), quality and
+        # explode only from the stage's own controls, all three unset by default.
+        default = {"view": "scheme", "projection": "axo", "level": None, "selected": None, "listType": "all",
+                   "stageMode": None, "quality": None, "explode": None}
+        stage = {"stageMode": None, "quality": None, "explode": None}
         self.assertEqual(parsed["empty"], default)
         self.assertEqual(parsed["scheme"], {"view": "scheme", "projection": "plan", "level": "level-320",
-                                            "selected": "team040.mine:w-12", "listType": "all"})
+                                            "selected": "team040.mine:w-12", "listType": "all", **stage})
         self.assertEqual(parsed["list"], {"view": "list", "projection": "axo", "level": None,
-                                          "selected": "team040.mine:worker-03", "listType": "worker"})
+                                          "selected": "team040.mine:worker-03", "listType": "worker", **stage})
         self.assertEqual(parsed["runs"]["view"], "runs")
         self.assertEqual(parsed["garbage"], default)
         self.assertEqual(parsed["encoded"]["selected"], "team040.mine:w-12")
         self.assertEqual(parsed["badType"]["listType"], "all")
         self.assertEqual(parsed["keepsOtherFields"], {"view": "list", "projection": "plan", "level": "level-320",
-                                                      "selected": None, "listType": "zone"})
+                                                      "selected": None, "listType": "zone", **stage})
         self.assertEqual(parsed["command"], default, "a route carries a view and a selection, nothing else")
+        self.assertEqual(parsed["mode3d"], {**default, "stageMode": "3d"})
+        self.assertEqual(parsed["modeScheme"], {**default, "selected": "team040.mine:w-12", "stageMode": "scheme"})
+        self.assertEqual(parsed["badMode"], default, "an unknown mode leaves the stage to its own choice")
+        self.assertEqual(parsed["modeKept"]["stageMode"], "scheme", "a route without `mode` keeps the chosen stage")
+        self.assertEqual(parsed["listHash"], "#/list", "the mode is written only in the scheme view")
         self.assertEqual(got["roundTrip"], [])
         self.assertEqual(got["types"][0], "all")
 

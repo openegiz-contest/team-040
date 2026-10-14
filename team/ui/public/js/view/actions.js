@@ -47,7 +47,7 @@ export function mount(root, ctx) {
     block,
     h('div', {class: 'pick'}, h('label', {class: 'field', for: 'action-zone', text: UI.actions.zone}), select),
     zoneState,
-    ...buttons.map((item) => item.node),
+    h('div', {class: 'acts'}, buttons.map((item) => item.node)),
   );
 
   /** The published state of the chosen zone as caption and words. */

@@ -1,94 +1,164 @@
-/* Shared tokens and controls of the dispatcher screen. One light theme, system
-   fonts only, no shadows, no gradients, no filters. A state is never told by
-   colour alone: every badge and banner also differs by outline and carries text. */
+/* The visual system of the dispatcher screen: «Разрез массива», a museum
+   cutaway model of the mine on a graphite desk.
+
+   Tokens, type, controls and state badges shared by every region and by the
+   3D module (js/scene3d/palette.js mirrors the colour tokens). Flat graphite
+   planes separated by hairlines and spacing; no gradients, glow, blur or
+   shadows. Copper is "what you act on", never a state. Hazard colours mean
+   hazard only, and a state is never told by colour alone: every badge also
+   has its own outline, pattern or sign, and its words. */
 
 :root {
-  --font-sans: system-ui, "Segoe UI", Roboto, Ubuntu, "DejaVu Sans", Arial, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+  /* ---- colour tokens (redesign spec 1.1) ---- */
+  --ink-0: #111316;
+  --ink-1: #171A1E;
+  --ink-2: #1F2328;
+  --ink-3: #2A2F36;
+  --line: #323840;
+  --dust-1: #E8E3DA;
+  --dust-2: #B8B1A5;
+  /* Muted text: AA (4.5:1) only on --ink-0. On panels captions use --dust-2. */
+  --dust-3: #847D72;
+  --copper: #C8834F;
+  --copper-strong: #E39A62;
+  --verdigris: #5FA89E;
+  --steel: #7E8B97;
+  --stone-1: #57534D;
+  --stone-2: #726D65;
+  --stone-3: #938C80;
+  --attention: #E2A43B;
+  --danger: #E0483A;
+  --unknown: #A3A7AD;
+  --noroute: #F2EFE9;
+  --chalk: #D7D1C3;
+  --light-warm: #FFD7A1;
 
+  /* Derived: dark tints under a hazard badge, and a lighter red for small red
+     words (--danger itself is 4.3:1 on --ink-1, below AA for body text). */
+  --attention-tint: #33291A;
+  --danger-tint: #3A1D1A;
+  --unknown-tint: #24282D;
+  --danger-ink: #F07A6E;
+  --copper-tint: #2E241C;
+
+  /* ---- type (spec 1.2) ---- */
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --fs-caption: 12px;
+  --fs-secondary: 13px;
+  --fs-body: 14px;
+  --fs-emphasis: 16px;
+  --fs-section: 20px;
+  --fs-figure: 28px;
+  --lh: 1.4;
+
+  /* ---- spacing ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  --radius: 4px;
+  --control-h: 32px;
+  --control-h-small: 28px;
+  --ring: 2px solid var(--copper);
+  --move-ms: 600ms;
+  --ease: cubic-bezier(.4, 0, .2, 1);
+
+  /* Hatches of the three axes, also used by the legend and the list (L2). */
+  --hatch-attention: repeating-linear-gradient(135deg, transparent 0 5px, rgba(226, 164, 59, .38) 5px 7px);
+  --hatch-danger: repeating-linear-gradient(45deg, transparent 0 3px, rgba(224, 72, 58, .45) 3px 5px),
+    repeating-linear-gradient(135deg, transparent 0 3px, rgba(224, 72, 58, .45) 3px 5px);
+  --hatch-unknown: repeating-linear-gradient(135deg, transparent 0 4px, rgba(163, 167, 173, .26) 4px 5px);
+  --hatch-chalk: repeating-linear-gradient(135deg, transparent 0 6px, rgba(215, 209, 195, .10) 6px 7px);
+
+  color-scheme: dark;
+}
+
+/* Legacy names of the first implementation, mapped onto the new palette so that a
+   stylesheet not yet restyled (scheme.css, compare.css) renders in the dark theme.
+   New rules use the tokens above; remove this block when nothing uses --c-* or the old sizes. */
+:root {
+  --c-bg: var(--ink-0);
+  --c-panel: var(--ink-1);
+  --c-panel-2: var(--ink-2);
+  --c-border: var(--line);
+  --c-border-strong: var(--stone-2);
+  --c-text: var(--dust-1);
+  --c-muted: var(--dust-2);
+  --c-ok: var(--verdigris);
+  --c-ok-bg: var(--ink-1);
+  --c-attention: var(--attention);
+  --c-attention-bg: var(--attention-tint);
+  --c-attention-border: var(--attention);
+  --c-danger: var(--danger-ink);
+  --c-danger-bg: var(--danger-tint);
+  --c-danger-border: var(--danger);
+  --c-unknown: var(--unknown);
+  --c-unknown-bg: var(--unknown-tint);
+  --c-unknown-border: var(--unknown);
+  --c-info: var(--steel);
+  --c-info-bg: var(--ink-2);
+  --c-info-border: var(--steel);
+  --c-accent: var(--copper);
+  --c-focus: var(--copper);
+  --c-selected-bg: var(--copper-tint);
+  --c-stand: var(--chalk);
+  --c-stand-bg: transparent;
+  --c-stand-border: var(--chalk);
+  --c-dispatch: var(--copper);
+  --c-dispatch-bg: var(--copper-tint);
+  --c-dispatch-border: var(--copper);
   --fs-xs: 11px;
   --fs-s: 12px;
   --fs-m: 13px;
   --fs-l: 15px;
   --fs-xl: 18px;
-  --lh: 1.35;
-
-  --sp-1: 2px;
-  --sp-2: 4px;
-  --sp-3: 8px;
-  --sp-4: 12px;
-  --sp-5: 16px;
-
-  --c-bg: #e9ece9;
-  --c-panel: #ffffff;
-  --c-panel-2: #f4f6f4;
-  --c-border: #b4bbb6;
-  --c-border-strong: #4f5853;
-  --c-text: #141816;
-  --c-muted: #535d58;
-
-  --c-ok: #1b5a38;
-  --c-ok-bg: #edf5ef;
-  --c-attention: #6f4300;
-  --c-attention-bg: #fff2c9;
-  --c-attention-border: #a86c00;
-  --c-danger: #96181b;
-  --c-danger-bg: #fde6e3;
-  --c-danger-border: #96181b;
-  --c-unknown: #38424f;
-  --c-unknown-bg: #e9edf2;
-  --c-unknown-border: #5f6b7a;
-  --c-info: #1a4b78;
-  --c-info-bg: #e4eef8;
-  --c-info-border: #2f6ea8;
-
-  --c-accent: #0a56a3;
-  --c-focus: #0a56a3;
-  --c-selected-bg: #d9e9fb;
-
-  /* The two groups of the left panel must never be confused: they differ by
-     hue, by border style and by the shape of their buttons. */
-  --c-stand: #45396d;
-  --c-stand-bg: #f0edf8;
-  --c-stand-border: #7669a6;
-  --c-dispatch: #12443f;
-  --c-dispatch-bg: #e6f2ef;
-  --c-dispatch-border: #1d6a62;
-
-  --radius: 2px;
-  --control-h: 26px;
-  --move-ms: 600ms;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { font-size: var(--fs-m); }
+html { font-size: var(--fs-body); }
 
 body {
   margin: 0;
-  background: var(--c-bg);
-  color: var(--c-text);
-  font: var(--fs-m)/var(--lh) var(--font-sans);
+  background: var(--ink-0);
+  color: var(--dust-1);
+  font: 400 var(--fs-body)/var(--lh) var(--font-sans);
+  font-variant-numeric: tabular-nums;
   -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3, h4, p, ul, ol, dl, dd, figure { margin: 0; padding: 0; }
+h1, h2, h3, h4 { font-weight: 600; }
 ul, ol { list-style: none; }
 [hidden] { display: none !important; }
+button, select, input { font: inherit; color: inherit; }
 
+/* Keyboard focus: a copper ring, always visible on keyboard focus, never on a mouse press. */
 :focus { outline: none; }
-:focus-visible {
-  outline: 3px solid var(--c-focus);
-  outline-offset: 1px;
-}
-/* SVG shapes take no outline-offset in every engine: scheme objects get a stroke from their own stylesheet as well. */
-svg :focus-visible { outline: 3px solid var(--c-focus); }
+:focus-visible { outline: var(--ring); outline-offset: 2px; }
+/* SVG shapes take no outline-offset in every engine: scheme objects also draw their own focus frame. */
+svg :focus-visible { outline: var(--ring); }
 
 .mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.muted { color: var(--c-muted); }
+.muted { color: var(--dust-2); }
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
   overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* An overline: tiny uppercase caption with letter-spacing (the only uppercase of the screen). */
+.overline {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--dust-2);
 }
 
 .glyph {
@@ -98,189 +168,318 @@ svg :focus-visible { outline: 3px solid var(--c-focus); }
   vertical-align: -3px;
 }
 
-/* Moving markers may glide between two published positions. The glide is
-   switched off the moment the link is not ok: a stale picture must not move. */
+/* Motion only explains a change. Moving markers may glide between two published
+   positions, and only while the link is ok: a stale picture must not move. */
 .move-transition { transition: transform var(--move-ms) linear; }
 body:not([data-link="ok"]) .move-transition,
 body[data-old-data] .move-transition { transition: none; }
-@media (prefers-reduced-motion: reduce) {
-  .move-transition { transition: none; }
-}
 
-/* ---- panels ------------------------------------------------------------ */
+/* ---- panels: flat planes, hairlines, spacing ------------------------------ */
 
-.panel {
-  background: var(--c-panel);
-  border: 1px solid var(--c-border);
-}
+.panel { background: var(--ink-1); }
 .panel__title {
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: .06em;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: .08em;
   text-transform: uppercase;
-  color: var(--c-text);
+  color: var(--dust-2);
 }
-.panel__subtitle { font-size: var(--fs-s); color: var(--c-muted); }
-.empty-note { padding: var(--sp-4); color: var(--c-muted); }
+.panel__subtitle { font-size: var(--fs-caption); color: var(--dust-2); }
+.empty-note { padding: var(--sp-4); color: var(--dust-2); }
 
-/* ---- buttons ----------------------------------------------------------- */
+/* ---- buttons: three families that are never confused ---------------------
+   .btn             neutral control (cancel, close, retry)
+   .btn--dispatch   DISPATCHER ACTION: solid copper fill, dark text — "decide"
+   .btn--primary    the same family, for the confirming button of a decision
+   .btn--stand      STAND / SCENARIO control: chalk dashed outline, never filled,
+                    label prefixed by the small «стенд» tag (.stand-tag) — "simulate"
+   .btn--nav / .tab / .seg   navigation and view: quiet text buttons, segmented
+   .btn--danger     destructive (full reset): red outline, confirmation required */
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
   min-height: var(--control-h);
-  padding: 2px 10px;
-  border: 1px solid var(--c-border-strong);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--c-panel);
-  color: var(--c-text);
-  font: inherit; font-weight: 600;
+  background: var(--ink-2);
+  color: var(--dust-1);
+  font-size: var(--fs-secondary);
+  font-weight: 500;
   line-height: 1.2;
   text-align: center;
   cursor: pointer;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
 }
-.btn:hover:not(:disabled) { background: var(--c-panel-2); border-color: var(--c-text); }
-.btn:active:not(:disabled) { background: var(--c-selected-bg); }
-.btn:disabled, .btn[aria-disabled="true"] {
-  border-style: dashed;
-  border-color: var(--c-border);
-  color: var(--c-muted);
-  background: var(--c-panel-2);
+.btn:hover { background: var(--ink-3); border-color: var(--stone-1); }
+.btn:active { background: var(--ink-3); }
+.btn--small { min-height: 24px; padding: 0 var(--sp-2); font-size: var(--fs-caption); }
+.btn--block { display: flex; width: 100%; }
+
+.btn--dispatch, .btn--primary {
+  border-color: var(--copper);
+  background: var(--copper);
+  color: var(--ink-0);
+  font-weight: 600;
+}
+.btn--dispatch:hover, .btn--primary:hover { border-color: var(--copper-strong); background: var(--copper-strong); }
+
+.btn--stand {
+  border: 1px dashed var(--chalk);
+  background: transparent;
+  color: var(--chalk);
+}
+.btn--stand:hover { border-color: var(--dust-1); background: var(--hatch-chalk), transparent; color: var(--dust-1); }
+
+.btn--danger { border: 1px solid var(--danger); background: transparent; color: var(--danger-ink); }
+.btn--danger:hover { border-color: var(--danger-ink); background: var(--danger-tint); }
+
+.btn--nav, .btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--dust-2);
+}
+.btn--nav:hover, .btn--quiet:hover { border-color: transparent; background: var(--ink-2); color: var(--dust-1); }
+.btn--link {
+  min-height: 0; padding: 0;
+  border: 0; border-radius: 0;
+  background: none;
+  color: var(--copper);
+  font-weight: 500;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+}
+.btn--link:hover { background: none; color: var(--copper-strong); }
+
+/* Off, but still in the Tab order (aria-disabled): dotted outline and plain weight, not only a paler colour. */
+.btn:disabled, .btn[aria-disabled="true"],
+.btn--dispatch[aria-disabled="true"], .btn--primary[aria-disabled="true"],
+.btn--stand[aria-disabled="true"], .btn--danger[aria-disabled="true"] {
+  border-style: dotted;
+  border-color: var(--stone-1);
+  background: transparent;
+  color: var(--dust-3);
+  font-weight: 400;
   cursor: not-allowed;
 }
-.btn--small { min-height: 22px; padding: 1px 7px; font-size: var(--fs-s); }
-.btn--block { display: flex; width: 100%; }
-.btn--primary { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
-.btn--primary:hover:not(:disabled) { background: #084684; border-color: #084684; }
-.btn--danger { border-color: var(--c-danger-border); border-width: 2px; color: var(--c-danger); }
-.btn--danger:hover:not(:disabled) { background: var(--c-danger-bg); border-color: var(--c-danger-border); }
-/* Stand conditions: rounded, dashed. Dispatcher actions: square, solid and heavy. */
-.btn--stand { border: 1px dashed var(--c-stand-border); border-radius: 13px; color: var(--c-stand); background: var(--c-panel); }
-.btn--stand:hover:not(:disabled) { background: var(--c-stand-bg); border-color: var(--c-stand); }
-.btn--dispatch { border: 2px solid var(--c-dispatch-border); border-radius: 0; color: var(--c-dispatch); background: var(--c-panel); }
-.btn--dispatch:hover:not(:disabled) { background: var(--c-dispatch-bg); border-color: var(--c-dispatch); }
 
-/* ---- form controls ----------------------------------------------------- */
+/* The «стенд» tag in front of a stand control: tiny, chalk, dashed. */
+.stand-tag {
+  flex: none;
+  padding: 0 4px;
+  border: 1px dashed currentColor;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 14px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
 
-.field { font-size: var(--fs-s); color: var(--c-muted); }
+/* ---- form controls -------------------------------------------------------- */
+
+.field { font-size: var(--fs-caption); color: var(--dust-2); }
+
 .select, .input {
   min-height: var(--control-h);
   max-width: 100%;
-  padding: 2px 6px;
-  border: 1px solid var(--c-border-strong);
+  padding: 0 28px 0 var(--sp-2);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--c-panel);
-  color: var(--c-text);
-  font: inherit;
+  background: var(--ink-2);
+  color: var(--dust-1);
+  font-size: var(--fs-secondary);
 }
-.select:disabled, .input:disabled { border-style: dashed; color: var(--c-muted); background: var(--c-panel-2); }
-
-/* ---- tabs -------------------------------------------------------------- */
-
-.tab {
-  min-height: 28px;
-  padding: 3px 14px;
-  border: 1px solid var(--c-border);
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  background: var(--c-panel-2);
-  color: var(--c-muted);
-  font: inherit; font-weight: 600;
+.select {
+  appearance: none;
+  /* The chevron is drawn with two hairlines, not an image. */
+  background-image:
+    linear-gradient(45deg, transparent 49%, var(--dust-2) 50%, var(--dust-2) 62%, transparent 63%),
+    linear-gradient(-45deg, transparent 49%, var(--dust-2) 50%, var(--dust-2) 62%, transparent 63%);
+  background-size: 6px 6px, 6px 6px;
+  background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%;
+  background-repeat: no-repeat;
   cursor: pointer;
 }
-.tab + .tab { margin-left: -1px; }
-.tab:hover { color: var(--c-text); background: var(--c-panel); }
-.tab.is-current {
-  background: var(--c-panel);
-  color: var(--c-text);
-  border-bottom-color: var(--c-text);
-}
-.tab--small { min-height: 24px; padding: 2px 10px; font-size: var(--fs-s); }
+.select:hover, .input:hover { border-color: var(--stone-1); }
+.select:disabled, .input:disabled { border-style: dotted; color: var(--dust-3); cursor: not-allowed; }
+.select option { background: var(--ink-2); color: var(--dust-1); }
+.select--stand { border-style: dashed; border-color: var(--stone-2); background-color: transparent; }
 
-/* ---- badges and chips --------------------------------------------------
-   Outline tells the state without colour: none (ok), dashed (attention),
-   double (danger), dotted (unknown), inverted (blocked). */
+.range {
+  appearance: none;
+  width: 100%; height: 24px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.range::-webkit-slider-runnable-track { height: 2px; background: var(--line); border-radius: 1px; }
+.range::-moz-range-track { height: 2px; background: var(--line); border-radius: 1px; }
+.range::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px; height: 14px; margin-top: -6px;
+  border: 2px solid var(--copper); border-radius: 50%;
+  background: var(--ink-0);
+}
+.range::-moz-range-thumb { width: 10px; height: 10px; border: 2px solid var(--copper); border-radius: 50%; background: var(--ink-0); }
+.range:focus-visible { outline-offset: 0; }
+
+/* ---- navigation: tabs and segmented control ------------------------------- */
+
+.seg, .tabs {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--ink-0);
+}
+.tab, .seg__item {
+  min-height: var(--control-h-small);
+  padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--dust-2);
+  font-size: var(--fs-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease), color 120ms var(--ease);
+}
+.tab:hover, .seg__item:hover { color: var(--dust-1); background: var(--ink-2); }
+.tab.is-current, .tab[aria-selected="true"],
+.seg__item.is-current, .seg__item[aria-pressed="true"], .seg__item[aria-checked="true"] {
+  background: var(--ink-3);
+  color: var(--dust-1);
+  /* The current item is also marked by a copper base line: not by tint alone. */
+  text-decoration: underline; text-decoration-color: var(--copper);
+  text-decoration-thickness: 2px; text-underline-offset: 6px;
+}
+.tab--small { min-height: 24px; padding: 0 var(--sp-2); font-size: var(--fs-caption); }
+
+/* ---- badges of the three axes ---------------------------------------------
+   Each value: its own outline or pattern and a sign (glyph) next to the words.
+   hazard:    --normal (plain, no sign) | --attention (amber, stripes, triangle)
+              | --danger (red, cross-hatch, double outline, octagon) | --unknown (fog hatch, dashed, «?»)
+   knowledge: --fresh (plain) | --stale (dashed, clock) | --lost (dotted, crossed)
+   reach:     --route (verdigris solid) | --noroute (white crossed square) | --blocked (closed passage)
+   commands:  --pending (copper dashed, clock) | --info
+   Older names kept for the views: --ok = --normal. */
 
 .badge {
-  display: inline-block;
-  padding: 0 5px;
+  display: inline-flex; align-items: center; gap: 5px;
+  max-width: 100%;
+  padding: 1px 6px;
   border: 1px solid transparent;
-  border-radius: var(--radius);
+  border-radius: 3px;
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  line-height: 18px;
+  vertical-align: baseline;
 }
-.badge--ok { padding: 0; border: 0; color: var(--c-text); }
-.badge--attention { border: 1px dashed var(--c-attention-border); background: var(--c-attention-bg); color: var(--c-attention); font-weight: 600; }
-.badge--danger { border: 3px double var(--c-danger-border); background: var(--c-danger-bg); color: var(--c-danger); font-weight: 700; }
-.badge--unknown { border: 1px dotted var(--c-unknown-border); background: var(--c-unknown-bg); color: var(--c-unknown); font-style: italic; }
-.badge--blocked { border: 1px solid var(--c-text); background: var(--c-text); color: #fff; font-weight: 600; }
-.badge--info { border: 1px solid var(--c-info-border); background: var(--c-info-bg); color: var(--c-info); }
+.badge .glyph { width: 14px; height: 14px; vertical-align: -2px; }
+.badge--ok, .badge--normal, .badge--fresh { border-color: var(--line); color: var(--dust-1); font-weight: 400; }
+.badge--none { border-color: var(--steel); color: var(--dust-2); }
+.badge--attention { border-color: var(--attention); background: var(--hatch-attention), var(--attention-tint); color: var(--attention); }
+.badge--danger { border: 3px double var(--danger); padding-block: 0; background: var(--hatch-danger), var(--danger-tint); color: var(--dust-1); font-weight: 600; }
+.badge--unknown { border: 1px dashed var(--unknown); background: var(--hatch-unknown), var(--unknown-tint); color: var(--unknown); font-style: italic; }
+.badge--stale { border: 1px dashed var(--dust-2); color: var(--dust-2); }
+.badge--lost { border: 1px dotted var(--unknown); color: var(--unknown); font-style: italic; }
+.badge--route { border-color: var(--verdigris); color: var(--verdigris); }
+.badge--noroute { border: 1px solid var(--noroute); background: var(--ink-0); color: var(--noroute); font-weight: 600; }
+.badge--blocked { border: 1px solid var(--dust-1); background: var(--dust-1); color: var(--ink-0); font-weight: 600; }
+.badge--pending { border: 1px dashed var(--copper); color: var(--copper); }
+.badge--info { border: 1px solid var(--steel); color: var(--dust-1); }
 
-.chips { display: inline-flex; flex-wrap: wrap; gap: var(--sp-2); vertical-align: middle; }
+/* Chips: small tags. A stand chip is chalk mark-up: dashed, never filled. */
+.chips { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); vertical-align: middle; }
 .chip {
-  display: inline-block;
-  padding: 0 7px;
-  border: 1px solid var(--c-border-strong);
-  border-radius: 10px;
-  background: var(--c-panel);
-  font-size: var(--fs-s);
-  line-height: 1.55;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--ink-2);
+  color: var(--dust-1);
+  font-size: var(--fs-caption);
+  line-height: 20px;
   white-space: nowrap;
 }
-.chip--stand { border: 1px dashed var(--c-stand-border); background: var(--c-stand-bg); color: var(--c-stand); font-weight: 600; }
+.chip--stand { border: 1px dashed var(--chalk); background: transparent; color: var(--chalk); font-family: var(--font-mono); font-size: 11.5px; }
 
-/* ---- banners ----------------------------------------------------------- */
+/* ---- banners: link and snapshot states ------------------------------------ */
 
 .banner {
-  display: flex; align-items: flex-start; gap: var(--sp-3);
-  padding: 5px var(--sp-4);
-  border-bottom: 1px solid var(--c-border-strong);
-  border-left: 6px solid var(--c-border-strong);
-  background: var(--c-panel);
+  display: flex; align-items: center; gap: var(--sp-2);
+  min-width: 0;
+  padding: 6px var(--sp-4);
+  border-left: 4px solid var(--steel);
+  background: var(--ink-1);
+  color: var(--dust-1);
+  font-size: var(--fs-secondary);
 }
-.banner__glyph { flex: none; line-height: 1; padding-top: 1px; }
+.banner__glyph { flex: none; display: inline-flex; }
 .banner__words { min-width: 0; }
-.banner__title { font-weight: 700; }
-.banner--danger { border-left: 6px double var(--c-danger-border); background: var(--c-danger-bg); color: var(--c-danger); }
-.banner--danger .banner__text { color: var(--c-text); }
-.banner--attention { border-left: 6px dashed var(--c-attention-border); background: var(--c-attention-bg); color: var(--c-attention); }
-.banner--attention .banner__text { color: var(--c-text); }
-.banner--info { border-left: 6px solid var(--c-info-border); background: var(--c-info-bg); color: var(--c-info); }
-.banner--info .banner__text { color: var(--c-text); }
+.banner__title { font-weight: 600; }
+.banner__text { color: var(--dust-2); }
+.banner--danger { border-left: 6px double var(--danger); background: var(--hatch-danger), var(--danger-tint); background-size: auto; }
+.banner--danger .banner__glyph, .banner--danger .banner__title { color: var(--danger-ink); }
+.banner--danger .banner__text { color: var(--dust-1); }
+.banner--attention { border-left: 4px dashed var(--attention); background: var(--attention-tint); }
+.banner--attention .banner__glyph, .banner--attention .banner__title { color: var(--attention); }
+.banner--info { border-left: 4px solid var(--steel); background: var(--ink-2); }
+.banner--info .banner__glyph { color: var(--steel); }
 
-/* ---- tables ------------------------------------------------------------ */
+/* ---- tables ---------------------------------------------------------------- */
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--fs-s);
+  font-size: var(--fs-caption);
 }
 .table th, .table td {
-  padding: 3px 8px;
-  border-bottom: 1px solid var(--c-border);
+  padding: 5px var(--sp-2);
+  border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
 }
 .table th {
   position: sticky; top: 0; z-index: 1;
-  background: var(--c-panel-2);
-  border-bottom: 2px solid var(--c-border-strong);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: .04em;
+  background: var(--ink-1);
+  border-bottom: 1px solid var(--stone-1);
+  color: var(--dust-2);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .06em;
   text-transform: uppercase;
   white-space: nowrap;
 }
 .table td.num, .table th.num { text-align: right; }
-.table tbody tr:hover { background: var(--c-panel-2); }
+.table tbody tr:hover { background: var(--ink-2); }
 .table .row { cursor: pointer; }
-.table .row:focus-visible { outline-offset: -3px; }
-/* The selected row: a heavy bar on the left and the word in the code cell, not only a tint. */
-.table .row.is-selected { background: var(--c-selected-bg); }
-.table .row.is-selected td:first-child { border-left: 5px solid var(--c-accent); padding-left: 3px; }
+.table .row:focus-visible { outline-offset: -2px; }
+/* The selected row: a copper bar on the left and a heavier weight, not only a tint. */
+.table .row.is-selected { background: var(--copper-tint); }
 .table .row.is-selected td { font-weight: 600; }
 
-/* ---- key-value lists (cards) ------------------------------------------- */
+/* ---- key-value lists ------------------------------------------------------ */
 
-.kv { display: grid; grid-template-columns: minmax(90px, 40%) 1fr; gap: 1px var(--sp-3); font-size: var(--fs-s); }
-.kv dt { color: var(--c-muted); }
+.kv { display: grid; grid-template-columns: minmax(90px, 42%) 1fr; gap: 3px var(--sp-3); font-size: var(--fs-caption); }
+.kv dt { color: var(--dust-2); }
 .kv dd { min-width: 0; overflow-wrap: anywhere; }
 
-.noscript { margin: var(--sp-5); font-weight: 700; }
+.noscript { margin: var(--sp-4); font-weight: 600; }
+
+/* ---- scrollbars: thin, graphite ------------------------------------------- */
+
+* { scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
+
+/* ---- reduced motion: every transition is instant -------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+  .move-transition { transition: none; }
+}

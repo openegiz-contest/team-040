@@ -5,25 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Диспетчер смены — цифровой двойник рудника (синтетические данные)</title>
 <link rel="icon" href="data:,">
+<link rel="stylesheet" href="fonts/fonts.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/layout.css">
 <link rel="stylesheet" href="css/scheme.css">
 <link rel="stylesheet" href="css/panels.css">
+<link rel="stylesheet" href="css/compare.css">
+<link rel="stylesheet" href="css/scene3d.css">
+<script type="importmap">{"imports": {"three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/"}}</script>
 </head>
 <body data-boot="loading" data-link="ok" data-publications="unknown" data-snapshot="none" data-commands="blocked"
-      data-view="scheme" data-right="card" data-journal="collapsed">
+      data-view="scheme" data-dock="none" data-stand="closed" data-journal="collapsed">
 <noscript><p class="noscript">Интерфейсу нужен JavaScript. Синтетические данные. Расчёт модели, не сведения о реальной шахте</p></noscript>
 <div class="app" id="app">
   <header class="topbar" id="statusbar"></header>
-  <section class="incident" id="incident"></section>
-  <div class="banners" id="banners"></div>
 
-  <aside class="left" id="left">
-    <section class="group group--stand" id="conditions" data-testid="conditions-panel"></section>
-    <section class="group group--dispatch" id="actions" data-testid="actions-panel"></section>
-    <section class="group group--pending" id="pending"></section>
-    <section class="group group--reset" id="reset"></section>
-  </aside>
+  <section class="situation" id="situation" data-testid="situation-strip">
+    <div class="banners" id="banners"></div>
+    <div class="incident" id="incident"></div>
+  </section>
 
   <main class="centre" id="centre">
     <div class="centre__bar">
@@ -33,26 +33,40 @@
     <div class="old-data" id="old-data" hidden></div>
     <div class="centre__body">
       <section class="view view--scheme" id="view-scheme" data-view="scheme">
-        <div class="scheme" id="scheme" data-testid="scheme"></div>
+        <div class="stage" id="stage" data-testid="stage">
+          <div class="stage__3d" id="stage-3d" data-testid="scene3d"></div>
+          <div class="scheme" id="scheme" data-testid="scheme"></div>
+          <div class="stage__hud" id="stage-hud"></div>
+        </div>
         <div class="legend" id="legend" data-testid="legend"></div>
       </section>
       <section class="view view--list" id="view-list" data-view="list" data-testid="list" hidden></section>
       <section class="view view--runs" id="view-runs" data-view="runs" hidden></section>
+
+      <aside class="stand" id="stand-drawer" data-testid="stand-drawer">
+        <div class="stand__head" id="stand-head"></div>
+        <div class="stand__body">
+          <section class="stand__part" id="conditions" data-testid="conditions-panel"></section>
+          <section class="stand__part stand__part--reset" id="reset"></section>
+        </div>
+      </aside>
     </div>
+
+    <section class="dock" id="decision-dock" data-testid="decision-dock">
+      <div class="dock__bar" id="dock-bar"></div>
+      <div class="dock__body" id="decision" data-testid="decision-panel"></div>
+    </section>
   </main>
 
   <aside class="right" id="right">
-    <div class="right__tabs" id="right-tabs"></div>
-    <section class="right__part right__part--decision" id="decision" data-testid="decision-panel"></section>
-    <section class="right__part right__part--card" id="card" data-testid="card"></section>
-  </aside>
-
-  <footer class="journal" id="journal-region">
-    <div class="journal__panel">
+    <section class="right__card" id="card" data-testid="card"></section>
+    <section class="group group--dispatch" id="actions" data-testid="actions-panel"></section>
+    <section class="group group--pending" id="pending"></section>
+    <section class="journal" id="journal-region">
       <div class="journal__bar" id="journal-bar"></div>
       <div class="journal__body" id="journal" data-testid="journal"></div>
-    </div>
-  </footer>
+    </section>
+  </aside>
 </div>
 <div id="dialog-root"></div>
 <script type="module" src="js/main.js"></script>

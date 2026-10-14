@@ -1,9 +1,12 @@
 // Hash routes, both ways. A route only opens a view and selects an object:
 // nothing in a URL can send a command, so a reload never repeats an incident.
 //
-//   #/scheme?sel=<thingId>&view=axo|plan&level=<local id>
+//   #/scheme?sel=<thingId>&view=axo|plan&level=<local id>&mode=3d|scheme
 //   #/list?type=<kind>&sel=<thingId>
 //   #/runs
+//
+// `mode` chooses the stage (3D model or SVG scheme). It is read in every view
+// and kept when a route does not carry it; it is written only in the scheme view.
 
 import {ID_PATTERN, LOCAL_NAME_PATTERN} from './config.js';
 
@@ -11,6 +14,7 @@ import {ID_PATTERN, LOCAL_NAME_PATTERN} from './config.js';
 
 const VIEWS = ['scheme', 'list', 'runs'];
 const PROJECTIONS = ['axo', 'plan'];
+const STAGE_MODES = ['3d', 'scheme'];
 export const LIST_TYPES = ['all', 'level', 'working', 'zone', 'sensor', 'worker', 'exit', 'incident', 'option', 'journal'];
 
 /**
@@ -28,6 +32,8 @@ export function parseHash(hash, current) {
   const view = VIEWS.includes(path) ? path : 'scheme';
   const sel = params.get('sel');
   const next = {...current, view, selected: sel !== null && ID_PATTERN.test(sel) ? sel : null};
+  const mode = params.get('mode');
+  if (STAGE_MODES.includes(mode)) next.stageMode = mode;
   if (view === 'scheme') {
     const projection = params.get('view');
     const level = params.get('level');
@@ -51,6 +57,7 @@ export function formatHash(ui) {
     if (ui.selected) params.push(`sel=${ui.selected}`);
     if (ui.projection !== 'axo') params.push(`view=${ui.projection}`);
     if (ui.level) params.push(`level=${ui.level}`);
+    if (ui.stageMode) params.push(`mode=${ui.stageMode}`);
   } else if (ui.view === 'list') {
     if (ui.listType !== 'all') params.push(`type=${ui.listType}`);
     if (ui.selected) params.push(`sel=${ui.selected}`);
@@ -60,7 +67,7 @@ export function formatHash(ui) {
 
 function sameUi(a, b) {
   return a.view === b.view && a.projection === b.projection && a.level === b.level
-    && a.selected === b.selected && a.listType === b.listType;
+    && a.selected === b.selected && a.listType === b.listType && a.stageMode === b.stageMode;
 }
 
 /**

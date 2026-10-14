@@ -42,8 +42,8 @@ SPEED_M_S = 1.25
 STEP_M = 12.5
 
 SCENARIOS = [
-    "normal", "detour", "no_path", "sensor_lost_after_danger", "paused_heartbeat",
-    "frozen_seq", "frozen_seq_old", "invalid_missing_id", "invalid_duplicate_id",
+    "normal", "detour", "no_path", "sensor_lost_after_danger", "danger_zone",
+    "paused_heartbeat", "frozen_seq", "frozen_seq_old", "invalid_missing_id", "invalid_duplicate_id",
     "invalid_mixed_tick", "invalid_missing_field", "invalid_contract_version",
     "invalid_no_metadata", "topology_mismatch", "topology_change", "commands",
     "reset", "withdrawal_incomplete", "no_forecast", "partial_forecast",
@@ -728,6 +728,369 @@ class FixtureFilesTest(unittest.TestCase):
         self.assertEqual((val(f["frames"][0], "run_state"), val(f["frames"][0], "pause_reason")),
                          ("paused", "decision"))
 
+    # --- danger_zone: a zone in danger on fresh data, a stale sensor elsewhere ---
+
+    OPTION_IDS = ("option-observe", "option-stop-withdraw", "option-withdraw-all")
+
+    def danger_zone(self):
+        fx = self.fixtures["danger_zone"]
+        attributes = {t["thingId"].split(":")[1]: t["attributes"]
+                      for t in fx["attribute_sets"]["t1"]}
+        return fx, fx["states"], attributes
+
+    def test_danger_zone_is_covered_by_the_per_frame_checks(self):
+        # the generic route / counter / snapshot checks iterate over every frame of every
+        # scenario; make sure the new scenario's frames are among them and pass the route check
+        fx, states, _ = self.danger_zone()
+        labels = []
+        checked = 0
+        for label, fx, state, attributes, frame in self.frames():
+            if not label.startswith("danger_zone/"):
+                continue
+            labels.append(label)
+            for el in scene_of(frame):
+                local = el["thingId"].split(":")[1]
+                if attributes[local]["kind"] == "worker":
+                    self.check_worker_route(f"{label} {local}", attributes, frame, el["features"])
+                    checked += 1
+        self.assertEqual(len(labels), sum(len(s["frames"]) for s in states.values()))
+        self.assertGreaterEqual(len(labels), 100)
+        for state in ("initial", "decision", "observe_exec", "sw_exec", "wa_exec", "sw_done"):
+            self.assertTrue(any(l.startswith(f"danger_zone/{state}[") for l in labels), state)
+        self.assertEqual(checked, 14 * len(labels))
+
+    def test_danger_zone_prelude_climbs_from_attention_to_the_decision_point(self):
+        fx, states, attributes = self.danger_zone()
+        thresholds = attributes["mine"]["thresholds"]
+        initial, decision = states["initial"], states["decision"]
+        self.assertEqual((initial["clock"], initial["publications"], initial["next"]),
+                         ("run", 6, "decision"))
+        self.assertEqual(decision["clock"], "hold")
+        frames = initial["frames"]
+        self.assertEqual(len(frames), 6)
+        self.assertEqual([val(f, "tick") for f in frames], list(range(1200, 1260, 10)))
+        rates, indexes = [], []
+        for f in frames:
+            self.assertEqual((val(f, "run_state"), val(f, "workers_in_danger"),
+                              val(element(f, "incident"), "state")), ("running", 0, "none"))
+            zone = element(f, "zone-d")
+            self.assertEqual((val(zone, "hazard_state"), val(zone, "data_quality"),
+                              val(zone, "routing_restriction")), ("attention", "fresh", "allowed"))
+            rate = val(element(f, "sens-ext-04"), "rate")
+            self.assertEqual(val(zone, "reason_value"), rate)
+            self.assertGreaterEqual(rate, thresholds["rate"]["attention"])
+            self.assertLess(rate, thresholds["rate"]["danger"])
+            self.assertLess(val(zone, "instability_index"), thresholds["index"]["danger"])
+            rates.append(rate)
+            indexes.append(val(zone, "instability_index"))
+            # the sensor that will go stale is already silent, but not yet too old
+            quiet = element(f, "sens-ext-05")
+            self.assertEqual((val(quiet, "quality"), val(quiet, "link_state")),
+                             ("fresh", "online"))
+            self.assertLessEqual(val(f, "tick") - val(quiet, "measured_at_tick"),
+                                 attributes["sens-ext-05"]["stale_after_s"])
+            self.assertEqual(val(element(f, "zone-c"), "hazard_state"), "normal")
+        self.assertEqual(rates, sorted(set(rates)))        # strictly climbing
+        self.assertEqual(indexes, sorted(set(indexes)))
+        last = decision["frames"][0]
+        self.assertEqual(val(last, "tick"), val(frames[-1], "tick") + 10)
+        self.assertGreater(val(element(last, "sens-ext-04"), "rate"), rates[-1])
+
+    def test_danger_zone_hazard_numbers_follow_the_thresholds(self):
+        fx, states, attributes = self.danger_zone()
+        thresholds = attributes["mine"]["thresholds"]
+        f = states["decision"]["frames"][0]
+        things = fx["attribute_sets"]["t1"]
+        self.assertEqual(violations(things[0]["attributes"], kinds_of(things),
+                                    {"features": f, "_modified": "x", "_revision": 1}), set())
+        zone = element(f, "zone-d")
+        self.assertEqual([val(zone, k) for k in ("hazard_state", "data_quality", "reason_code",
+                                                  "routing_restriction", "reason_sensor")],
+                         ["danger", "fresh", "rate_above_danger", "blocked", "sens-ext-04"])
+        self.assertEqual(val(zone, "index_at_tick"), val(f, "tick"))
+        # the reason names the sensor, its rate and the danger threshold of the mine
+        sensor = element(f, val(zone, "reason_sensor"))
+        self.assertEqual(attributes[val(zone, "reason_sensor")]["zone"], "zone-d")
+        self.assertEqual(val(zone, "reason_value"), val(sensor, "rate"))
+        self.assertEqual((val(zone, "reason_threshold"), val(zone, "reason_unit")),
+                         (thresholds["rate"]["danger"], thresholds["rate"]["unit"]))
+        self.assertGreater(val(zone, "reason_value"), val(zone, "reason_threshold"))
+        self.assertGreater(val(zone, "instability_index"), thresholds["index"]["danger"])
+        self.assertEqual(zone["instability_index"]["properties"]["unit"], "1")
+        # every sensor of the zone reads above the danger threshold and is fresh
+        sensors = attributes["zone-d"]["sensors"]
+        self.assertEqual(sorted(sensors), ["sens-conv-03", "sens-ext-04"])
+        for sid in sensors:
+            s = element(f, sid)
+            self.assertGreater(val(s, "rate"), thresholds["rate"]["danger"], sid)
+            self.assertEqual((val(s, "quality"), val(s, "link_state"), val(s, "measured_at_tick")),
+                             ("fresh", "online", val(f, "tick")), sid)
+        self.assertNotIn("last_known_hazard_state", zone)
+        # the zone's workings carry the zone's state
+        for wid in attributes["zone-d"]["workings"]:
+            w = element(f, wid)
+            self.assertEqual((val(w, "hazard_state"), val(w, "data_quality"),
+                              val(w, "routing_restriction")), ("danger", "fresh", "blocked"), wid)
+        # the model stopped to ask: the incident has the hazard cause at the transition
+        self.assertEqual((val(f, "run_state"), val(f, "pause_reason")), ("paused", "decision"))
+        incident = element(f, "incident")
+        self.assertEqual([val(incident, k) for k in ("state", "trigger", "zone", "opened_at_tick")],
+                         ["active", "hazard", "zone-d", val(f, "tick")])
+        self.assertIn({"trigger": "hazard", "subject": "zone-d", "tick": val(f, "tick")},
+                      val(incident, "causes"))
+        events = [(e["code"], e["subject"], e.get("arg"), e["tick"])
+                  for e in val(element(f, "journal"), "events")]
+        self.assertIn(("hazard.changed", "zone-d", "danger", val(f, "tick")), events)
+        # the zone was in attention from the start and the journal says so
+        self.assertIn(("hazard.changed", "zone-d", "attention", 0), events)
+
+    def test_danger_zone_workers_inside_are_in_danger(self):
+        fx, states, attributes = self.danger_zone()
+        f = states["decision"]["frames"][0]
+        inside = set(attributes["zone-d"]["workings"])
+        in_zone = [i for i in range(1, 15)
+                   if val(element(f, f"worker-{i:02d}"), "at_working") in inside]
+        self.assertEqual(in_zone, [11, 12, 13])
+        for i in range(1, 15):
+            w = element(f, f"worker-{i:02d}")
+            if i in in_zone:
+                self.assertEqual(val(w, "location_hazard"), "danger", f"worker-{i:02d}")
+            else:
+                self.assertNotEqual(val(w, "location_hazard"), "danger", f"worker-{i:02d}")
+        self.assertEqual(val(f, "workers_in_danger"), len(in_zone))
+        self.assertEqual(val(element(f, "zone-d"), "workers_count"), len(in_zone))
+        self.assertEqual(sum(1 for i in range(1, 15)
+                             if val(element(f, f"worker-{i:02d}"), "location_hazard") == "danger"),
+                         val(f, "workers_in_danger"))
+        # leaving the zone is a published route that crosses it; entry is what is forbidden
+        for i in in_zone:
+            w = element(f, f"worker-{i:02d}")
+            self.assertEqual((val(w, "egress_status"), val(w, "egress_crosses"),
+                              val(w, "status")), ("ok", "danger", "working"))
+        # worker-14 belongs to zone D but stands in an unmonitored passage
+        w14 = element(f, "worker-14")
+        self.assertEqual(attributes["worker-14"]["home_zone"], "zone-d")
+        self.assertEqual((val(w14, "location_hazard"),
+                          val(element(f, val(w14, "at_working")), "data_quality")),
+                         ("unknown", "none"))
+        self.assertEqual(val(f, "workers_no_route"), 0)
+
+    def test_danger_zone_has_a_stale_sensor_and_an_unknown_zone(self):
+        fx, states, attributes = self.danger_zone()
+        f = states["decision"]["frames"][0]
+        before = states["initial"]["frames"][-1]
+        sensor = element(f, "sens-ext-05")
+        self.assertEqual((val(sensor, "quality"), val(sensor, "link_state")), ("stale", "online"))
+        age = val(f, "tick") - val(sensor, "measured_at_tick")
+        self.assertGreater(age, attributes["sens-ext-05"]["stale_after_s"])
+        self.assertLess(age, attributes["sens-ext-05"]["lost_after_s"])
+        self.assertEqual(val(sensor, "measured_at_sim_s"), val(sensor, "measured_at_tick"))
+        # another zone than the one in danger, and the only sensor of its zone
+        self.assertEqual(attributes["sens-ext-05"]["zone"], "zone-c")
+        self.assertEqual(attributes["zone-c"]["sensors"], ["sens-ext-05"])
+        zone = element(f, "zone-c")
+        self.assertEqual([val(zone, k) for k in ("hazard_state", "data_quality", "reason_code",
+                                                  "reason_sensor", "last_known_hazard_state")],
+                         ["unknown", "stale", "sensor_stale", "sens-ext-05", "normal"])
+        # the last known value is the previous fresh one, not an invention
+        fresh = element(before, "zone-c")
+        self.assertEqual((val(fresh, "hazard_state"), val(fresh, "data_quality")),
+                         ("normal", "fresh"))
+        self.assertEqual(val(zone, "last_known_hazard_tick"), val(before, "tick"))
+        self.assertLess(val(zone, "last_known_hazard_tick"), val(f, "tick"))
+        self.assertEqual(val(zone, "routing_restriction"), "blocked")
+        self.assertNotIn("reason_value", zone)
+        for wid in attributes["zone-c"]["workings"]:
+            self.assertEqual(val(element(f, wid), "hazard_state"), "unknown", wid)
+        # people there are unknown, not in danger and not fine
+        for w in ("worker-07", "worker-08"):
+            self.assertEqual(val(element(f, w), "location_hazard"), "unknown")
+        self.assertEqual(val(f, "workers_unknown"), 2)
+        self.assertEqual(val(f, "workers_in_danger"), 3)
+        incident = element(f, "incident")
+        self.assertEqual({c["trigger"] for c in val(incident, "causes")}, {"hazard", "data_lost"})
+        self.assertEqual(val(incident, "trigger"), "hazard")
+        events = [(e["code"], e["subject"], e.get("arg"))
+                  for e in val(element(f, "journal"), "events") if e["tick"] == val(f, "tick")]
+        self.assertIn(("quality.changed", "sens-ext-05", "stale"), events)
+        self.assertIn(("hazard.changed", "zone-c", "unknown"), events)
+
+    def test_danger_zone_forecasts_are_consistent_and_differ(self):
+        fx, states, attributes = self.danger_zone()
+        f = states["decision"]["frames"][0]
+        options = {o: element(f, o) for o in self.OPTION_IDS}
+        self.assertEqual({val(o, "state") for o in options.values()}, {"offered"})
+        self.assertEqual(len({val(o, "decision_id") for o in options.values()}), 1)
+        self.assertEqual(len({val(o, "comparison_key") for o in options.values()}), 1)
+        self.assertTrue(val(options["option-observe"], "decision_id"))
+        for o in options.values():
+            self.assertEqual((val(o, "forecast_tick"), val(o, "forecast_horizon_s"),
+                              val(o, "forecast_quality")), (val(f, "tick"), 900, "full"))
+            for suffix in ("in_danger", "danger_exposure_person_s", "unknown_exposure_person_s",
+                           "no_route", "out", "all_out", "downtime_s"):
+                self.assertIn("forecast_" + suffix, o)
+            self.assertEqual("forecast_last_out_s" in o, val(o, "forecast_all_out"))
+        observe, sw, wa = (options[o] for o in self.OPTION_IDS)
+        group = [f"worker-{i:02d}" for i in range(1, 15)]
+        # publications a worker needs: route length at 12.5 m per publication, rounded up
+        walk = {w: math.ceil(val(element(f, w), "egress_length_m") / STEP_M) for w in group}
+        in_danger = [w for w in group if val(element(f, w), "location_hazard") == "danger"]
+        self.assertEqual(len(in_danger), 3)
+        # observe: nobody moves, everybody who is in danger stays for the whole horizon
+        self.assertEqual(val(observe, "scope"), [])
+        self.assertEqual((val(observe, "forecast_in_danger"), val(observe, "forecast_out"),
+                          val(observe, "forecast_all_out")), (len(in_danger), 0, False))
+        self.assertNotIn("forecast_last_out_s", observe)
+        self.assertEqual(val(observe, "forecast_danger_exposure_person_s"), len(in_danger) * 900)
+        self.assertEqual(val(observe, "forecast_unknown_exposure_person_s"), 2 * 900)
+        self.assertEqual(val(observe, "forecast_downtime_s"), 0)
+        # stop and withdraw the zone: its home workers walk out, the others of the group do not
+        home = [w for w in group if attributes[w]["home_zone"] == "zone-d"]
+        self.assertEqual(val(sw, "scope"), ["zone-d"])
+        self.assertEqual((val(sw, "forecast_in_danger"), val(sw, "forecast_out"),
+                          val(sw, "forecast_no_route"), val(sw, "forecast_all_out")),
+                         (0, len(home), 0, False))
+        self.assertNotIn("forecast_last_out_s", sw)
+        sw_steps = max(walk[w] for w in home)
+        self.assertEqual(val(sw, "forecast_downtime_s"), 10 * sw_steps)    # one zone stopped
+        # exposure from the geometry: a worker stays in danger while his walk is inside the zone
+        inside = set(attributes["zone-d"]["workings"])
+        steps_in_danger = 0
+        for w in in_danger:
+            e = element(f, w)
+            route = val(e, "route")
+            first = attributes[route[0]]
+            offset = val(e, "offset_m")
+            distance = offset if val(e, "route_next_node") == first["from"] \
+                else first["length_m"] - offset
+            for working in route[1:]:
+                if working not in inside:
+                    break
+                distance += attributes[working]["length_m"]
+            steps_in_danger += math.ceil(distance / STEP_M) - 1
+        self.assertEqual(val(sw, "forecast_danger_exposure_person_s"), 10 * steps_in_danger)
+        self.assertEqual(val(wa, "forecast_danger_exposure_person_s"), 10 * steps_in_danger)
+        self.assertGreater(val(observe, "forecast_danger_exposure_person_s"),
+                           val(sw, "forecast_danger_exposure_person_s"))
+        # withdraw all: the whole common group is out, the time is the longest walk
+        self.assertEqual(val(wa, "scope"), ["zone-a", "zone-b", "zone-c", "zone-d"])
+        self.assertEqual((val(wa, "forecast_out"), val(wa, "forecast_all_out"),
+                          val(wa, "forecast_in_danger"), val(wa, "forecast_no_route")),
+                         (14, True, 0, 0))
+        self.assertEqual(val(wa, "forecast_last_out_s"), 10 * max(walk.values()))
+        self.assertLessEqual(val(wa, "forecast_last_out_s"), 900)
+        self.assertGreater(val(wa, "forecast_last_out_s"), 10 * sw_steps)
+        self.assertEqual(wa["forecast_last_out_s"]["properties"]["unit"], "s")
+        self.assertGreater(val(wa, "forecast_downtime_s"), val(sw, "forecast_downtime_s"))
+        for suffix in ("danger_exposure_person_s", "unknown_exposure_person_s"):
+            self.assertEqual(wa["forecast_" + suffix]["properties"]["unit"], "person*s")
+
+    def test_danger_zone_walk_out_frames(self):
+        fx, states, attributes = self.danger_zone()
+        decision = states["decision"]["frames"][0]
+        # the three option states are reached from the decision point only
+        rules = states["decision"]["rules"]
+        decision_id = val(element(decision, "option-observe"), "decision_id")
+        goto = {r["when"]["target"]: r["goto"] for r in rules if "goto" in r}
+        self.assertEqual(goto, {"option-observe": "observe_exec",
+                                "option-stop-withdraw": "sw_exec",
+                                "option-withdraw-all": "wa_exec"})
+        for r in rules:
+            if "goto" in r:
+                self.assertEqual((r["when"]["type"], r["when"]["decision_id"], r["ack"]["status"]),
+                                 ("action.execute_option", decision_id, "applied"))
+            else:
+                self.assertEqual((r["when"]["type"], r["ack"]["reason"]),
+                                 ("action.execute_option", "stale_decision"))
+        for name in ("sw_exec", "wa_exec"):
+            frames = states[name]["frames"]
+            self.assertEqual(val(frames[0], "tick"), val(decision, "tick"))
+            self.assertEqual((val(frames[0], "run_state"), val(frames[0], "pause_reason")),
+                             ("running", "none"))
+            for before, after in zip(frames, frames[1:]):
+                self.assertEqual(val(after, "tick") - val(before, "tick"), 10)
+                for i in range(1, 15):
+                    a = element(before, f"worker-{i:02d}")
+                    b = element(after, f"worker-{i:02d}")
+                    label = f"{name} worker-{i:02d} tick {val(after, 'tick')}"
+                    if val(a, "status") != "moving_to_exit":
+                        self.assertEqual(val(b, "status"), val(a, "status"), label)
+                        continue
+                    if val(b, "status") == "out":
+                        self.assertLessEqual(val(a, "egress_length_m"), STEP_M, label)
+                        self.assertEqual(val(b, "at_exit"), val(a, "egress_exit"), label)
+                        continue
+                    # one step of 12.5 m along the route published a publication earlier
+                    self.assertEqual(val(a, "egress_length_m") - val(b, "egress_length_m"),
+                                     STEP_M, label)
+                    old, new = val(a, "route"), val(b, "route")
+                    self.assertEqual(old[len(old) - len(new):], new, label)
+                    self.assertEqual(val(a, "egress_exit"), val(b, "egress_exit"), label)
+        # stop and withdraw the zone: the zone's workers go, nobody else
+        frames = states["sw_exec"]["frames"]
+        start = frames[0]
+        zone = element(start, "zone-d")
+        self.assertEqual((val(zone, "work_state"), val(zone, "withdrawal_state"),
+                          val(zone, "production_rate")), ("stopped", "in_progress", 0))
+        home = [f"worker-{i:02d}" for i in range(1, 15)
+                if attributes[f"worker-{i:02d}"]["home_zone"] == "zone-d"]
+        for i in range(1, 15):
+            w = f"worker-{i:02d}"
+            expected = "moving_to_exit" if w in home else val(element(decision, w), "status")
+            self.assertEqual(val(element(start, w), "status"), expected, w)
+        self.assertEqual(val(start, "workers_in_danger"), 3)
+        self.assertEqual(val(element(frames[-1], "zone-d"), "workers_count"), 0)
+        self.assertEqual(len(frames), 33)       # 405 m for the last one at 12.5 m per publication
+        danger_counts = [val(fr, "workers_in_danger") for fr in frames]
+        self.assertEqual(danger_counts, sorted(danger_counts, reverse=True))
+        self.assertEqual((danger_counts[0], danger_counts[-1]), (3, 0))
+        done = states["sw_done"]["frames"][0]
+        self.assertEqual(val(done, "tick"), val(decision, "tick") + 330)
+        zone = element(done, "zone-d")
+        self.assertEqual((val(zone, "work_state"), val(zone, "withdrawal_state"),
+                          val(zone, "workers_count")), ("stopped", "done", 0))
+        self.assertEqual((val(done, "workers_out"), val(done, "workers_in_danger"),
+                          val(done, "workers_no_route"), val(done, "run_state")),
+                         (4, 0, 0, "running"))
+        self.assertIs(val(done, "all_out"), False)
+        self.assertEqual(val(element(done, "exit-raise"), "workers_out"), 4)
+        self.assertEqual(val(element(done, "zone-a"), "work_state"), "working")
+        self.assertEqual(val(element(done, "zone-c"), "hazard_state"), "unknown")   # unchanged
+        self.assertEqual(val(element(done, "incident"), "state"), "done")
+        self.assertEqual(val(element(done, "incident"), "selected_option"), "option-stop-withdraw")
+        option = element(done, "option-stop-withdraw")
+        self.assertEqual(val(option, "state"), "done")
+        self.assertEqual({val(element(done, o), "state") for o in
+                          ("option-observe", "option-withdraw-all")}, {"unavailable"})
+        for suffix in ("in_danger", "danger_exposure_person_s", "unknown_exposure_person_s",
+                       "no_route", "out", "all_out", "downtime_s"):
+            self.assertEqual(val(option, "actual_" + suffix), val(option, "forecast_" + suffix),
+                             suffix)
+        self.assertIs(val(option, "actual_all_out"), False)
+        self.assertNotIn("actual_last_out_s", option)
+        self.assertEqual(val(option, "actual_out"), 4)
+        events = val(element(done, "journal"), "events")
+        outs = [e for e in events if e["code"] == "worker.out"]
+        self.assertEqual(sorted(e["subject"] for e in outs), home)
+        self.assertEqual(max(e["tick"] for e in outs) - val(decision, "tick"), 330)
+        self.assertEqual([e["code"] for e in events[-8:]],
+                         ["command.applied", "zone.stopped", "withdrawal.started",
+                          "worker.out", "worker.out", "worker.out", "worker.out",
+                          "withdrawal.finished"])
+        # withdraw all ends with everyone out and the published last_out_s
+        done = states["wa_done"]["frames"][0]
+        self.assertEqual((val(done, "workers_out"), val(done, "workers_total")), (14, 14))
+        self.assertIs(val(done, "all_out"), True)
+        option = element(done, "option-withdraw-all")
+        self.assertEqual(val(option, "actual_last_out_s"), val(option, "forecast_last_out_s"))
+        self.assertEqual(len(states["wa_exec"]["frames"]), 58)
+        # observe: the frame stays, three people stay in danger to the horizon
+        wait = states["observe_exec"]
+        self.assertEqual((len(wait["frames"]), wait["publications"]), (1, 90))
+        done = states["observe_done"]["frames"][0]
+        self.assertEqual((val(done, "workers_out"), val(done, "workers_in_danger")), (0, 3))
+        self.assertEqual(val(element(done, "option-observe"), "actual_in_danger"), 3)
+
 
 # ---------------------------------------------------------------------------
 # Reads
@@ -1405,6 +1768,70 @@ class StoriesTest(unittest.TestCase):
             w = element(end, worker)
             self.assertEqual((val(w, "status"), val(w, "at_working")),
                              ("waiting", val(element(features, worker), "at_working")))
+
+    def test_danger_zone_runs_into_the_decision_and_the_zone_is_withdrawn(self):
+        mock = SERVERS["story"].scenario("danger_zone")
+        first = mock.features()
+        self.assertEqual((val(first, "run_state"), val(first, "workers_in_danger")),
+                         ("running", 0))
+        # the running prelude: the rate of the zone climbs, then the model stops for a decision
+        rates = {}
+        mock.wait(lambda: rates.setdefault(val(mock.features(), "tick"),
+                                           val(element(mock.features(), "sens-ext-04"), "rate"))
+                  and mock.state()["state"] == "decision", 40, "the decision point")
+        self.assertEqual(sorted(rates), sorted(set(rates)))
+        self.assertGreaterEqual(len(rates), 3)
+        features = mock.features()
+        self.assertEqual((val(features, "run_state"), val(features, "pause_reason"),
+                          val(features, "tick")), ("paused", "decision", 1260))
+        zone = element(features, "zone-d")
+        self.assertEqual([val(zone, k) for k in ("hazard_state", "data_quality",
+                                                  "routing_restriction")],
+                         ["danger", "fresh", "blocked"])
+        incident = element(features, "incident")
+        self.assertEqual((val(incident, "state"), val(incident, "trigger"),
+                          val(incident, "opened_at_tick")), ("active", "hazard", 1260))
+        self.assertEqual(val(features, "workers_in_danger"), 3)
+        self.assertEqual(val(element(features, "zone-c"), "last_known_hazard_state"), "normal")
+        # the model stays on the decision point: the same tick, the sequence grows
+        later = mock.features()
+        self.assertEqual(val(later, "tick"), 1260)
+        # a command that the fixture does not script
+        r, body = mock.command("action.stop_zone", "zone-d")
+        ack = mock.wait_ack(body["command_id"])
+        self.assertEqual((ack["status"], ack["reason"]), ("rejected", "not_scripted"))
+
+        ack = self.execute(mock, features, "option-stop-withdraw")
+        started = mock.features()
+        self.assertEqual(val(started, "run_state"), "running")
+        zone = element(started, "zone-d")
+        self.assertEqual((val(zone, "work_state"), val(zone, "withdrawal_state")),
+                         ("stopped", "in_progress"))
+        self.follow_movement(mock, "worker-14", "sw_done", 40)
+        end = mock.features()
+        self.assertEqual((val(end, "workers_out"), val(end, "workers_in_danger")), (4, 0))
+        self.assertEqual(val(element(end, "zone-d"), "withdrawal_state"), "done")
+        option = element(end, "option-stop-withdraw")
+        self.assertEqual(val(option, "state"), "done")
+        self.assertEqual(val(option, "actual_out"), 4)
+        self.assertIs(val(option, "actual_all_out"), False)
+        self.assertNotIn("actual_last_out_s", option)
+        self.assertEqual(val(option, "actual_in_danger"), 0)
+        for suffix in ("danger_exposure_person_s", "unknown_exposure_person_s", "downtime_s"):
+            self.assertEqual(val(option, "actual_" + suffix), val(option, "forecast_" + suffix))
+        self.assertEqual(val(element(end, "incident"), "state"), "done")
+        events = val(element(end, "journal"), "events")
+        outs = [e for e in events if e["code"] == "worker.out"]
+        self.assertEqual(sorted(e["subject"] for e in outs),
+                         ["worker-11", "worker-12", "worker-13", "worker-14"])
+        self.assertEqual(max(e["tick"] for e in outs) - ack["tick"], 330)
+        applied = [e for e in events if e["code"] == "command.applied"]
+        self.assertEqual(applied[-1]["command_id"], ack["id"])
+        self.assertEqual(applied[-1]["tick"], ack["tick"])
+        # the sensor elsewhere is still stale, the model does not pretend otherwise
+        self.assertEqual(val(element(end, "sens-ext-05"), "quality"), "stale")
+        self.assertEqual(val(element(end, "zone-c"), "hazard_state"), "unknown")
+
 
     def test_reset_goes_through_resetting_to_a_new_run(self):
         mock = SERVERS["real"].scenario("reset")   # real pace: no publication can be missed

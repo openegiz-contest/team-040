@@ -93,6 +93,7 @@ python -m unittest discover -s team/ui/tests -t team/ui -p "test_mock_server.py"
 - Запись подтверждения для `command_id_conflict` несёт тот же `id`, что и первая запись этой команды: в `commands` оказываются две записи с одним `id`.
 - Подтверждение `run.reset` и `run.start_preset` появляется только в `commands` нового прогона, в публикациях `resetting` его ещё нет. Прогон, прерванный запуском пресета, тоже получает `completion_reason = reset`.
 - Команда условия оставляет в журнале одну запись (`condition.set` или `condition.cancelled`) с `command_id`; исполнение варианта — `command.applied`. У записей журнала нет ключей `arg` и `command_id`, когда значения нет.
+- В `danger_zone` участок В с неизвестным состоянием тоже получает `routing_restriction = blocked`: контракт запрещает новый вход в опасную или неизвестную зону (§7), как и в `sensor_lost_after_danger`. Устаревание датчика и рост опасности происходят на одной публикации, поэтому у инцидента две причины (`hazard`, `data_lost`); отдельного события журнала «инцидент открыт» в кодах журнала нет и фикстура его не выдумывает.
 - Единицы: `downtime_s` у участка — `s`, у `shift`, варианта и прогона — `zone*s`; интегралы — `person*s`; индекс — `1`.
 
 ## Формат файла
@@ -195,6 +196,7 @@ python -m unittest discover -s team/ui/tests -t team/ui -p "test_mock_server.py"
 | `detour` | Закрытие В-12 и вся история обхода | см. ниже | см. ниже |
 | `no_path` | Закрытие В-07: двое без маршрута | см. ниже | см. ниже |
 | `sensor_lost_after_danger` | Участок В был «опасно» (тик 700), диспетчер выбрал наблюдение, затем потеряна связь с Э-05: `hazard_state = unknown`, `data_quality = lost`, `last_known_hazard_state = danger`, `last_known_hazard_tick = 810`, `routing_restriction = blocked`; датчик `quality = lost`, `link_state = offline`, измерение на тике 759; инцидент `executing` с причинами `hazard` и `data_lost`; у Р-07 и Р-08 `location_hazard = unknown`, `workers_unknown = 2`, `workers_in_danger = 0`. В журнале пропуск `seq` (217 → 220) | нет правил | модель идёт, кадр повторяется |
+| `danger_zone` | Участок Г достигает «опасно» по свежим данным (Э-04 2,4 мм/ч при пороге 2,0), вход запрещён моделью (`routing_restriction = blocked`), Р-11…Р-13 внутри, `workers_in_danger = 3`; в тот же момент Э-05 устарел (`quality = stale`, `link_state = online`), участок В `hazard_state = unknown`, `data_quality = stale`, последнее известное — `normal` (тик 1250), `workers_unknown = 2`. Инцидент `trigger = hazard`, причины `hazard` и `data_lost`, пауза для решения | варианты с общим `decision_id`; исполнение — см. ниже | шесть публикаций хода, затем пауза; после исполнения вариант `done`, кадр повторяется |
 | `paused_heartbeat` | Точка решения `detour`: `run_state = paused`, `pause_reason = decision`, `tick` стоит, `publication_seq` растёт | нет правил | повторяется |
 | `frozen_seq` | Как `normal`, но после третьей публикации `publication_seq`, `_modified`, `_revision` и всё состояние перестают меняться; сервер отвечает 200 | команды принимаются (202), подтверждений нет | застывает |
 | `frozen_seq_old` | Застывший с первого ответа кадр, `_modified` на 30 с старше `Date` | то же | застывает |
@@ -231,6 +233,37 @@ python -m unittest discover -s team/ui/tests -t team/ui -p "test_mock_server.py"
 | `preset_resetting` → `preset_run` → `preset_decision` | стоит, идёт, стоит | две публикации `run_state = resetting`; новый прогон `run-0006` с тика 0, шесть публикаций обычного хода; на тике 60 условие пресета и та же точка решения (`decision_id = d-0006-01`). В `detour` её `comparison_key` совпадает с `run-0001` и `run-0002`. Подтверждение `run.start_preset` с `new_run = run-0006` видно с первого кадра нового прогона; `runs` пополняется `run-0005` (`completion_reason = reset`) | нет правил |
 
 Во время движения людей (`sw_exec`, `wa_exec`) и наблюдения (`observe_exec`) правил нет: открыть проход в эти моменты фикстура не умеет.
+
+### `danger_zone`
+
+Один сценарий на экран «опасный участок»: участок Г (`zone-d`, гор. −380 м, в `normal` уже «внимание») переходит в «опасно» по свежим данным, и на той же публикации теряет свежесть единственный датчик участка В. Производная от базового рудника: меняются только показания Э-04, К-03, Э-05, состояния участков Г и В, инцидент, журнал. Когда шаг в 12,5 м приводит работника ровно в узел, маршрут в этом сценарии начинается сразу с следующей выработки; в `detour` и `no_path` генератор в таком кадре пишет эту выработку в `route` дважды (нулевой отрезок до узла и обратно) — эти файлы не менялись.
+
+| Состояние | Время | Что в кадрах | Правила |
+|---|---|---|---|
+| `initial` | идёт | шесть публикаций (тики 1200…1250): скорость Э-04 растёт 1,3 → 1,9 мм/ч, К-03 — 0,4 → 1,8 мм/ч, индекс участка Г — 0,46 → 0,67; участок Г «внимание», `routing_restriction = allowed`; последнее измерение Э-05 на тике 1195, оно стареет, но до 60 с (`stale_after_s`) датчик `fresh`. Первый кадр совпадает с `normal`, кроме времени измерения Э-05 | нет, переход в `decision` сам через шесть публикаций |
+| `decision` | стоит | тик 1260, `run_state = paused`, `pause_reason = decision`; участок Г `danger` (см. таблицу), участок В `unknown`; инцидент `active`, `trigger = hazard`, две причины; три варианта `offered` с общими `decision_id` (`d-0005-01`) и `comparison_key` и полным прогнозом | `action.execute_option` с верным `decision_id` → `observe_exec`, `sw_exec` или `wa_exec`; с любым другим — `rejected`, `stale_decision`; остальные команды — `not_scripted` |
+| `sw_exec` → `sw_done` | идёт | участок Г `stopped`, `withdrawal_state = in_progress`; Р-11…Р-14 `moving_to_exit`, по 12,5 м за публикацию по опубликованным маршрутам; Р-11 выходит на 14-й публикации, Р-12 и Р-13 на 27-й, Р-14 на 33-й (330 модельных секунд после решения); `workers_in_danger` падает 3 → 2 (4-я публикация) → 0 (18-я); участок `done`, вариант `done`, инцидент `done`, заполнены `actual_*` | нет |
+| `wa_exec` → `wa_done` | идёт | все участки `stopped`; через 58 публикаций `workers_out = 14`, `all_out = true`, `actual_last_out_s = 580` | нет |
+| `observe_exec` → `observe_done` | идёт | 90 публикаций кадр неподвижен (трое остаются в опасности), затем вариант и инцидент `done`, `actual_*` равны прогнозу | нет |
+
+| Что | Значение |
+|---|---|
+| Участок Г, опасность | `hazard_state = danger`, `data_quality = fresh`, `reason_code = rate_above_danger`, `reason_sensor = sens-ext-04`, `reason_value = 2,4`, `reason_threshold = 2,0`, `reason_unit = mm/h`; `instability_index = 0,74` при пороге 0,7; К-03: 2,1 мм/ч; `routing_restriction = blocked` |
+| Работники участка Г | Р-11 (`w-23`, 50 м), Р-12 (`w-25`, 70 м), Р-13 (`w-24`, 30 м): `location_hazard = danger`, `egress_crosses = danger`; `workers_in_danger = 3`. Р-14 приписан к участку Г, но стоит на В-09 вне участка: `location_hazard = unknown` (нет датчиков), в `workers_in_danger` не входит, вывод участка его включает |
+| Маршруты (длина, время, выход) | Р-11: 170 м, 136 с, `exit-raise`; Р-12 и Р-13: 336 м, 269 с, `exit-raise`; Р-14: 405 м, 324 с, `exit-raise` (все через В-05) |
+| Датчик Э-05 | `quality = stale`, `link_state = online`, `measured_at_tick = 1195` при тике 1260 (65 с > 60 с) |
+| Участок В | `hazard_state = unknown`, `data_quality = stale`, `reason_code = sensor_stale`, `last_known_hazard_state = normal`, `last_known_hazard_tick = 1250`, `routing_restriction = blocked`; Р-07, Р-08 `location_hazard = unknown`, `workers_unknown = 2` |
+| Инцидент | `trigger = hazard`, `zone = zone-d`, `causes`: `hazard` (`zone-d`) и `data_lost` (`sens-ext-05`), обе на тике 1260 |
+
+Прогнозы на точке решения (группа сравнения — все 14 человек под землёй, горизонт 900 с):
+
+| Вариант | `out` | `in_danger` | `no_route` | `all_out` | `last_out_s` | `danger_exposure_person_s` | `unknown_exposure_person_s` | `downtime_s` |
+|---|---|---|---|---|---|---|---|---|
+| Наблюдать | 0 | 3 | 0 | false | нет | 2700 | 1800 | 0 |
+| Остановить и вывести участок Г | 4 | 0 | 0 | false | нет | 370 | 660 | 330 |
+| Вывести всех | 14 | 0 | 0 | true | 580 | 370 | 160 | 2320 |
+
+Опасное воздействие у вывода — 370 человеко-секунд: трое в опасности первые 3 публикации (90), двое — следующие 14 (280).
 
 ### `commands`
 

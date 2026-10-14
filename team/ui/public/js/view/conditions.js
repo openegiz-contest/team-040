@@ -1,7 +1,9 @@
-// «Условия сценария (стенд)»: what happens to the mine. Presets that start a
-// new run, three manual conditions, the active conditions with their undo,
-// and (in ctx.roots.reset) the full reset of the run. A press only creates a
-// pending command; the list of active conditions is what the model published.
+// «Условия сценария (стенд)»: what happens to the mine, in the stand drawer.
+// Presets that start a new run, three manual conditions, the active conditions
+// with their undo, and (in ctx.roots.reset) the full reset of the run. Every
+// control here is chalk mark-up (.btn--stand with the «стенд» tag), never the
+// copper of a dispatcher action. A press only creates a pending command; the
+// list of active conditions is what the model published.
 
 import {RESET_TARGET} from '../commands.js';
 import {h, reconcile, setAttrs, setText} from '../dom.js';
@@ -41,7 +43,8 @@ export function mount(root, ctx) {
 
   function createPreset(preset) {
     const button = commandButton({
-      class: 'btn btn--stand btn--block', 'data-command-type': 'run.start_preset', 'data-command-target': preset.id,
+      class: 'btn btn--stand btn--block btn--preset', 'data-command-type': 'run.start_preset', 'data-command-target': preset.id,
+      'data-tag': UI.stand.tag,
     }, async () => {
       const label = button.textContent;
       if (await confirmEndOfRun((run) => ({title: UI.reset.presetDialogTitle, message: UI.reset.presetDialogText(run, label)}))) {
@@ -68,8 +71,8 @@ export function mount(root, ctx) {
 
   const rows = Object.entries(CONDITION_COMMANDS).map(([kind, commands]) => {
     const id = `condition-${kind}`;
-    const select = h('select', {class: 'select', id, 'data-condition': kind});
-    const button = commandButton({class: 'btn btn--stand', 'data-command-type': commands.set, text: UI.conditions.set},
+    const select = h('select', {class: 'select select--stand', id, 'data-condition': kind});
+    const button = commandButton({class: 'btn btn--stand', 'data-command-type': commands.set, 'data-tag': UI.stand.tag, text: UI.conditions.set},
       () => ctx.sendCommand(commands.set, select.value));
     const why = h('p', {class: 'note note--why', hidden: true});
     select.addEventListener('change', render);
@@ -91,6 +94,7 @@ export function mount(root, ctx) {
     if (condition.undoType) {
       node.append(' ', commandButton({
         class: 'btn btn--stand btn--small', 'data-command-type': condition.undoType, 'data-command-target': condition.target,
+        'data-tag': UI.stand.tag,
         text: UI.conditions.undo[condition.kind],
       }, () => ctx.sendCommand(condition.undoType, condition.target)), h('p', {class: 'note note--why', hidden: true}));
     }

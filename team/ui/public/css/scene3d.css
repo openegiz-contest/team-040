@@ -1,0 +1,234 @@
+/* The 3D stage (view/stage.js, js/scene3d/): the canvas, its labels, the
+   orientation gizmo, the stage HUD and the notices of the automatic fallback.
+   Flat graphite planes with hairlines; copper marks what you act on; hazard
+   colours only for hazard, always with a sign and words. */
+
+/* ---- which picture the stage shows ---- */
+.stage { position: relative; }
+.stage__3d { position: absolute; inset: 0; overflow: hidden; background: var(--ink-0, #111316); }
+.stage:not([data-stage-mode="3d"]) > .stage__3d { display: none; }
+.stage[data-stage-mode="3d"] > .scheme { display: none; }
+body:has(.stage[data-stage-mode="3d"]) #scheme-controls { display: none; }
+
+.s3 { position: absolute; inset: 0; }
+.s3__canvas { position: absolute; inset: 0; display: block; outline: none; touch-action: none; cursor: grab; }
+.s3__canvas:active { cursor: grabbing; }
+.s3__canvas:focus-visible { outline: 2px solid var(--copper, #C8834F); outline-offset: -4px; }
+
+/* ---- labels: buttons over the canvas ---- */
+.s3__labels { position: absolute; inset: 0; pointer-events: none; }
+.s3-label {
+  position: absolute; left: 0; top: 0;
+  display: flex; align-items: flex-start; gap: 4px;
+  max-width: 360px;
+  padding: 2px 6px 3px;
+  border: 1px solid var(--line, #323840);
+  border-radius: 3px;
+  background: rgba(23, 26, 30, 0.9);
+  color: var(--dust-1, #E8E3DA);
+  font: 500 12px/1.3 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  will-change: transform;
+}
+.s3-label[data-culled] { visibility: hidden; }
+/* An always-shown label without room for all its lines keeps the first (the state); the rest is in its tooltip. */
+.s3-label.is-brief .s3-label__line:not(:first-child) { display: none; }
+.s3-label:hover { border-color: var(--dust-3, #847D72); }
+.s3-label:focus-visible { outline: 2px solid var(--copper, #C8834F); outline-offset: 2px; }
+.s3-label__signs { display: inline-flex; gap: 2px; padding-top: 1px; }
+.s3-label__signs:empty { display: none; }
+.s3-label__lines { display: flex; flex-direction: column; }
+.s3-label__line { color: var(--dust-2, #B8B1A5); }
+.s3-label__line.is-bold { color: var(--dust-1, #E8E3DA); font-weight: 600; }
+.s3-label__line.is-muted { color: var(--dust-3, #847D72); font-size: 11px; }
+
+.s3-label--level {
+  padding: 3px 8px;
+  border-color: transparent;
+  border-left: 2px solid var(--dust-2, #B8B1A5);
+  background: rgba(17, 19, 22, 0.82);
+  font-size: 13px; letter-spacing: 0.02em;
+}
+.s3-label--zone { border-left-width: 3px; }
+.s3-label--zone.s3-label--normal { border-left-color: var(--dust-3, #847D72); }
+.s3-label--zone.s3-label--attention { border-color: var(--attention, #E2A43B); border-left-width: 3px; }
+.s3-label--zone.s3-label--danger { border-color: var(--danger, #E0483A); border-width: 2px 2px 2px 4px; }
+.s3-label--zone.s3-label--unknown { border: 1px dashed var(--unknown, #A3A7AD); border-left: 3px dashed var(--unknown, #A3A7AD); }
+.s3-label--exit { border-color: transparent; background: rgba(17, 19, 22, 0.78); }
+.s3-label--exit.s3-label--problem { border: 1px dashed var(--dust-1, #E8E3DA); }
+.s3-label--problem { border-color: var(--dust-2, #B8B1A5); }
+.s3-label--closed { border: 2px solid var(--noroute, #F2EFE9); }
+.s3-label--noroute { border: 2px solid var(--noroute, #F2EFE9); }
+.s3-label--unknown { border: 1px dashed var(--unknown, #A3A7AD); }
+.s3-label--indanger { border-color: var(--danger, #E0483A); }
+.s3-label--pending { outline: 1px dashed var(--copper, #C8834F); outline-offset: 2px; }
+.s3-label--worker, .s3-label--sensor, .s3-label--working { font-size: 12px; }
+/* Codes shown by zoom are quieter than the labels of states. */
+.s3-label--working:not(.s3-label--problem):not(.is-selected),
+.s3-label--sensor:not(.s3-label--problem):not(.is-selected) {
+  padding: 1px 4px; border-color: transparent; background: rgba(17, 19, 22, 0.66); font-size: 11px;
+}
+.s3-label--working:not(.s3-label--problem) .s3-label__line.is-bold { font-weight: 500; }
+.s3-label--decor { font-size: 11px; }
+.s3-label.is-selected { border: 2px solid var(--copper, #C8834F); background: rgba(46, 36, 28, 0.94); }
+
+/* ---- tooltip of a hovered object ---- */
+.s3__tip {
+  position: absolute; left: 0; top: 0; z-index: 4;
+  display: flex; flex-direction: column;
+  max-width: 320px;
+  padding: 6px 8px;
+  border: 1px solid var(--dust-3, #847D72);
+  border-radius: 3px;
+  background: var(--ink-2, #1F2328);
+  color: var(--dust-2, #B8B1A5);
+  font: 400 12px/1.35 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  pointer-events: none;
+}
+.s3__tip[hidden] { display: none; }
+.s3__tip-line.is-bold { color: var(--dust-1, #E8E3DA); font-weight: 600; }
+
+/* ---- the last data, shown while the link is not current: desaturated, captioned ---- */
+.s3__old { position: absolute; inset: 0; pointer-events: none; border: 2px dashed var(--unknown, #A3A7AD); }
+.s3__old[hidden] { display: none; }
+.s3__old::before {
+  content: ""; position: absolute; inset: 0;
+  background: #808080; mix-blend-mode: saturation;
+}
+.s3__old::after { content: ""; position: absolute; inset: 0; background: rgba(17, 19, 22, 0.28); }
+.s3__old-text {
+  position: absolute; left: 12px; top: 80px; z-index: 1;
+  max-width: min(300px, 60%);
+  padding: 4px 8px;
+  border: 1px dashed var(--unknown, #A3A7AD);
+  background: var(--ink-2, #1F2328);
+  color: var(--dust-1, #E8E3DA);
+  font: 600 12px/1.35 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+}
+
+/* ---- orientation gizmo and scale, top left (under the tabs when they lie over the stage) ---- */
+.s3__gizmo {
+  position: absolute; left: 12px; top: 10px; z-index: 3;
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--line, #323840);
+  border-radius: 4px;
+  background: rgba(23, 26, 30, 0.9);
+  color: var(--dust-2, #B8B1A5);
+  font: 400 11px/1.3 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  pointer-events: none;
+}
+body[data-view="scheme"]:not([data-old-data]) .s3__gizmo { top: 50px; }
+.s3__compass { width: 40px; height: 40px; flex: none; }
+.s3__dial { fill: none; stroke: var(--dust-3, #847D72); stroke-width: 1.2; }
+.s3__needle { fill: var(--dust-1, #E8E3DA); }
+.s3__north { fill: var(--dust-1, #E8E3DA); font: 600 8px/1 var(--font-sans, sans-serif); }
+.s3__gizmo-text { display: flex; flex-direction: column; gap: 3px; }
+.s3__scale { display: flex; align-items: center; gap: 6px; color: var(--dust-1, #E8E3DA); font-variant-numeric: tabular-nums; }
+.s3__bar {
+  display: inline-block; height: 6px;
+  border: 1.5px solid var(--dust-1, #E8E3DA); border-top: none;
+}
+.s3__notes { display: flex; flex-direction: column; }
+
+/* ---- the stage HUD, top right ---- */
+.stage__hud {
+  position: absolute; top: 8px; right: 8px; z-index: 7;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  max-width: calc(100% - 16px);
+  pointer-events: none;
+}
+.hud__row {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line, #323840);
+  border-radius: 4px;
+  background: rgba(23, 26, 30, 0.94);
+  pointer-events: auto;
+}
+.hud__row[hidden] { display: none; }
+.hud__tools { display: flex; align-items: center; gap: 6px; }
+.hud__tools[hidden] { display: none; }
+.seg { display: inline-flex; border: 1px solid var(--ink-3, #2A2F36); border-radius: 4px; overflow: hidden; }
+.seg__item {
+  min-width: 52px; height: 28px; padding: 0 10px;
+  border: 0; background: transparent;
+  color: var(--dust-2, #B8B1A5);
+  font: 500 13px/1 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  cursor: pointer;
+}
+.seg__item + .seg__item { border-left: 1px solid var(--ink-3, #2A2F36); }
+.seg__item:hover { background: var(--ink-2, #1F2328); color: var(--dust-1, #E8E3DA); }
+.seg__item.is-current { background: var(--ink-3, #2A2F36); color: var(--dust-1, #E8E3DA); border-bottom: 2px solid var(--copper, #C8834F); }
+.seg__item:focus-visible, .hud__btn:focus-visible, .hud__select:focus-visible, .hud__range:focus-visible {
+  outline: 2px solid var(--copper, #C8834F); outline-offset: 2px;
+}
+.hud__btn {
+  height: 28px; padding: 0 10px;
+  border: 1px solid transparent; border-radius: 4px;
+  background: transparent;
+  color: var(--dust-2, #B8B1A5);
+  font: 500 13px/28px var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  cursor: pointer; list-style: none;
+}
+.hud__btn::-webkit-details-marker { display: none; }
+.hud__btn:hover { background: var(--ink-2, #1F2328); color: var(--dust-1, #E8E3DA); }
+.hud__btn[hidden] { display: none; }
+.hud__select {
+  height: 28px; padding: 0 6px;
+  border: 1px solid var(--ink-3, #2A2F36); border-radius: 4px;
+  background: var(--ink-2, #1F2328);
+  color: var(--dust-1, #E8E3DA);
+  font: 400 13px/1 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+}
+.hud__field { display: inline-flex; align-items: center; gap: 6px; color: var(--dust-2, #B8B1A5); font: 400 12px/1 var(--font-sans, sans-serif); }
+.hud__caption { color: var(--dust-2, #B8B1A5); }
+.hud__range { width: 84px; accent-color: var(--copper, #C8834F); }
+.hud__keys { position: relative; }
+.hud__keys[hidden] { display: none; }
+.hud__keys[open] > .hud__btn { background: var(--ink-3, #2A2F36); color: var(--dust-1, #E8E3DA); }
+.hud__keys-body {
+  position: absolute; right: 0; top: 34px; z-index: 8;
+  width: 340px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #323840); border-radius: 4px;
+  background: var(--ink-1, #171A1E);
+  color: var(--dust-2, #B8B1A5);
+  font: 400 12px/1.4 var(--font-sans, sans-serif);
+}
+.hud__keys-title { margin: 10px 0 6px; color: var(--dust-1, #E8E3DA); font-weight: 600; }
+.hud__keys-body dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
+.hud__keys-body dt { color: var(--dust-1, #E8E3DA); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; white-space: nowrap; }
+.hud__keys-body dd { margin: 0; }
+.hud__status {
+  margin: 0; padding: 4px 8px;
+  border: 1px solid var(--line, #323840); border-radius: 4px;
+  background: rgba(23, 26, 30, 0.94);
+  color: var(--dust-2, #B8B1A5);
+  font: 400 12px/1.3 var(--font-sans, sans-serif);
+  pointer-events: auto;
+}
+.hud__status[hidden] { display: none; }
+
+/* ---- notice of the automatic fallback to the scheme ---- */
+.stage-notice {
+  position: absolute; left: 50%; top: 8px; z-index: 6;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  max-width: min(640px, calc(100% - 360px));
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--dust-3, #847D72); border-radius: 4px;
+  background: var(--ink-2, #1F2328);
+  color: var(--dust-1, #E8E3DA);
+  font: 400 13px/1.35 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+}
+.stage-notice[hidden] { display: none; }
+.stage-notice__btn { flex: none; border-color: var(--dust-3, #847D72); color: var(--dust-1, #E8E3DA); }
+
+@media (max-width: 1400px) {
+  .hud__range { width: 64px; }
+}

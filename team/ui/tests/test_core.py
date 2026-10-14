@@ -143,6 +143,9 @@ class CoreTestCase(BrowserTestCase):
             self.assertTrue(all(thing_id.startswith(NS + ":") for thing_id in ids))
         origin = self.mock.url + "/"
         for request in list(self.page.requests):
+            # A data: URL is an image the page drew itself, not a request to any server.
+            if request["url"].startswith("data:"):
+                continue
             self.assertTrue(request["url"].startswith(origin), f"request outside the origin: {request['url']}")
             self.assertNotIn("/__mock__/", request["url"], "production code never calls the control API")
 
@@ -183,7 +186,9 @@ class BootAndListTest(CoreTestCase):
           const getContext = HTMLCanvasElement.prototype.getContext;
           HTMLCanvasElement.prototype.getContext = function (...args) { window.__canvas += 1; return getContext.apply(this, args); };
         """)
-        self.open("normal")
+        # The SVG scheme mode of the stage: the 3D stage draws its boot frames and creates its WebGL contexts by
+        # design, and its own idle rule (no frame while nothing changes) is checked in test_scene3d.py.
+        self.open("normal", "#/scheme?mode=scheme")
         first = self.wait_ready()
         self.assertEqual(first["run"], "run-0005")
         self.assertEqual(first["runState"], "running")
@@ -217,8 +222,9 @@ class BootAndListTest(CoreTestCase):
                         "journal", "tab-scheme", "tab-list", "tab-runs"):
             self.assertEqual(self.page.evaluate(f"document.querySelectorAll('[data-testid=\"{test_id}\"]').length"), 1, test_id)
 
+        self.assertEqual(self.page.evaluate("document.querySelector('#stage').dataset.stageMode"), "scheme")
         self.assertEqual(self.page.evaluate("[window.__raf, window.__canvas]"), [0, 0],
-                         "no animation loop and no canvas while data only tick")
+                         "in the scheme mode: no animation loop and no canvas while data only tick")
 
         self.assert_only_platform_calls_of_the_contract()
         entries = self.platform_log()
@@ -474,8 +480,8 @@ class LinkStatesTest(CoreTestCase):
         strip = self.page.evaluate("document.querySelector('[data-testid=\"incident-strip\"]').dataset.incidentState")
         self.assertEqual(strip, "active")
         self.assertIn("Инцидент: Участок Б — закрыт проход (В-12)", self.text_of("incident-strip"))
-        self.assertEqual(self.page.evaluate("document.body.dataset.right"), "decision",
-                         "an active incident brings the decision panel forward")
+        self.assertEqual(self.page.evaluate("document.body.dataset.dock"), "collapsed",
+                         "an active incident brings the decision dock; at 1280x720 it shows its bar over the stage")
 
     def test_frozen_sequence_is_reported_after_five_seconds(self):
         self.open("frozen_seq")
@@ -869,8 +875,10 @@ class ShellTest(CoreTestCase):
         self.page.goto(self.mock.url + f"/#/scheme?sel={NS}:worker-03&view=plan&level=level-320")
         self.page.wait_for("document.body.dataset.view === 'scheme'")
         ui = self.js(APP + "return state.ui;")
-        self.assertEqual(ui, {"view": "scheme", "projection": "plan", "level": "level-320",
-                              "selected": f"{NS}:worker-03", "listType": "sensor"})
+        # The fields of the route; the stage keeps fields of its own in the same object.
+        self.assertEqual({key: ui[key] for key in ("view", "projection", "level", "selected", "listType")},
+                         {"view": "scheme", "projection": "plan", "level": "level-320",
+                          "selected": f"{NS}:worker-03", "listType": "sensor"})
         self.page.goto(self.mock.url + "/#/list?type=zone")
         self.page.wait_for("document.querySelectorAll('[data-testid=\"list\"] tbody tr').length === 4")
         self.assertEqual(self.page.evaluate("window.__marker"), "same document")
@@ -894,7 +902,7 @@ class ShellTest(CoreTestCase):
         for width, height in ((1920, 1080), (1280, 720)):
             with self.subTest(viewport=f"{width}x{height}"):
                 self.page.set_viewport(width, height)
-                self.open("paused_heartbeat", "#/list?type=worker")
+                self.open("paused_heartbeat", "#/scheme")
                 self.wait_ready()
                 self.wait_banner("paused_decision", 3.0)
                 metrics = self.page.evaluate("""(() => {
@@ -907,15 +915,14 @@ class ShellTest(CoreTestCase):
                   const root = document.documentElement;
                   return {
                     scroll: [root.scrollWidth, root.scrollHeight, document.body.scrollWidth, document.body.scrollHeight],
-                    regions: Object.fromEntries(['#statusbar', '#incident', '#banners', '#left', '#centre', '#right', '#journal-region']
-                      .map((selector) => [selector, box(selector)])),
+                    regions: Object.fromEntries(['#statusbar', '#situation', '#centre', '#stage', '#right', '#decision-dock',
+                      '#journal-region', '#actions'].map((selector) => [selector, box(selector)])),
                     always: Object.fromEntries(['status-notice', 'status-link', 'status-age', 'incident-in-danger',
-                      'incident-no-route', 'incident-unknown', 'incident-total', 'tab-scheme', 'tab-list', 'tab-runs']
+                      'incident-no-route', 'incident-unknown', 'incident-total', 'situation-step-1', 'stand-toggle',
+                      'legend', 'tab-scheme', 'tab-list', 'tab-runs']
                       .map((id) => [id, box('[data-testid="' + id + '"]')])),
-                    run: box('[data-testid="status-run"]'), rightTabs: box('#right-tabs'),
-                    journalToggle: box('[data-testid="journal-toggle"]'),
-                    groups: [getComputedStyle(document.getElementById('conditions')).borderTopStyle,
-                             getComputedStyle(document.getElementById('actions')).borderTopStyle],
+                    run: box('[data-testid="status-run"]'),
+                    drawer: getComputedStyle(document.getElementById('stand-drawer')).visibility,
                     font: getComputedStyle(document.body).fontFamily, fontSize: getComputedStyle(document.body).fontSize,
                   };
                 })()""")
@@ -928,33 +935,51 @@ class ShellTest(CoreTestCase):
                     self.assertLessEqual(box["bottom"], height + 0.5, name)
                 regions = metrics["regions"]
                 compact = width < 1600
-                self.assertEqual(round(regions["#left"]["width"]), 230 if compact else 300)
-                self.assertEqual(round(regions["#right"]["width"]), 320 if compact else 440)
-                self.assertEqual(round(regions["#journal-region"]["height"]), 30 if compact else 220)
-                self.assertLessEqual(regions["#incident"]["bottom"], 125, "the top bar is three compact rows")
-                self.assertAlmostEqual(regions["#centre"]["left"], regions["#left"]["right"], delta=1)
+                self.assertEqual(round(regions["#right"]["width"]), 320 if compact else 400)
+                self.assertEqual(round(regions["#statusbar"]["height"]), 52 if compact else 60, "the top bar is one line")
                 self.assertAlmostEqual(regions["#right"]["left"], regions["#centre"]["right"], delta=1)
-                self.assertAlmostEqual(regions["#journal-region"]["top"], regions["#centre"]["bottom"], delta=1)
-                # Collapsing rules of DESIGN.md 2.3.
-                self.assertEqual(metrics["run"]["display"] == "none", compact, "run and seed fold behind a button")
-                self.assertEqual(metrics["rightTabs"]["display"] != "none", compact, "decision and card become tabs")
-                self.assertEqual(metrics["journalToggle"]["display"] != "none", compact, "the journal folds to one line")
-                self.assertNotEqual(metrics["groups"][0], metrics["groups"][1], "the two groups of the left panel differ by more than colour")
-                self.assertTrue(metrics["font"].startswith("system-ui"), metrics["font"])
-                self.assertIn(metrics["fontSize"], ("13px", "14px"))
+                self.assertAlmostEqual(regions["#situation"]["top"], regions["#statusbar"]["bottom"], delta=1)
+                self.assertAlmostEqual(regions["#centre"]["top"], regions["#situation"]["bottom"], delta=1)
+                stage = regions["#stage"]
+                self.assertGreaterEqual(stage["width"] * stage["height"], max(box["width"] * box["height"] for name, box
+                                        in regions.items() if name not in ("#centre", "#stage")), "the stage is the largest area")
+                self.assertEqual(self.body()["dock"], "collapsed" if compact else "open",
+                                 "a decision unfolds the dock under the stage; over the stage (compact) it shows its bar")
+                if compact:
+                    # The dock unfolds over the stage: the stage keeps its area.
+                    self.assertGreaterEqual(stage["width"] * stage["height"] / (width * height), 0.6, "the stage keeps 60 % of 1280x720")
+                    self.assertLessEqual(regions["#decision-dock"]["bottom"], stage["bottom"] + 0.5)
+                else:
+                    self.assertAlmostEqual(regions["#decision-dock"]["top"], stage["bottom"], delta=1, msg="the dock is under the stage")
+                self.assertEqual(metrics["run"]["display"] == "none", compact, "run and seed fold away in the compact layout")
+                self.assertEqual(metrics["drawer"], "hidden", "the stand drawer is closed by default")
+                self.assertTrue(metrics["font"].startswith('"IBM Plex Sans"'), metrics["font"])
+                self.assertEqual(metrics["fontSize"], "14px")
                 self.page.screenshot(os.path.join(OUTPUT_DIR, f"core-shell-{width}x{height}.png"))
 
-        # Compact layout: the folded parts open from the keyboard and survive a poll.
-        self.page.evaluate("document.querySelector('.run-box__toggle').focus()")
+        # Compact layout: the drawer opens from the keyboard, survives a poll and closes with Esc; the dock folds.
+        self.page.evaluate("document.querySelector('[data-testid=\"stand-toggle\"]').focus()")
         self.page.press("Enter")
-        self.assertEqual(self.text_of("status-run"), "Прогон run-0005 · seed 42")
-        self.assertNotEqual(self.page.evaluate("getComputedStyle(document.querySelector('[data-testid=\"status-run\"]')).display"), "none")
+        self.page.wait_for("document.body.dataset.stand === 'open'", timeout=2.0)
+        self.assertEqual(self.page.evaluate("getComputedStyle(document.getElementById('stand-drawer')).visibility"), "visible")
+        self.assertEqual(self.page.focus_info()["testid"], "stand-close", "the focus moves into the drawer")
+        seq = int(self.body()["seq"])
+        self.page.wait_for(f"Number(document.body.dataset.seq) >= {seq + 2}", timeout=6.0)
+        self.assertEqual(self.body()["stand"], "open")
+        self.page.press("Escape")
+        self.page.wait_for("document.body.dataset.stand === 'closed'", timeout=2.0)
+        self.assertEqual(self.page.focus_info()["testid"], "stand-toggle", "Esc gives the focus back to the button")
+        self.page.click('[data-testid="dock-toggle"]')
+        self.assertEqual(self.body()["dock"], "open")
+        cover = self.page.evaluate("[parseFloat(getComputedStyle(document.getElementById('centre')).getPropertyValue('--dock-cover')),"
+                                   " document.getElementById('decision-dock').getBoundingClientRect().top,"
+                                   " document.getElementById('legend').getBoundingClientRect().bottom]")
+        self.assertGreater(cover[0], 100, "the unfolded dock lies over the stage")
+        self.assertLessEqual(cover[2], cover[1] + 0.5, "the legend chip stays above the unfolded dock")
         self.page.click('[data-testid="journal-toggle"]')
         self.assertEqual(self.body()["journal"], "open")
-        self.page.click('[data-testid="right-tab-card"]')
         seq = int(self.body()["seq"])
         self.page.wait_for(f"Number(document.body.dataset.seq) >= {seq + 2}", timeout=6.0)
         state = self.body()
-        self.assertEqual((state["journal"], state["right"]), ("open", "card"))
-        self.assertEqual(self.page.evaluate("document.querySelector('.run-box__toggle').getAttribute('aria-expanded')"), "true")
-        self.assertGreater(self.page.evaluate("document.querySelector('.journal__panel').getBoundingClientRect().height"), 200)
+        self.assertEqual((state["journal"], state["dock"]), ("open", "open"), "a poll keeps what the user unfolded")
+        self.assertGreater(self.page.evaluate("document.querySelectorAll('[data-testid=\"journal-entry\"]').length"), 3)

@@ -1,6 +1,7 @@
-// The «Список» view: the same twins as the scheme, as a plain table, so that
-// the data can be checked without reading the drawing. One row per twin with
-// the three axes in separate columns: hazard, knowledge, reachability.
+// The «Список» view: the same twins as the stage, as a dense table, so that
+// the data can be checked without reading the drawing. One row per twin, one
+// or two lines high, with the three axes in separate columns (hazard,
+// knowledge, reachability) as the badges of the card.
 
 import {unresolvedFor} from '../commands.js';
 import {h, onActivate, reconcile, setAttrs, setText} from '../dom.js';
@@ -248,7 +249,8 @@ export function mount(root, ctx) {
         if (index === 1 && selected) shown += ` (${UI.list.selected})`;
         if (index === 6 && pending) shown += `; ${UI.list.pending}`;
         setText(span, shown);
-        setAttrs(span, {class: ['cell', cell.badge && `badge badge--${cell.badge}`], title: cell.title || null});
+        // The value cell is clamped to two lines: its whole text is also its title.
+        setAttrs(span, {class: ['cell', cell.badge && `badge badge--${cell.badge}`], title: cell.title || (index === 6 ? shown : null)});
         setText(note, cell.note ? cell.note.text : '');
         setAttrs(note, {hidden: !cell.note, class: ['cell-note', cell.note && cell.note.badge && `badge badge--${cell.note.badge}`]});
       });

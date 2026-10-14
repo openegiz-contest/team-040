@@ -8,6 +8,8 @@ import {ACK_TIMEOUT_MS, NAMESPACE, REQUEST_TIMEOUT_MS, RUNS_LIMIT, STALE_AFTER_M
 
 export const DASH = '—';
 export const NOTICE = 'Синтетические данные. Расчёт модели, не сведения о реальной шахте';
+/** The same notice in its two lines (top bar): what the data are, and what they are not. */
+export const NOTICE_PARTS = ['Синтетические данные.', 'Расчёт модели, не сведения о реальной шахте'];
 
 // --------------------------------------------------------------------------
 // Vocabularies: code of the platform -> text on the screen
@@ -324,6 +326,8 @@ export const FORMS = {
   zone: ['участок', 'участка', 'участков'],
   event: ['событие', 'события', 'событий'],
   run: ['прогон', 'прогона', 'прогонов'],
+  option: ['вариант', 'варианта', 'вариантов'],
+  condition: ['условие', 'условия', 'условий'],
 };
 
 export function yesNo(value) {
@@ -684,6 +688,8 @@ export function shortCommandId(id) {
 export const UI = {
   status: {
     region: 'Состояние стенда',
+    brand: 'Диспетчер смены',
+    brandSub: 'цифровой двойник рудника',
     platform: 'Платформа',
     model: 'Модель',
     run: 'Прогон',
@@ -694,6 +700,7 @@ export const UI = {
     commandsBlocked: COMMANDS_BLOCKED,
     oldTag: 'последние полученные данные:',
     speed: (value) => `×${num(value)}`,
+    link: 'Связь',
   },
   incident: {
     region: 'Инцидент и люди',
@@ -704,10 +711,54 @@ export const UI = {
     out: 'вышло',
     overlap: 'числа считает модель; один работник может входить в несколько',
     zone: 'участок',
+    people: 'Люди',
+    peopleTitle: 'Люди: счётчики модели; один работник может входить в несколько',
+  },
+  // The situation strip: an incident as the sequence the dispatcher needs.
+  situation: {
+    region: 'Ход инцидента',
+    steps: ['Что изменилось', 'Где люди', 'Какие пути', 'Варианты'],
+    show: 'показать',
+    showRoutes: 'показать маршруты',
+    showRoutesWord: 'маршруты',
+    openOptions: 'к вариантам',
+    atTick: (tick) => `тик${NBSP}${tick}`,
+    inZone: (zone, codes) => `${zone}: ${codes}`,
+    nobodyInZone: (zone) => `${zone}: работников нет`,
+    noRoute: (codes) => `нет расчётного маршрута: ${codes}`,
+    inDanger: (codes) => `в опасной зоне: ${codes}`,
+    unknown: (codes) => `маршрут не рассчитан: ${codes}`,
+    longer: (items) => `маршрут длиннее: ${items}`,
+    plus: (code, metres) => `${code} +${metres}`,
+    routesUnchanged: 'расчётные маршруты не удлинились',
+    exitsAvailable: 'все выходы доступны (модель)',
+    exitsNot: (items) => `выходы: ${items}`,
+    options: (count) => `${counted(count, FORMS.option)} модели`,
+    noOptions: 'варианты не опубликованы',
+    paused: 'модель ждёт выбора',
+    executing: 'решение исполняется',
+    done: 'решение исполнено, итог в вариантах',
+    fromWorkers: 'коды из полей работников',
+    noIncidentData: 'нет данных об инциденте',
+  },
+  stand: {
+    toggle: 'Стенд',
+    tag: 'стенд',
+    title: 'Управление стендом',
+    subtitle: 'условия эксперимента, не действия диспетчера',
+    close: 'Закрыть',
+    openTitle: 'Открыть управление стендом: условия эксперимента, не действия диспетчера',
+    closeTitle: 'Закрыть управление стендом',
+    active: (count) => (count > 0 ? `активно: ${counted(count, FORMS.condition)}` : 'условий нет'),
+  },
+  dock: {
+    title: 'Варианты решения',
+    expand: 'Развернуть',
+    collapse: 'Свернуть',
   },
   tabs: {
     region: 'Вид',
-    scheme: 'Схема',
+    scheme: 'Шахта',
     list: 'Список',
     runs: 'Прогоны',
     rightRegion: 'Правая панель',
@@ -754,15 +805,19 @@ export const UI = {
   },
   legend: {
     title: 'Легенда',
+    hint: 'одни обозначения для 3D и для схемы',
+    chipLabel: 'Легенда: опасность, знание, достижимость, выход, закрытый проход, маршрут. Развернуть или свернуть',
     hazard: 'Опасность',
     knowledge: 'Знание',
     reach: 'Достижимость',
     exit: 'Выход',
-    stale: 'устарели',
-    lost: 'потеряны',
+    commands: 'Команды',
     inDangerZone: 'работник в опасной зоне',
     group: 'группа на одном отрезке',
-    route: 'маршруты выбранного объекта или участка инцидента',
+    route: 'расчётный маршрут (модель) выбранного объекта или участка инцидента',
+    routeShort: 'маршрут',
+    closedShort: 'закрыт',
+    more: 'Легенда',
     pending: 'команда отправлена, не подтверждена',
     exitAvailable: 'доступен (модель)',
     exitUnavailable: 'недоступен',
@@ -771,7 +826,7 @@ export const UI = {
   card: {
     title: 'Карточка',
     summary: 'Сводка смены',
-    nothingSelected: 'Объект не выбран. Выберите объект на схеме или в списке',
+    nothingSelected: 'Объект не выбран. Выберите объект на модели шахты или в списке',
     notFound: 'Выбранного объекта нет среди двойников',
     close: 'Снять выбор',
     state: 'Состояние',
@@ -789,16 +844,12 @@ export const UI = {
     defensive: ' (опубликовано «норма» без актуальных данных)',
     records: (count) => `записей: ${num(count)}`,
     indexAt: (tick) => `рассчитан на тике${NBSP}${tick}`,
+    more: (count) => `Подробнее: все поля (${num(count)})`,
+    less: 'Скрыть поля',
+    focus: 'Показать на модели',
+    fields: 'Все опубликованные поля',
     thresholds: 'Пороги — настройка демонстрации',
     marks: 'Обозначения на схеме',
-    // What the legend of the compact layout leaves out, in words.
-    marksCompact: [
-      'кольцо вокруг метки — работник в опасной зоне',
-      'стрелка у метки — работник идёт к выходу',
-      '×3 у метки — группа работников на одном отрезке выработки',
-      'линия со стрелками — расчётный маршрут (модель) выбранного объекта или участка инцидента',
-      'круг с чертой — новый вход запрещён моделью',
-    ],
     otherCodes: 'Остальные коды — при выборе объекта, в плане горизонта и на вкладке «Список»',
   },
   conditions: {
@@ -864,6 +915,7 @@ export const UI = {
     sameGroup: 'Показатели всех вариантов считаются для одной группы: все, кто был под землёй в момент решения',
     downtimeNote: 'суммарный простой участков, не длительность прогона',
     stopKeepsPause: 'Остановка участка не снимает паузу: выберите вывод или наблюдение',
+    howCounted: 'Как считаются показатели',
     metric: 'Показатель',
     atEnd: 'на конец расчёта',
     choose: 'Выберите вариант в заголовке таблицы',
@@ -876,6 +928,23 @@ export const UI = {
     confirmText: (option, scope) => `${option}. Участки: ${scope}. Модель применит вариант и снимет паузу`,
     factOf: (option) => `Факт прогона: ${option}`,
     tick: (tick) => `тик${NBSP}${tick}`,
+    people: 'люди общей группы на конец расчёта',
+    peopleShort: 'люди группы',
+    // «из ?»: the size of the common group is not published; the note of the dock says so in words.
+    out: (out, total) => `вышли ${typeof out === 'number' ? num(out) : out} из ${total === null ? '?' : num(total)}`,
+    inDangerCount: (count) => `${num(count)} в опасных зонах`,
+    noRouteCount: (count) => `${num(count)} без маршрута`,
+    leftCount: (count) => `${num(count)} ещё под землёй`,
+    overlap: 'числа пересекаются: человек может быть и в опасной зоне, и без маршрута',
+    groupFrom: (count, option) => `Общая группа решения — ${num(count)} ${plural(count, ['человек', 'человека', 'человек'])}: `
+      + `столько вышло в варианте «${option}», где модель сообщает «все вышли»`,
+    groupUnknown: 'Размер общей группы модель не публикует, и ни в одном варианте не вышли все: полоса показывает только '
+      + 'опубликованные числа, остаток помечен «?»',
+    summaryOffered: (count) => `${num(count)} ${plural(count, ['вариант предложен', 'варианта предложены', 'вариантов предложено'])} — выберите и запустите`,
+    summaryChosen: (option) => `выбран: ${option}`,
+    summaryExecuting: (option) => `исполняется: ${option}`,
+    summaryFact: (option, people) => `факт прогона, ${option}: ${people}`,
+    summaryStates: 'варианты не предлагаются',
   },
   journal: {
     title: 'Журнал событий',
@@ -885,9 +954,13 @@ export const UI = {
     preset: 'сценарий',
     command: 'команда',
     otherRun: 'другой прогон',
+    more: (count) => `Весь журнал (${counted(count, FORMS.event)})`,
+    less: 'Свернуть журнал',
   },
   runs: {
     title: 'Завершённые прогоны',
+    lead: 'Прогноз и факт каждого прогона — отдельными строками. Сравниваются только прогоны с одним ключом и классифицированным итогом',
+    groupFrom: (count) => `общая группа ${num(count)}`,
     limit: `Показаны последние ${RUNS_LIMIT} завершённых прогонов`,
     empty: 'Завершённых прогонов нет',
     loading: 'Архив прогонов читается',

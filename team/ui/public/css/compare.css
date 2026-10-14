@@ -1,0 +1,278 @@
+/* Decision dock, runs archive, list: owned by agent L2.
+   One visual language for every comparison of options and runs: a forecast is
+   outlined and hatched (dashed underline under its numbers, hatched cells in
+   the people bar) with the caption «прогноз модели»; a fact is solid (filled
+   numbers, filled cells) with «факт прогона». No ranking colours: the options
+   are columns of equal weight; copper only marks the column the dispatcher
+   chose. Hazard colours appear only where people are in a danger zone.
+   Tokens: base.css (spec 1.1). */
+
+/* ---- values ------------------------------------------------------------------- */
+
+.val { font-family: var(--font-mono); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.val--forecast { color: var(--dust-1); text-decoration: underline dashed var(--dust-2) 1px; text-underline-offset: 4px; }
+.val--fact { padding: 1px 6px; border-radius: 2px; background: var(--stone-1); color: var(--dust-1); font-weight: 500; }
+.val--none { padding: 0; border: 0; background: none; color: var(--dust-2); font-weight: 400; text-decoration: none; }
+/* «не все вышли», «нет: не все вышли»: words, set in the text face. */
+/* Words wrap in a narrow column; numbers never do. */
+.val--attention { font-family: var(--font-sans); font-size: 13px; font-weight: 600; white-space: normal; }
+.val--attention.val--forecast { text-decoration-color: var(--dust-1); }
+.runs-row--forecast .val, .runs-row--forecast th { font-style: normal; }
+.val--danger.val--forecast { color: var(--danger-ink); text-decoration-color: var(--danger); font-weight: 600; }
+.val--danger.val--fact { background: var(--danger); color: var(--ink-0); }
+.val--blocked.val--forecast { text-decoration: underline dashed var(--noroute) 2px; font-weight: 600; }
+.val--blocked.val--fact { background: var(--noroute); color: var(--ink-0); font-weight: 600; }
+.val--unknown { font-family: var(--font-sans); white-space: normal; font-style: italic; text-decoration: underline dotted var(--unknown) 1px; }
+
+/* ---- people bar: one cell per person of the common group --------------------- */
+
+.pb { display: block; width: 100%; height: auto; overflow: visible; }
+.pb rect, .pb path { stroke-width: 1; shape-rendering: crispEdges; }
+.pb__out { fill: var(--dust-1); stroke: var(--dust-1); }
+.pb[data-series="forecast"] .pb__out { stroke: var(--dust-2); }
+.pb__in_danger { fill: var(--danger); stroke: var(--danger); }
+.pb__no_route rect { fill: var(--noroute); stroke: var(--noroute); }
+.pb__no_route path { stroke: var(--ink-0); stroke-width: 1.2; fill: none; shape-rendering: auto; }
+.pb__left { fill: none; stroke: var(--dust-2); }
+.pb[data-series="forecast"] .pb__left { stroke: var(--dust-3); }
+.pb__unknown rect { fill: none; stroke: var(--unknown); stroke-dasharray: 2 2; }
+.pb__unknown path { fill: none; stroke: var(--unknown); stroke-width: 1.3; stroke-linecap: round; shape-rendering: auto; }
+.pb-hatch--out rect { fill: var(--ink-1); stroke: none; }
+.pb-hatch--out path { stroke: var(--dust-1); stroke-width: 1.3; }
+.pb-hatch--danger rect { fill: var(--ink-0); stroke: none; }
+.pb-hatch--danger path { stroke: var(--danger); stroke-width: 1; }
+.pb-words { display: block; color: var(--dust-2); font-size: 12px; line-height: 1.35; white-space: normal; }
+
+/* ---- decision dock: the content of #decision (the frame, bar and folding are layout.css's) ----
+   Dense by design: at 1920x1080 the open dock leaves the stage most of the height. The table of options
+   starts at the top of the dock; why it is open, the captions of the numbers and the launch stand in the
+   side column; how the numbers are counted is folded under the button. */
+
+.pb-defs { position: absolute; width: 0; height: 0; }
+.decision {
+  position: relative;
+  padding: 4px 16px 2px;
+  color: var(--dust-1); font-family: var(--font-sans); font-size: 13px; line-height: 1.3;
+}
+.decision [hidden] { display: none; }
+.decision__summary { color: var(--dust-1); }
+
+.decision__main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 336px); gap: 20px; align-items: start; }
+/* With a fact the side column carries a table of its own: forecast and fact of the executed option. */
+.decision__main:has(.decision__fact) { grid-template-columns: minmax(0, 1fr) minmax(380px, 32%); }
+.decision__forecast { display: grid; gap: 6px; min-width: 0; }
+.decision__side { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 2px; }
+.decision__side > [hidden], .decision__facts:empty { display: none; }
+.decision__facts { display: grid; gap: 10px; }
+
+/* Why the dock is open: the state of the incident, its causes, the pause. */
+.decision__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.decision__state { flex: none; font-size: 13px; font-weight: 600; }
+.decision__causes { display: flex; flex-direction: column; gap: 1px; min-width: 0; color: var(--dust-1); font-size: 12px; }
+/* The zone and the tick of the opening repeat the causes and step 1 of the strip: kept for assistive technology. */
+.decision__where { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.decision__pause {
+  flex: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 2px; padding: 0 6px;
+  border: 1px solid var(--line); border-radius: 3px;
+  color: var(--dust-2); font-size: 12px; line-height: 20px;
+}
+.decision__glyph { display: inline-flex; color: var(--dust-2); }
+
+/* What the numbers are: a dashed line = forecast of the model. */
+.decision__captions { display: flex; flex-direction: column; gap: 2px; color: var(--dust-2); font-size: 12px; line-height: 1.3; }
+.decision__captions li { padding-left: 22px; text-indent: -22px; }
+.decision__captions li::before { content: ""; display: inline-block; width: 16px; margin-right: 6px; border-bottom: 1px dashed var(--dust-2); vertical-align: middle; }
+.decision__captions .badge { text-indent: 0; }
+.decision__alert {
+  padding: 4px 8px; border-left: 3px solid var(--noroute); border-radius: 0 2px 2px 0;
+  background: var(--ink-2); color: var(--dust-1); font-size: 12px; font-weight: 500;
+}
+.decision__picked { font-size: 12px; font-weight: 600; }
+.decision__run { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--ink-2); }
+.decision__run .block-note { margin: 0; }
+.decision .note--why { margin: 0; color: var(--dust-2); font-size: 12px; font-style: normal; }
+
+/* How the numbers are counted: folded. */
+.decision__more { color: var(--dust-2); font-size: 12px; line-height: 1.35; }
+.decision__more-title {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--dust-2); cursor: pointer; list-style: none;
+  text-decoration: underline dotted var(--dust-3); text-underline-offset: 3px;
+}
+.decision__more-title::-webkit-details-marker { display: none; }
+.decision__more-title::before {
+  content: ""; width: 5px; height: 5px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+.decision__more[open] > .decision__more-title::before { transform: rotate(45deg); }
+.decision__more-title:hover { color: var(--dust-1); }
+.decision__more-title:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+.decision__more > p { margin-top: 6px; }
+.decision__note { color: var(--dust-2); font-size: 12px; line-height: 1.4; }
+.decision__ids { color: var(--dust-2); font-size: 11px; overflow-wrap: anywhere; }
+
+.decision__fact { display: grid; gap: 6px; padding: 8px 10px 10px; border: 1px solid var(--dust-3); border-radius: 4px; background: var(--ink-2); }
+.decision__fact-title { font-size: 13px; font-weight: 600; }
+.decision__fact .metrics th, .decision__fact .metrics td { padding: 1px 6px; }
+.decision__fact .metrics--fact thead th:first-child { width: 36%; }
+
+/* ---- the table of options: columns of equal weight ---------------------------- */
+
+.metrics { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+.metrics th, .metrics td { padding: 1px 8px 0; border-bottom: 1px solid var(--line); line-height: 17px; text-align: left; vertical-align: middle; }
+.metrics tbody tr:last-child > * { border-bottom: 0; }
+.metrics thead th { padding-top: 1px; padding-bottom: 2px; vertical-align: bottom; font-weight: 400; }
+.metrics__corner, .metrics--fact thead th:first-child { width: 28%; color: var(--dust-2); font-size: 11px; font-weight: 600 !important; letter-spacing: .08em; text-transform: uppercase; }
+.metrics tbody th { color: var(--dust-2); font-weight: 400; }
+.metrics tr[data-row="lead"] td { color: var(--dust-2); }
+.metrics tr[data-row="people"] > * { padding-top: 2px; padding-bottom: 1px; }
+.metrics__people .pb { margin-bottom: 2px; }
+.metrics .pb-words { line-height: 14px; }
+.metrics .val { font-size: 13px; }
+.metrics .val--fact { padding: 0 5px; }
+.th-pick { display: flex; align-items: center; gap: 8px; }
+.th-pick:has(input:not([hidden], :disabled)) { cursor: pointer; }
+.th-name { color: var(--dust-1); font-size: 15px; font-weight: 600; line-height: 20px; }
+/* The name with its radio and the state on the first line (the state wraps under the name in a narrow
+   column), the kind of the option on its own line below. */
+.th-box { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; }
+.th-sub { display: block; color: var(--dust-2); font-size: 12px; line-height: 16px; }
+.th-sub:empty { display: none; }
+.th-box .th-sub { order: 2; flex-basis: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-box .th-sub + .th-sub { order: 1; flex-basis: auto; margin-left: auto; font-style: italic; }
+th[data-state="executing"] .th-sub + .th-sub, th[data-state="done"] .th-sub + .th-sub { color: var(--dust-1); font-weight: 600; }
+.metrics thead th[data-series="fact"] { color: var(--dust-1); font-weight: 600; }
+
+.th-pick input {
+  flex: none; appearance: none; margin: 0;
+  width: 16px; height: 16px; padding: 3px; border: 1.5px solid var(--dust-2); border-radius: 50%;
+  background: transparent; background-clip: content-box; cursor: pointer;
+}
+/* Checked: a copper ring and a copper dot (the content box), a gap of the panel between them. */
+.th-pick input:checked { border-color: var(--copper); background-color: var(--copper); }
+.th-pick input:disabled { border-style: dashed; border-color: var(--dust-3); cursor: not-allowed; }
+.th-pick input:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+/* The chosen column: a copper frame down the column, next to the checked radio and the line above the button.
+   Every cell has the frame's borders in transparent, so choosing moves nothing. */
+.metrics td, .metrics thead th { border-left: 1px solid transparent; border-right: 1px solid transparent; }
+.metrics thead th { border-top: 2px solid transparent; }
+.metrics .is-chosen { background: var(--ink-2); border-left-color: var(--copper); border-right-color: var(--copper); }
+.metrics thead .is-chosen { border-top-color: var(--copper); }
+
+/* ---- runs archive --------------------------------------------------------------- */
+
+.runs-bar { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 16px; padding: 12px 16px 2px; border: 0; }
+.runs-bar__title { color: var(--dust-1); font-size: 16px; font-weight: 600; }
+.runs-bar__limit { color: var(--dust-2); font-size: 12px; }
+.runs-lead { padding: 0 16px 8px; color: var(--dust-2); font-size: 12px; }
+.runs-scroll { padding: 0 16px 16px; }
+.runs { width: 100%; border-collapse: separate; border-spacing: 0; color: var(--dust-1); font-family: var(--font-sans); font-size: 13px; }
+.runs thead th {
+  position: sticky; top: 0; z-index: 1;
+  padding: 6px 8px; border-bottom: 1px solid var(--line);
+  background: var(--ink-1); color: var(--dust-2);
+  font-size: 11px; font-weight: 600; letter-spacing: .03em; text-align: left;
+}
+.runs td, .runs tbody th { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; font-weight: 400; }
+.runs .runs-group th { padding: 20px 8px 8px; border-bottom: 1px solid var(--dust-3); font-size: 13px; }
+.runs-group__title { font-weight: 600; }
+.runs-group__size { margin-left: 12px; color: var(--dust-2); font-size: 12px; }
+.runs .runs-about { width: 21%; vertical-align: top; padding-top: 8px; border-left: 3px solid transparent; }
+.runs-about > * { display: block; width: fit-content; max-width: 100%; }
+.runs-about__name { font-size: 14px; }
+.runs-about__note { color: var(--dust-2); font-size: 12px; }
+.run-ending { margin: 2px 0; color: var(--dust-2); font-size: 12px; }
+.run-ending--interrupted { padding: 0 6px; border: 1px solid var(--noroute); border-radius: 2px; color: var(--dust-1); font-weight: 600; }
+.run-ending--unclassified { padding: 0 6px; border: 1px dashed var(--unknown); border-radius: 2px; color: var(--dust-1); font-style: italic; }
+.run-mark { margin-top: 2px; color: var(--dust-2); font-size: 12px; }
+.run-mark--out { padding-left: 6px; border-left: 2px solid var(--dust-1); color: var(--dust-1); }
+/* A run that is not a completed result: its row is marked at its left edge, solid for a reset, dashed for an unknown ending. */
+.runs-row[data-ending="interrupted"] .runs-about { border-left: 3px solid var(--noroute); }
+.runs-row[data-ending="unclassified"] .runs-about { border-left: 3px dashed var(--unknown); }
+.runs .runs-series { width: 132px; }
+.runs-series__name { display: block; color: var(--dust-2); font-size: 12px; }
+.runs-row--actual .runs-series__name { color: var(--dust-1); font-weight: 600; }
+.runs-series .pb { margin-top: 4px; }
+.runs-row--forecast > * { border-bottom-color: var(--dust-3); }
+.runs tbody tr:hover { background: none; }
+
+/* ---- list ----------------------------------------------------------------------- */
+
+.view--list { background: var(--ink-1); color: var(--dust-1); }
+.view--list .view__bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.view--list .view__bar .panel__title { color: var(--dust-1); font-size: 16px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.view--list [data-testid="list-count"] { color: var(--dust-2); font-size: 12px; }
+.table--list { width: 100%; border-collapse: separate; border-spacing: 0; color: var(--dust-1); font-family: var(--font-sans); font-size: 13px; }
+.table--list th {
+  position: sticky; top: 0; z-index: 1;
+  padding: 6px 8px; border-bottom: 1px solid var(--line);
+  background: var(--ink-1); color: var(--dust-2);
+  font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: none; text-align: left; white-space: nowrap;
+}
+.table--list { table-layout: fixed; }
+.table--list td { padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.35; overflow-wrap: anywhere; }
+.table--list th:first-child, .table--list td:first-child { padding-left: 16px; }
+.table--list .row { cursor: pointer; }
+.table--list .row:hover { background: var(--ink-2); }
+.table--list .row:focus-visible { outline: 2px solid var(--copper); outline-offset: -2px; }
+/* The selected row: a copper bar on the left and the word in the code cell, not only a tint. */
+.table--list .row.is-selected { background: var(--ink-2); }
+.table--list td:first-child { border-left: 3px solid transparent; }
+.table--list .row.is-selected td:first-child { border-left-color: var(--copper); }
+.table--list td:nth-child(1) { color: var(--dust-2); }
+.table--list td:nth-child(2) { font-family: var(--font-mono); font-weight: 500; white-space: nowrap; }
+.table--list td:nth-child(3) { min-width: 96px; color: var(--dust-2); }
+/* The value cell: at most two lines; the full text is in its title and read by assistive technology. */
+.table--list td:nth-child(7) .cell { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.table--list td:nth-child(8), .table--list td:nth-child(9) { color: var(--dust-2); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+.table--list .cell-note { display: block; width: fit-content; margin-top: 2px; }
+.table--list td:nth-child(4) .badge, .table--list td:nth-child(5) .badge { white-space: nowrap; }
+
+/* Fixed column shares: the state columns get the room a badge needs on one line. */
+.table--list th:nth-child(1) { width: 9%; }
+.table--list th:nth-child(2) { width: 7%; }
+.table--list th:nth-child(3) { width: 10%; }
+.table--list th:nth-child(4) { width: 15.5%; }
+.table--list th:nth-child(5) { width: 12%; }
+.table--list th:nth-child(6) { width: 17%; }
+.table--list th:nth-child(7) { width: 12%; }
+.table--list th:nth-child(8) { width: 9%; }
+.table--list th:nth-child(9) { width: 8.5%; }
+@media (min-width: 1600px) and (min-height: 900px) {
+  .table--list th:nth-child(1) { width: 6.2%; }
+  .table--list th:nth-child(2) { width: 6.6%; }
+  .table--list th:nth-child(3) { width: 11.5%; }
+  .table--list th:nth-child(4) { width: 13.5%; }
+  .table--list th:nth-child(5) { width: 11.5%; }
+  .table--list th:nth-child(6) { width: 19%; }
+  .table--list th:nth-child(7) { width: 11.2%; }
+  .table--list th:nth-child(8) { width: 12%; }
+  .table--list th:nth-child(9) { width: 8.5%; }
+}
+
+
+/* ---- compact layout ---------------------------------------------------------------- */
+
+@media (max-width: 1599px), (max-height: 899px) {
+  .decision { padding: 4px 12px 10px; }
+  /* The side column stays beside the options: the run button is in sight without scrolling. */
+  .decision__main, .decision__main:has(.decision__fact) { grid-template-columns: minmax(0, 1fr) minmax(240px, 30%); gap: 14px; }
+  .metrics th, .metrics td { padding: 1px 6px; }
+  .metrics__corner { width: 26%; }
+  .th-name { font-size: 14px; }
+  .val { font-size: 13px; }
+  .runs-scroll { padding: 0 8px 12px; }
+  .runs td, .runs tbody th { padding: 4px 5px; }
+  .runs thead th { padding: 5px; white-space: normal; }
+  .runs .runs-about { width: 23%; }
+  .runs .runs-series { width: 120px; }
+  .table--list th, .table--list td { padding: 3px 5px; }
+  .table--list th { white-space: normal; }
+  .table--list td:nth-child(6), .table--list td:nth-child(7) { overflow-wrap: anywhere; }
+  .table--list td:nth-child(8), .table--list td:nth-child(9) { white-space: normal; font-size: 11px; }
+  .table--list td:nth-child(2) { white-space: normal; }
+}
+

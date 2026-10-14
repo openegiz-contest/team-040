@@ -1,11 +1,14 @@
-// The archive of finished runs. Runs are grouped by the comparison key the
-// service published; only complete runs of one key are called a comparison.
-// The fact and the forecast of a run are two labelled rows, never one value;
-// a run cut short by a reset keeps a dash where it has no result.
+// The archive of finished runs, in the visual language of the decision dock.
+// Runs are grouped by the comparison key the service published; only
+// complete runs of one key are called a comparison. The fact and the forecast
+// of a run are two labelled rows, never one value: the fact solid, the
+// forecast outlined and hatched. A run cut short by a reset, or with an
+// ending this interface does not know, is marked and keeps a dash where it
+// has no result: it is never shown as a completed withdrawal.
 
-import {h, setAttrs, setText} from '../dom.js';
+import {h, s, setAttrs, setText} from '../dom.js';
 import {localName} from '../model.js';
-import {METRIC_ORDER, hasMetrics, metricCell} from './decision.js';
+import {METRIC_ORDER, commonGroup, hasMetrics, metricCell, peopleBar, peopleOf, peoplePatterns, peopleWords, valueClass} from './decision.js';
 
 /** The completion reasons that mean a run came to its end with a result. */
 export const COMPLETED_REASONS = ['withdrawal_done', 'horizon_reached'];
@@ -45,6 +48,9 @@ export function groupRuns(runs, order) {
   return [...groups.values()].sort((a, b) => b.latest - a.latest);
 }
 
+const PATTERNS = 'pbr';
+const BAR_PX = 112;
+
 /**
  * @param {HTMLElement} root the element of index.html this view owns
  * @param {Object} ctx store, text, roots and the action functions
@@ -54,25 +60,38 @@ export function mount(root, ctx) {
   const {UI} = text;
   const status = h('span', {class: 'badge', 'data-testid': 'runs-status', hidden: true});
   const note = h('p', {class: 'empty-note', hidden: true});
-  const table = h('table', {class: 'table table--runs', 'data-testid': 'runs-table'},
+  const table = h('table', {class: 'runs', 'data-testid': 'runs-table'},
     h('thead', null, h('tr', null,
       h('th', {scope: 'col', text: UI.runs.run}), h('th', {scope: 'col', text: UI.runs.series}),
       METRIC_ORDER.map((metric) => h('th', {scope: 'col', text: text.metricLabel(metric, true), title: text.metricLabel(metric)})))));
   root.append(
-    h('div', {class: 'view__bar'}, h('h2', {class: 'panel__title', text: UI.runs.title}),
-      h('span', {class: 'muted', text: UI.runs.limit}), status),
-    h('div', {class: 'view__scroll'}, table, note));
+    s('svg', {class: 'pb-defs', width: 0, height: 0, 'aria-hidden': 'true', focusable: 'false'}, s('defs', null, peoplePatterns(PATTERNS))),
+    h('div', {class: 'view__bar runs-bar'},
+      h('h2', {class: 'runs-bar__title', text: UI.runs.title}),
+      h('span', {class: 'runs-bar__limit', text: UI.runs.limit}), status),
+    h('p', {class: 'runs-lead', text: UI.runs.lead}),
+    h('div', {class: 'view__scroll runs-scroll'}, table, note));
 
-  function seriesRow(run, prefix, label, interrupted, published) {
+  function seriesRow(run, prefix, label, interrupted, published, total) {
+    const series = prefix ? 'forecast' : 'fact';
+    const labelCell = h('th', {scope: 'row', class: 'runs-series'}, h('span', {class: 'runs-series__name', text: label}));
+    if (published) {
+      // The people of the common group, drawn like the dock; the numbers are in the cells of the row.
+      const people = peopleOf(run.values, prefix, total);
+      const bar = peopleBar(PATTERNS, BAR_PX);
+      bar.update(people, series, peopleWords(text, people));
+      labelCell.append(bar.svg);
+    }
     return h('tr', {class: `runs-row runs-row--${prefix ? 'forecast' : 'actual'}`, 'data-run': run.name, 'data-series': prefix ? 'forecast' : 'actual'},
-      h('th', {scope: 'row', class: 'runs-series', text: label}),
+      labelCell,
       METRIC_ORDER.map((metric) => {
         const cell = published ? metricCell(text, run, prefix, metric, interrupted) : {text: text.DASH, badge: null};
-        return h('td', {'data-metric': metric}, h('span', {class: cell.badge ? `badge badge--${cell.badge}` : null, text: cell.text}));
+        return h('td', {'data-metric': metric},
+          h('span', {class: valueClass(series, cell.text === text.DASH ? 'none' : cell.badge), text: cell.text}));
       }));
   }
 
-  function runRows({run, interrupted, unclassified, takesPart}, group, model) {
+  function runRows({run, interrupted, unclassified, takesPart}, group, model, total) {
     const {values} = run;
     // A run without a classified ending has no final result either: its missing values stay dashes.
     const cut = interrupted || unclassified;
@@ -91,11 +110,14 @@ export function mount(root, ctx) {
     else if (unclassified) mark = UI.runs.unclassified;
     else if (values.comparable === false) mark = UI.runs.incomparable(text.codeLabel('incomparableReason', values.incomparable_reason));
     else if (group.comparable < 2) mark = UI.runs.alone;
+    let endingKind = 'done';
+    if (interrupted) endingKind = 'interrupted';
+    else if (unclassified) endingKind = 'unclassified';
     const about = h('th', {scope: 'rowgroup', rowspan: 2, class: 'runs-about'},
-      h('strong', {class: 'mono', text: run.label}),
-      h('span', {class: cut ? 'badge badge--blocked' : null, 'data-testid': 'run-ending', text: ending}),
-      h('span', {class: 'note', text: `${UI.status.seed} ${text.num(values.seed)} · ${optionText}`}),
-      mark ? h('span', {class: 'badge badge--unknown', 'data-testid': 'run-mark', text: mark}) : null);
+      h('strong', {class: 'runs-about__name mono', text: run.label}),
+      h('span', {class: `run-ending run-ending--${endingKind}`, 'data-testid': 'run-ending', text: ending}),
+      h('span', {class: 'runs-about__note', text: `${UI.status.seed} ${text.num(values.seed)} · ${optionText}`}),
+      mark ? h('span', {class: `run-mark${takesPart ? '' : ' run-mark--out'}`, 'data-testid': 'run-mark', text: mark}) : null);
     const forecast = hasMetrics(values, 'forecast_');
     // Forecast numbers never stand without a word on how complete the forecast was.
     let forecastLabel = UI.decision.notPublished;
@@ -104,13 +126,13 @@ export function mount(root, ctx) {
       forecastLabel = quality === 'full' ? UI.decision.forecast
         : `${UI.decision.forecast}: ${quality === undefined ? UI.decision.qualityNotPublished : text.label('forecastQuality', quality)}`;
     }
-    const actual = seriesRow(run, '', UI.decision.actual, cut, true);
+    const actual = seriesRow(run, '', UI.decision.actual, cut, true, total);
     actual.prepend(about);
     setAttrs(actual, {
-      'data-completion': values.completion_reason, 'data-comparable': String(takesPart),
+      'data-completion': values.completion_reason, 'data-comparable': String(takesPart), 'data-ending': endingKind,
       'data-comparison-key': group.key,
     });
-    return [actual, seriesRow(run, 'forecast_', forecastLabel, false, forecast)];
+    return [actual, seriesRow(run, 'forecast_', forecastLabel, false, forecast, total)];
   }
 
   // The archive changes only when a run ends: the table is built anew then, not on every poll.
@@ -120,9 +142,13 @@ export function mount(root, ctx) {
     table.replaceChildren(table.tHead, ...groups.map((group) => {
       const title = group.key === null ? UI.runs.noKey
         : (group.comparable >= 2 ? UI.runs.comparison(text.counted(group.comparable, text.FORMS.run), group.key) : UI.runs.single(group.key));
+      // One key means one common group: its size is known where a run of the key says that everyone was out.
+      const size = group.key === null ? null : commonGroup(group.runs.map((item) => item.run), ['', 'forecast_']);
       return h('tbody', {'data-comparison-key': group.key, 'data-group': group.comparable >= 2 ? 'comparison' : 'single'},
-        h('tr', {class: 'runs-group'}, h('th', {scope: 'rowgroup', colspan: METRIC_ORDER.length + 2, text: title})),
-        group.runs.flatMap((item) => runRows(item, group, model)));
+        h('tr', {class: 'runs-group'}, h('th', {scope: 'rowgroup', colspan: METRIC_ORDER.length + 2},
+          h('span', {class: 'runs-group__title', text: title}),
+          size ? h('span', {class: 'runs-group__size', text: UI.runs.groupFrom(size.total)}) : null)),
+        group.runs.flatMap((item) => runRows(item, group, model, size ? size.total : null)));
     }));
     table.hidden = groups.length === 0;
 

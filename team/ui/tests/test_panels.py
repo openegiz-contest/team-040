@@ -135,7 +135,10 @@ class PanelsTestCase(BrowserTestCase):
         return self.attribute(selector, "aria-disabled") == "true"
 
     def choose(self, selector, value):
-        """Change a <select> the way a keyboard user does: focus it and move with the arrow keys."""
+        """Change a <select> the way a keyboard user does: focus it and move with the arrow keys.
+        A select of the stand drawer is reached by opening the drawer first."""
+        if self.page.evaluate(f"!!document.querySelector({json.dumps(selector)}).closest('#stand-drawer')"):
+            self.open_stand()
         move = self.page.evaluate(f"""(() => {{
           const select = document.querySelector({json.dumps(selector)});
           select.focus();
@@ -188,6 +191,42 @@ class PanelsTestCase(BrowserTestCase):
     def cell(self, option, metric, scope=DECISION):
         return self.text(f'{scope} td[data-option="{option}"][data-metric="{metric}"]')
 
+    def open_stand(self, open_=True):
+        """Open (or close) the stand drawer by its button in the top bar; its controls are out of reach while it is closed."""
+        if (self.body().get("stand") == "open") != open_:
+            self.page.click('[data-testid="stand-toggle"]')
+        self.page.wait_for(f"document.body.dataset.stand === {'open' if open_ else 'closed'!r}"
+                           " && getComputedStyle(document.getElementById('stand-drawer')).visibility === "
+                           f"{'visible' if open_ else 'hidden'!r}", timeout=3.0, message="the stand drawer")
+
+    def unfold_dock(self):
+        """Unfold the decision dock under the stage when it is folded to its bar (its toggle is view/dock.js's)."""
+        self.page.evaluate("""(() => {
+          const toggle = document.querySelector('[data-testid="dock-toggle"], [data-testid="decision-dock-toggle"]');
+          if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click();
+        })()""")
+        self.page.wait_for("document.getElementById('decision').getClientRects().length > 0", timeout=3.0,
+                           message="the decision dock is unfolded")
+
+    def bar(self, option, series="forecast", scope=DECISION):
+        """The people bar of an option as drawn: its data-* counts, its cells by kind and how they are filled."""
+        return self.page.evaluate(f"""(() => {{
+          const bars = [...document.querySelectorAll({json.dumps(scope)} + ' [data-testid="people-bar"]')]
+            .filter((bar) => bar.closest('[data-option="{option}"], [data-run="{option}"]') && bar.dataset.series === '{series}');
+          if (bars.length !== 1) return {{count: bars.length}};
+          const bar = bars[0];
+          const cells = {{}};
+          for (const cell of bar.querySelectorAll('.pb__cell')) {{
+            const kind = [...cell.classList].find((name) => name !== 'pb__cell').slice(4);
+            cells[kind] = (cells[kind] || 0) + 1;
+          }}
+          const filled = [...bar.querySelectorAll('rect.pb__out, rect.pb__in_danger')].map((rect) => rect.style.fill.startsWith('url(') ? 'hatched' : 'solid');
+          return {{count: 1, out: bar.dataset.out, inDanger: bar.dataset.inDanger, noRoute: bar.dataset.noRoute,
+                  total: bar.dataset.total === undefined ? null : bar.dataset.total, cells, filled: [...new Set(filled)],
+                  label: bar.getAttribute('aria-label'),
+                  words: bar.parentNode.querySelector('.pb-words') ? bar.parentNode.querySelector('.pb-words').textContent : null}};
+        }})()""")
+
     def confirm_dialog(self, expect_in_message=()):
         self.page.wait_for("!!document.querySelector('[data-testid=\"dialog\"]')", timeout=3.0)
         message = self.text('[data-testid="dialog"]')
@@ -199,13 +238,14 @@ class PanelsTestCase(BrowserTestCase):
 
     def assert_no_page_overflow(self):
         size = self.page.evaluate("""(() => {
-          const wide = (id) => { const node = document.getElementById(id); return node.scrollWidth - node.clientWidth; };
+          const wide = (id) => { const node = document.getElementById(id); return node ? node.scrollWidth - node.clientWidth : 0; };
           const root = document.documentElement;
           return {page: [root.scrollWidth - innerWidth, root.scrollHeight - innerHeight],
-                  left: wide('left'), decision: wide('decision'), runs: wide('view-runs')};
+                  left: wide('stand-drawer'), right: wide('right'), decision: wide('decision'), runs: wide('view-runs')};
         })()""")
         self.assertEqual(size["page"], [0, 0], "the page itself does not scroll")
-        self.assertLessEqual(size["left"], 0, "the left panel has no horizontal overflow")
+        self.assertLessEqual(size["left"], 0, "the stand drawer has no horizontal overflow")
+        self.assertLessEqual(size["right"], 0, "the right column has no horizontal overflow")
         self.assertLessEqual(size["decision"], 0, "the decision panel has no horizontal overflow")
         self.assertLessEqual(size["runs"], 0, "the runs view has no horizontal overflow")
 
@@ -388,6 +428,8 @@ class CommandOutcomesTest(PanelsTestCase):
 
     def test_commands_are_blocked_with_a_visible_reason_and_come_back(self):
         self.open("paused_heartbeat", "#/list?type=zone")
+        self.unfold_dock()
+        self.unfold_dock()
         self.page.click(f'{DECISION} th[data-column="option-stop-withdraw"] input')
         buttons = """[...document.querySelectorAll('button[data-command-type]')].filter((button) => !button.closest('[hidden]'))
           .map((button) => [button.dataset.commandType, button.dataset.commandTarget || '', button.getAttribute('aria-disabled') === 'true'])"""
@@ -414,7 +456,9 @@ class CommandOutcomesTest(PanelsTestCase):
               return box.width > 0 && box.height > 0;
             }})()""")
             self.assertTrue(visible, group)
+        self.open_stand()
         self.page.click(RESET)
+        self.open_stand(False)
         self.page.click(EXECUTE)
         time.sleep(0.3)
         self.assertFalse(self.exists('[data-testid="dialog"]'), "a switched-off button asks nothing")
@@ -432,6 +476,7 @@ class ResetTest(PanelsTestCase):
         self.assertEqual(self.body()["run"], "run-0005")
         self.assertIn("run-0005", self.text("#reset"))
 
+        self.open_stand()
         self.page.click(RESET)
         self.page.wait_for("!!document.querySelector('[data-testid=\"dialog\"]')", timeout=3.0)
         dialog = self.text('[data-testid="dialog"]')
@@ -498,6 +543,7 @@ class ResetTest(PanelsTestCase):
 class DecisionStatesTest(PanelsTestCase):
     def test_decision_point_shows_causes_pause_options_and_identifiers(self):
         self.open("paused_heartbeat", "#/list?type=option")
+        self.unfold_dock()
         panel = f"{DECISION} .decision"
         self.assertEqual(self.attribute(panel, "data-incident-state"), "active")
         self.assertEqual(self.text(f"{DECISION} .decision__causes"), "закрыт проход: В-12, тик 1210")
@@ -567,6 +613,7 @@ class DecisionStatesTest(PanelsTestCase):
 
     def test_no_forecast_shows_the_words_and_not_one_number(self):
         self.open("no_forecast", "#/list?type=option")
+        self.unfold_dock()
         self.assertEqual(self.text('[data-testid="decision-no-forecast"]'), "Прогноз не опубликован")
         self.assertEqual(self.texts('[data-testid="decision-caption"] li'), [])
         self.assertEqual(self.texts(f"{DECISION} td[data-metric]"), [], "no metric cell without a forecast")
@@ -612,7 +659,7 @@ class DecisionStatesTest(PanelsTestCase):
         self.assertIn("недоступен", observe)
         self.assertNotIn("не выбран", observe)
         self.assertIn("исполнен", self.text(f'{DECISION} [data-testid="decision-options"] th[data-column="option-withdraw-all"]'))
-        self.page.click('[data-testid="right-tab-decision"]')
+        self.unfold_dock()
         self.assert_no_page_overflow()
 
     def test_every_cause_of_the_incident_is_listed(self):
@@ -624,26 +671,25 @@ class DecisionStatesTest(PanelsTestCase):
         self.assertEqual(self.cell("option-observe", "forecast_in_danger"), "2")
         self.assertEqual(self.cell("option-observe", "forecast_danger_exposure_person_s"), "1800 чел.·с")
         self.assertEqual(self.attribute(f'{DECISION} th[data-column="option-observe"]', "data-state"), "executing")
-        # «исполняется» and twice «недоступен» in the headings: the table still fits the panel at 1280x720.
-        self.page.click('[data-testid="right-tab-decision"]')
+        # «исполняется» and twice «недоступен» in the headings: the table still fits the dock at 1280x720.
+        self.unfold_dock()
         self.assert_no_page_overflow()
 
+    # The decision panel without an incident: no children, the note in its attribute, and the dock under the stage
+    # not on the screen at all (the stage takes its room).
     EMPTY_NOTE = """(() => {
       const panel = document.getElementById('decision');
-      document.querySelector('[data-testid="right-tab-decision"]').click();
-      const shown = getComputedStyle(panel, '::before').content;
+      const dock = document.getElementById('decision-dock') || panel;
       return {children: panel.childNodes.length, note: panel.getAttribute('data-empty-note'),
-              shown: shown === 'none' ? null : shown.replace(/^"|"$/g, ''), tab: document.body.dataset.right};
+              shown: dock.getClientRects().length > 0};
     })()"""
 
     def test_no_incident_leaves_the_panel_empty(self):
         self.open("normal")
         self.assertEqual(self.page.evaluate("document.getElementById('decision').childNodes.length"), 0)
         self.assertEqual(self.attribute("#decision", "data-empty-note"), "Инцидентов нет. Варианты не предложены")
-        # 1280x720: the «Решение» tab shows the note in place of the panel.
         self.assertEqual(self.page.evaluate(self.EMPTY_NOTE),
-                         {"children": 0, "note": "Инцидентов нет. Варианты не предложены",
-                          "shown": "Инцидентов нет. Варианты не предложены", "tab": "decision"})
+                         {"children": 0, "note": "Инцидентов нет. Варианты не предложены", "shown": False})
 
     def test_empty_panel_claims_no_incident_only_when_the_model_published_that(self):
         """S5a: without a full snapshot, or without a published incident state, the note says «no data»."""
@@ -654,7 +700,7 @@ class DecisionStatesTest(PanelsTestCase):
         self.page.goto(self.mock.url + "/")
         self.wait_body(boot="ready", snapshot="invalid")
         empty = self.page.evaluate(self.EMPTY_NOTE)
-        self.assertEqual((empty["children"], empty["note"], empty["shown"]), (0, no_data, no_data))
+        self.assertEqual((empty["children"], empty["note"], empty["shown"]), (0, no_data, False))
         self.assertNotIn("Инцидентов нет", self.text("#right") or "")
 
         # The attributes are read again and a full snapshot arrives: now the model itself says that there is no incident.
@@ -662,13 +708,14 @@ class DecisionStatesTest(PanelsTestCase):
         self.page.wait_for("document.getElementById('decision').getAttribute('data-empty-note') === 'Инцидентов нет. Варианты не предложены'",
                            timeout=15.0, message="the note follows the published state")
         self.assertEqual(self.body()["snapshot"], "ok")
-        self.assertEqual(self.page.evaluate(self.EMPTY_NOTE)["shown"], "Инцидентов нет. Варианты не предложены")
+        self.assertEqual(self.page.evaluate(self.EMPTY_NOTE)["note"], "Инцидентов нет. Варианты не предложены")
 
     def test_forecast_without_its_quality_is_marked(self):
         """S5b: forecast numbers whose `forecast_quality` is not published carry a visible mark."""
         mark = "полнота прогноза не опубликована"
         self.page.add_init_script(REWRITE)
         self.open("paused_heartbeat", "#/list?type=option")
+        self.unfold_dock()
         caption = '[data-testid="decision-caption"] li'
         self.assertNotIn(mark, self.text(caption), "a full forecast needs no mark")
         self.page.evaluate("""window.__rewrite = (shift, scene) => {
@@ -700,7 +747,7 @@ class DecisionStatesTest(PanelsTestCase):
         """S5c: one option without the key, or with another one, and the columns are no longer called a comparison."""
         self.page.add_init_script(REWRITE)
         self.open("paused_heartbeat")
-        self.page.click('[data-testid="right-tab-decision"]')
+        self.unfold_dock()
         panel = f"{DECISION} .decision"
         warning = '[data-testid="decision-keys-differ"]'
         ids = '[data-testid="decision-ids"]'
@@ -756,17 +803,20 @@ class JournalAndRunsTest(PanelsTestCase):
         self.assertEqual(by_seq[213], "00:00:00 · тик 0 Участок Г: изменилась опасность — внимание")
         self.assertEqual(by_seq[212], "00:00:00 · тик 0 run-0005: прогон начат")
         self.assertFalse([line for line in lines if line["gap"]])
-        # Folded journal of the compact layout: one line, and it is the newest entry.
+        # Condensed journal of the right column: the latest three entries, one line each, inside the region.
         strip = self.page.evaluate("""(() => {
           const body = document.querySelector('[data-testid="journal"]').getBoundingClientRect();
-          const first = document.querySelector('[data-testid="journal"] li').getBoundingClientRect();
-          const second = document.querySelectorAll('[data-testid="journal"] li')[1].getBoundingClientRect();
-          return {height: body.height, firstInside: first.top >= body.top - 0.5 && first.bottom <= body.bottom + 0.5,
-                  secondHidden: second.top >= body.bottom - 3, oneLine: first.height <= 30};
+          const shown = [...document.querySelectorAll('[data-testid="journal"] li')].filter((li) => li.getClientRects().length > 0);
+          const boxes = shown.map((li) => li.getBoundingClientRect());
+          return {shown: shown.map((li) => Number(li.dataset.seq)),
+                  inside: boxes.every((box) => box.top >= body.top - 0.5 && box.bottom <= body.bottom + 0.5),
+                  oneLine: boxes.every((box) => box.height <= 30)};
         })()""")
-        self.assertEqual(strip, {"height": strip["height"], "firstInside": True, "secondHidden": True, "oneLine": True})
-        self.assertLessEqual(strip["height"], 30)
+        self.assertEqual(strip, {"shown": [218, 217, 216], "inside": True, "oneLine": True})
+        self.assertEqual(self.text('[data-testid="journal-toggle"]'), "Весь журнал (7 событий)")
         self.page.click('[data-testid="journal-toggle"]')
+        self.assertEqual(self.page.evaluate("[...document.querySelectorAll('[data-testid=\"journal\"] li')]"
+                                            ".filter((li) => li.getClientRects().length > 0).length"), 7)
         self.assertGreater(self.page.evaluate("document.querySelector('[data-testid=\"journal\"]').getBoundingClientRect().height"), 150)
 
     def test_journal_says_where_events_are_missing(self):
@@ -801,7 +851,7 @@ class JournalAndRunsTest(PanelsTestCase):
         self.assertIn("Показаны последние 10 завершённых прогонов", self.text("#view-runs"))
         groups = self.page.evaluate(f"""[...document.querySelectorAll('{table} tbody')].map((body) => ({{
           kind: body.dataset.group, key: body.dataset.comparisonKey,
-          title: body.querySelector('.runs-group').textContent.replace(/\\u00a0/g, ' '),
+          title: body.querySelector('.runs-group__title').textContent.replace(/\\u00a0/g, ' '),
           runs: [...body.querySelectorAll('tr[data-series="actual"]')].map((row) => [row.dataset.run, row.dataset.comparable]),
         }}))""")
         self.assertEqual(groups, [
@@ -810,6 +860,9 @@ class JournalAndRunsTest(PanelsTestCase):
             {"kind": "comparison", "key": "ck-cd9c9d8910d8", "title": "Сравнение: 2 прогона с ключом ck-cd9c9d8910d8",
              "runs": [["run-0001", "true"], ["run-0002", "true"], ["run-0003", "false"]]},
         ])
+        # One key is one common group: its size is published where a run of the key says that everyone was out.
+        self.assertEqual(self.text(f'{table} tbody[data-comparison-key="ck-cd9c9d8910d8"] .runs-group__size'), "общая группа 14")
+        self.assertFalse(self.exists(f'{table} tbody[data-comparison-key="ck-7b107a5ea7bd"] .runs-group__size'))
 
         def run(name, series="actual"):
             row = f'{table} tr[data-run="{name}"][data-series="{series}"]'
@@ -887,7 +940,7 @@ class JournalAndRunsTest(PanelsTestCase):
             const group = row.closest('tbody');
             return {ending: about('run-ending'), mark: about('run-mark'), comparable: row.dataset.comparable,
                     cells: [cell('all_out'), cell('last_out_s'), cell('out')],
-                    group: [group.dataset.group, group.querySelector('.runs-group').textContent]};
+                    group: [group.dataset.group, group.querySelector('.runs-group__title').textContent]};
           };
           const out = {before: read('run-0001')};
           app.store.update({archive: withRun('run-0001', (values) => { delete values.completion_reason; })});
@@ -929,6 +982,106 @@ class JournalAndRunsTest(PanelsTestCase):
         self.assertEqual(got["restored"], got["before"])
 
 
+class PeopleBarTest(PanelsTestCase):
+    """The people bar of the dock and of the archive: one cell per person of the common group, published counts only."""
+
+    def test_detour_decision_bars_count_the_common_group(self):
+        self.open("paused_heartbeat")
+        self.unfold_dock()
+        # The size of the group: «Вывести всех» publishes all_out = true with out = 14 (CONTRACT.md 6).
+        self.assertEqual(self.attribute('[data-testid="decision-group"]', "data-total"), "14")
+        self.assertIn("Общая группа решения — 14 человек", self.text('[data-testid="decision-group"]'))
+        expected = {
+            "option-observe": ({"out": "0", "inDanger": "0", "noRoute": "0", "total": "14"}, {"left": 14}, "вышли 0 из 14 · 14 ещё под землёй"),
+            "option-stop-withdraw": ({"out": "4", "inDanger": "0", "noRoute": "0", "total": "14"}, {"out": 4, "left": 10},
+                                     "вышли 4 из 14 · 10 ещё под землёй"),
+            "option-withdraw-all": ({"out": "14", "inDanger": "0", "noRoute": "0", "total": "14"}, {"out": 14}, "вышли 14 из 14"),
+        }
+        for option, (counts, cells, words) in expected.items():
+            with self.subTest(option=option):
+                bar = self.bar(option, scope='[data-testid="decision-options"]')
+                self.assertEqual(bar["count"], 1, "one bar per option")
+                self.assertEqual({key: bar[key] for key in counts}, counts)
+                self.assertEqual(bar["cells"], cells, "one cell per person, and nothing else")
+                self.assertEqual(plain(bar["words"]), words)
+                self.assertEqual(plain(bar["label"]), words, "the bar says its words to assistive technology")
+                if cells.get("out"):
+                    self.assertEqual(bar["filled"], ["hatched"], "a forecast is hatched, never solid")
+
+    def test_no_path_bars_say_the_group_is_not_published(self):
+        self.open("no_path")
+        self.js(APP + "return app.ctx.sendCommand('condition.close_working', 'w-07');")
+        self.page.wait_for("document.body.dataset.runState === 'paused' && !!document.querySelector('[data-testid=\"decision-options\"] th[data-state=\"offered\"]')",
+                           timeout=8.0, message="the decision point")
+        self.unfold_dock()
+        # No option brings everyone out: the size of the group is not published, and nothing is guessed.
+        self.assertIsNone(self.attribute('[data-testid="decision-group"]', "data-total"))
+        self.assertIn("Размер общей группы модель не публикует", self.text('[data-testid="decision-group"]'))
+        expected = {"option-observe": ("0", {"no_route": 2, "unknown": 1}, "вышли 0 из ? · 2 без маршрута"),
+                    "option-stop-withdraw": ("0", {"no_route": 2, "unknown": 1}, "вышли 0 из ? · 2 без маршрута"),
+                    "option-withdraw-all": ("12", {"out": 12, "no_route": 2, "unknown": 1}, "вышли 12 из ? · 2 без маршрута")}
+        for option, (out, cells, words) in expected.items():
+            with self.subTest(option=option):
+                bar = self.bar(option, scope='[data-testid="decision-options"]')
+                self.assertEqual((bar["out"], bar["noRoute"], bar["inDanger"], bar["total"]), (out, "2", "0", None))
+                self.assertEqual(bar["cells"], cells, "the published counts, then an open «?» end")
+                self.assertEqual(plain(bar["words"]), words)
+
+    def test_incomplete_withdrawal_fact_bar_is_solid_and_not_everyone_is_out(self):
+        self.open("withdrawal_incomplete")
+        self.unfold_dock()
+        fact = '[data-testid="decision-fact"][data-option="option-withdraw-all"]'
+        actual = self.bar("option-withdraw-all", series="fact", scope=fact)
+        self.assertEqual((actual["out"], actual["noRoute"], actual["inDanger"], actual["total"]), ("12", "2", "0", None))
+        self.assertEqual(actual["cells"], {"out": 12, "no_route": 2, "unknown": 1})
+        self.assertEqual(actual["filled"], ["solid"], "a fact is solid")
+        self.assertEqual(plain(actual["words"]), "вышли 12 из ? · 2 без маршрута")
+        forecast = self.bar("option-withdraw-all", series="forecast", scope=fact)
+        self.assertEqual((forecast["out"], forecast["noRoute"]), ("12", "2"))
+        self.assertEqual(forecast["filled"], ["hatched"], "its forecast beside it stays hatched")
+        # The line of the folded dock says the same, and never a time.
+        summary = plain(self.text('#decision-summary') or self.text('.decision__summary'))
+        self.assertEqual(summary, "факт прогона, Вариант 3 — Вывести всех: вышли 12 из ? · 2 без маршрута")
+
+    def test_a_time_only_where_everyone_is_out_and_forecast_apart_from_fact(self):
+        self.open("paused_heartbeat")
+        self.unfold_dock()
+        options = '[data-testid="decision-options"]'
+        cells = self.page.evaluate(f"""Object.fromEntries([...document.querySelectorAll('{options} td[data-metric$="last_out_s"], {options} td[data-metric$="all_out"]')]
+          .map((td) => [td.dataset.option + ' ' + td.dataset.metric, [td.textContent.replace(/\\u00a0/g, ' '), td.firstChild.className]]))""")
+        self.assertEqual(cells["option-withdraw-all forecast_all_out"][0], "да")
+        self.assertEqual(cells["option-withdraw-all forecast_last_out_s"][0], "9 мин 40 с")
+        for option in ("option-observe", "option-stop-withdraw"):
+            self.assertEqual(cells[f"{option} forecast_all_out"][0], "не все вышли")
+            self.assertEqual(cells[f"{option} forecast_last_out_s"][0], "нет: не все вышли", "no time without everyone out")
+        self.assertTrue(all("val--forecast" in cls and "val--fact" not in cls for _, cls in cells.values()), cells)
+        # Neutral: the options are not ranked.
+        words = plain(self.text(DECISION)).lower()
+        for word in ("лучш", "рекоменд", "оптимал"):
+            self.assertNotIn(word, words)
+        self.assertFalse(self.exists(f"{DECISION} [class*='best'], {DECISION} [class*='rank']"))
+
+        self.open("withdrawal_incomplete")
+        self.unfold_dock()
+        fact = '[data-testid="decision-fact"][data-option="option-withdraw-all"]'
+        self.assertEqual(self.cell("option-withdraw-all", "actual_all_out", fact), "не все вышли")
+        self.assertRegex(self.cell("option-withdraw-all", "actual_last_out_s", fact), NO_DIGIT)
+        classes = self.page.evaluate(f"""[...document.querySelectorAll('{fact} td[data-metric^="actual_"] > span')].map((span) => span.className)""")
+        self.assertTrue(classes and all("val--fact" in cls or "val--none" in cls for cls in classes), classes)
+
+        # The archive: the same rule in the fact rows, and the bars of one key share the common group.
+        self.open("normal", "#/runs")
+        table = '[data-testid="runs-table"]'
+        self.page.wait_for(f"document.querySelectorAll('{table} tr[data-series=\"actual\"]').length === 4", timeout=6.0)
+        self.assertEqual(self.text(f'{table} tr[data-run="run-0002"][data-series="actual"] td[data-metric="last_out_s"]'), "9 мин 40 с")
+        self.assertEqual(self.text(f'{table} tr[data-run="run-0001"][data-series="actual"] td[data-metric="last_out_s"]'), "нет: не все вышли")
+        first = self.bar("run-0001", series="fact", scope=f'{table} tr[data-run="run-0001"][data-series="actual"]')
+        self.assertEqual((first["out"], first["total"], first["cells"]), ("4", "14", {"out": 4, "left": 10}))
+        cut = self.bar("run-0003", series="fact", scope=f'{table} tr[data-run="run-0003"][data-series="actual"]')
+        self.assertEqual((cut["out"], cut["total"]), ("3", "14"))
+        self.assertEqual(self.attribute(f'{table} tr[data-run="run-0003"][data-series="actual"]', "data-ending"), "interrupted")
+
+
 class KeyboardTest(PanelsTestCase):
     def tab_until(self, predicate, limit=40):
         """Press Tab until the focused element satisfies `predicate`; return the trail of focused elements."""
@@ -944,18 +1097,26 @@ class KeyboardTest(PanelsTestCase):
 
     def test_tab_order_enter_space_and_the_dialog(self):
         self.open("normal")
+        # The stand drawer is closed and inert: Tab passes it by. Its button in the top bar opens it from the keyboard.
         self.page.evaluate("document.activeElement && document.activeElement.blur()")
-        trail = self.tab_until(lambda info: info["testid"] == "btn-reset", limit=60)
-        left = [(item["tag"], item["id"] or item["dataset"].get("commandType") or item["testid"]) for item in trail
-                if item["id"].startswith(("condition-", "action-")) or item["dataset"].get("commandType")]
-        self.assertEqual(left, [
+        self.page.press("Tab")
+        self.assertEqual(self.page.focus_info()["testid"], "stand-toggle")
+        self.page.press("Enter")
+        self.page.wait_for("document.body.dataset.stand === 'open'", timeout=2.0)
+        self.assertEqual(self.page.focus_info()["testid"], "stand-close", "the focus moves into the opened drawer")
+        trail = self.tab_until(lambda info: info["testid"] == "btn-reset", limit=30)
+        trail += self.tab_until(lambda info: info["dataset"].get("commandType") == "action.resume_zone", limit=60)
+        controls = [(item["tag"], item["id"] or item["dataset"].get("commandType") or item["testid"]) for item in trail
+                    if item["id"].startswith(("condition-", "action-")) or item["dataset"].get("commandType")]
+        self.assertEqual(controls, [
             ("button", "run.start_preset"), ("button", "run.start_preset"),
             ("select", "condition-working_closed"), ("button", "condition.close_working"),
             ("select", "condition-sensor_lost"), ("button", "condition.sensor_lost"),
-            ("select", "condition-instability"), ("button", "condition.instability_on"),
+            ("select", "condition-instability"), ("button", "condition.instability_on"), ("button", "run.reset"),
             ("select", "action-zone"), ("button", "action.stop_zone"), ("button", "action.withdraw_zone"),
-            ("button", "action.resume_zone"), ("button", "run.reset"),
-        ], "the stand conditions come before the dispatcher's actions, and every control is a Tab stop")
+            ("button", "action.resume_zone"),
+        ], "the stand controls are one group in the drawer, the dispatcher's actions another, and every control is a Tab stop")
+        self.page.evaluate("document.querySelector('[data-testid=\"btn-reset\"]').focus()")
 
         # Enter on the reset button opens the dialog; focus is inside and stays inside.
         self.page.press("Enter")
@@ -1012,23 +1173,38 @@ class KeyboardTest(PanelsTestCase):
 
     def test_the_two_groups_differ_by_heading_frame_and_button_shape(self):
         self.open("normal")
+        self.open_stand()
+        # Read the settled colours: the dispatcher button fades in from its blocked look when commands unblock.
+        self.page.wait_for(f"document.body.dataset.commands === 'enabled' && "
+                           f"document.querySelector({json.dumps(WITHDRAW)}).getAttribute('aria-disabled') !== 'true'",
+                           message="commands enabled")
+        self.page.evaluate("document.getAnimations().forEach((animation) => animation.finish())")
         look = self.page.evaluate(f"""(() => {{
           const style = (selector, ...names) => {{
             const computed = getComputedStyle(document.querySelector(selector));
             return names.map((name) => computed[name]);
           }};
+          const tag = (selector) => getComputedStyle(document.querySelector(selector), '::before').content;
           return {{
+            drawer: document.querySelector('[data-testid="stand-drawer"]').textContent.slice(0, 80),
             headings: ['#conditions h2', '#actions h2'].map((selector) => document.querySelector(selector).textContent),
             subtitles: ['#conditions .panel__subtitle', '#actions .panel__subtitle'].map((selector) => document.querySelector(selector).textContent),
-            frames: ['#conditions', '#actions'].map((selector) => style(selector, 'borderTopStyle', 'borderTopWidth')),
+            frames: [style('#stand-drawer', 'borderRightStyle'), style('#actions', 'borderTopStyle')],
             buttons: [{json.dumps(CONDITIONS + ' button[data-command-type="run.start_preset"]')}, {json.dumps(WITHDRAW)}]
-              .map((selector) => style(selector, 'borderTopStyle', 'borderTopWidth', 'borderTopLeftRadius')),
+              .map((selector) => style(selector, 'borderTopStyle', 'backgroundColor')),
+            tags: [tag({json.dumps(CONDITIONS + ' button[data-command-type="run.start_preset"]')}), tag({json.dumps(WITHDRAW)})],
           }};
         }})()""")
+        self.assertIn("Управление стендом", look["drawer"])
+        self.assertIn("условия эксперимента, не действия диспетчера", look["drawer"])
         self.assertEqual(look["headings"], ["Условия сценария (стенд)", "Действия диспетчера"])
         self.assertEqual(look["subtitles"], ["что происходит с шахтой", "что решает диспетчер"])
-        self.assertEqual(look["frames"], [["dashed", "2px"], ["solid", "3px"]])
-        self.assertEqual(look["buttons"], [["dashed", "1px", "13px"], ["solid", "2px", "0px"]])
+        self.assertEqual(look["frames"], [["dashed"], ["solid"]])
+        # Stand: chalk dashed outline, never filled, with the «стенд» tag. Dispatcher: solid copper fill.
+        self.assertEqual([style for style, _ in look["buttons"]], ["dashed", "solid"])
+        self.assertEqual(look["buttons"][0][1], "rgba(0, 0, 0, 0)")
+        self.assertRegex(look["buttons"][1][1], r"^rgba?\(200, 131, 79(, 1)?\)$")
+        self.assertEqual(look["tags"], ['"стенд"', "none"])
 
     def test_selects_follow_the_selected_object_until_the_user_chooses(self):
         self.open("normal", f"#/list?type=sensor&sel={NS}:sens-ext-05")
@@ -1058,6 +1234,7 @@ class StoriesTest(PanelsTestCase):
         self.assertEqual(self.page.evaluate(f"document.querySelector('{WORKING_SELECT}').value"), working,
                          "the working selected in the list is the target")
         self.assertEqual(self.page.evaluate("document.getElementById('decision').childNodes.length"), 0)
+        self.open_stand()
         self.page.click(CLOSE)
         active = f'{CONDITIONS} [data-testid="conditions-active"] li[data-condition="working_closed:{working}"]'
         self.page.wait_for(f"!!document.querySelector({json.dumps(active)})", timeout=5.0)
@@ -1070,6 +1247,9 @@ class StoriesTest(PanelsTestCase):
         self.assertEqual(self.attribute(f"{DECISION} .decision", "data-decision-id"), "d-0005-01")
         self.assertEqual(self.attribute(f"{DECISION} .decision", "data-comparison"), "shared")
         self.assertEqual(len(self.texts(f"{DECISION} thead th[data-column]")), 3)
+        # The drawer is closed again and the dock unfolded: the options are in reach.
+        self.open_stand(False)
+        self.unfold_dock()
         return active
 
     def run_option(self, option, name):
@@ -1107,6 +1287,7 @@ class StoriesTest(PanelsTestCase):
         self.assertEqual(self.cell("option-stop-withdraw", "forecast_out", '[data-testid="decision-options"]'), "4")
 
         # Undo of the condition after the withdrawal: the passage opens, people stay out, zones stay stopped.
+        self.open_stand()
         self.page.click(active + " button")
         self.page.wait_for(f"!document.querySelector({json.dumps(active)})", timeout=5.0)
         self.assertEqual(self.text(f"{CONDITIONS} [data-testid=\"conditions-active\"] + p"), "нет активных")
@@ -1175,6 +1356,7 @@ class StoriesTest(PanelsTestCase):
             ["p-no-path", "Закрыть В-07 на 60-й секунде", "пути нет · Закрыть выработку: В-07 — в 00:01:00 модельного времени"],
         ])
         preset = f'{CONDITIONS} button[data-command-type="run.start_preset"][data-command-target="p-detour"]'
+        self.open_stand()
         self.page.click(preset)
         self.page.wait_for("!!document.querySelector('[data-testid=\"dialog\"]')", timeout=3.0)
         self.page.click('[data-testid="dialog-cancel"]')
@@ -1219,9 +1401,9 @@ class StoriesTest(PanelsTestCase):
                   groups: ['conditions', 'actions', 'reset'].map((id) => document.getElementById(id).childElementCount > 0),
                   runs: !!document.querySelector('[data-testid="runs-table"]'),
                   journal: document.querySelector('[data-testid="journal"]').childElementCount > 0,
-                  offWithoutReason: [...document.querySelectorAll('.group button[data-command-type][aria-disabled="true"]')]
+                  offWithoutReason: [...document.querySelectorAll(':is(.group, .stand__part) button[data-command-type][aria-disabled="true"]')]
                     .filter((button) => {
-                      const group = button.closest('.group');
+                      const group = button.closest('.group, .stand__part');
                       const block = group.querySelector('.block-note');
                       const why = button.parentElement.querySelector('.note--why') || button.closest('li, .group__part, .act')?.querySelector('.note--why');
                       const select = button.parentElement.querySelector('select');

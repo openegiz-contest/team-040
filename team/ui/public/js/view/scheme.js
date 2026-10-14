@@ -29,6 +29,8 @@ const PAD_Y = 2;
 /** How far the focus frame of a zone tag stands off its box. */
 const FOCUS_GAP = 5;
 const PATTERNS = 'sch';
+/** Thickness of a slab in the axonometric view, px: its sawn front and side faces. Not to scale. */
+const SLAB_PX = 10;
 const RULER_M = [10, 20, 50, 100, 200, 500, 1000, 2000];
 // Orders of the candidates of geo.around. A label of a working never lies along it.
 const OFF_LINE = [2, 8, 9, 3, 10, 11, 4, 5, 6, 7];
@@ -197,12 +199,62 @@ export function mount(root, ctx) {
       const level = plan ? levels.find((entry) => entry.name === plan) : levels[index];
       const label = level ? (plan ? UI.scheme.planOf(level.label) : level.label) : '';
       const at = plan ? [corners[3][0] + 8, corners[3][1] + 16] : [corners[0][0] + 10, corners[0][1] - 8];
-      return {key: `plane-${index}`, corners, label, at};
+      return {key: `plane-${index}`, corners, label, at, edges: plan ? null : slabEdges(corners)};
     });
     const dots = nodePoints.filter((entry) => !plan || entry.node.level === plan)
       .map((entry) => ({name: entry.name, at: view.project(entry.point)}));
     const barM = RULER_M.find((metres) => metres * view.scale >= 56) || RULER_M[RULER_M.length - 1];
     return {lines, drawn, samples, planes, dots, plan, nodes, project: view.project, barM, barPx: barM * view.scale};
+  }
+
+  /**
+   * The sawn faces of a slab under its top face (front and right side) and two strata lines on the front.
+   * Drawn from the projected corners only: front-left, front-right, back-right, back-left.
+   */
+  function slabEdges([a, b, c]) {
+    const down = (point, by = SLAB_PX) => [point[0], point[1] + by];
+    const strata = [0.36, 0.7].map((share) => geo.linePath([down(a, SLAB_PX * share), down(b, SLAB_PX * share)])).join('');
+    return {
+      front: `${geo.linePath([a, b, down(b), down(a)])}Z`,
+      side: `${geo.linePath([b, c, down(c), down(b)])}Z`,
+      strata,
+    };
+  }
+
+  /** A worker under ground whose published position can be drawn on this picture. */
+  function placed(worker) {
+    const {values} = worker;
+    return typeof values.at_working === 'string' && typeof values.offset_m === 'number' && scene.lines.has(values.at_working);
+  }
+
+  /** Codes of the workers under ground whose position is not published (or names no known working). */
+  function unplacedCodes(model) {
+    return thingsOfKind(model, 'worker').filter((worker) => isUnderground(worker) && worker.hasState && !placed(worker))
+      .map((worker) => worker.label);
+  }
+
+  /**
+   * Boxes in picture coordinates of what lies over the picture: the legend chip and the controls of the
+   * stage. A box larger than a quarter of the picture is a container, not a control, and is left out.
+   */
+  function overlays() {
+    const frame = root.getBoundingClientRect();
+    const nodes = [ctx.roots.legend && ctx.roots.legend.querySelector('.legend__chip'), note,
+      ...(ctx.roots.stageHud ? ctx.roots.stageHud.children : [])];
+    const boxes = [];
+    for (const node of nodes) {
+      if (!node) continue;
+      for (const rect of node.getClientRects()) {
+        const x = Math.max(rect.left, frame.left);
+        const y = Math.max(rect.top, frame.top);
+        const w = Math.min(rect.right, frame.right) - x;
+        const h = Math.min(rect.bottom, frame.bottom) - y;
+        if (w > 0 && h > 0 && w * h < frame.width * frame.height / 4) {
+          boxes.push({x: x - frame.left - 4, y: y - frame.top - 4, w: w + 8, h: h + 8});
+        }
+      }
+    }
+    return boxes;
   }
 
   /** Where a published offset of a working is on the screen, with the direction of the working there. */
@@ -309,14 +361,24 @@ export function mount(root, ctx) {
 
     // Planes and their captions.
     reconcile(layer.planes, scene.planes, (plane) => plane.key,
-      () => s('g', {class: 'plane'}, s('path', {class: 'plane__face'}), s('text', {class: 'plane__label'})),
+      () => s('g', {class: 'plane'}, s('path', {class: 'plane__side'}), s('path', {class: 'plane__front'}),
+        s('path', {class: 'plane__strata'}), s('path', {class: 'plane__face'}), s('text', {class: 'plane__label'})),
       (g, plane) => {
-        setAttrs(g.firstChild, {d: `${geo.linePath(plane.corners)}Z`});
-        setAttrs(g.lastChild, {x: plane.at[0], y: plane.at[1], text: plane.label});
-        placer.block({x: plane.at[0] - 2, y: plane.at[1] - 12, w: measure(plane.label, true) * 1.1 + 4, h: 16}, 200);
+        const [side, front, strata, face, label] = g.children;
+        setAttrs(side, {d: plane.edges ? plane.edges.side : null});
+        setAttrs(front, {d: plane.edges ? plane.edges.front : null});
+        setAttrs(strata, {d: plane.edges ? plane.edges.strata : null});
+        setAttrs(face, {d: `${geo.linePath(plane.corners)}Z`});
+        setAttrs(label, {x: plane.at[0], y: plane.at[1], text: plane.label});
+        placer.block({x: plane.at[0] - 2, y: plane.at[1] - 13, w: measure(plane.label, true) * 1.15 + 4, h: 17}, 200);
       });
-    // The line of the scale and the note under the picture, as long as its words are.
-    placer.block({x: 0, y: size.h - 17, w: Math.min(size.w, Math.round(scene.barPx + measure(UI.scheme.note, false) + 70)), h: 17}, 400);
+    // The scale with its note, and whatever lies over the picture (the legend chip, the controls of the
+    // stage): labels keep off them.
+    bar.style.width = `${Math.round(scene.barPx)}px`;
+    setText(barText, text.quantity(scene.barM, 'm'));
+    setText(lostText, model.hasSnapshot ? (unplacedCodes(model).length > 0 ? UI.scheme.noPosition(unplacedCodes(model).join(', ')) : '') : UI.list.noState);
+    lostText.hidden = lostText.textContent === '';
+    for (const box of overlays()) placer.block(box, 400);
 
     // Workings.
     const workings = thingsOfKind(model, 'working').filter((working) => scene.drawn.has(working.name));
@@ -403,17 +465,10 @@ export function mount(root, ctx) {
 
     // Workers: grouped by the data (working and stretch of offset), never by distance on the screen.
     const groups = new Map();
-    const unplaced = [];
     for (const worker of thingsOfKind(model, 'worker')) {
       const {values} = worker;
       // A worker who is out is not drawn under ground, whatever position is still published for them.
-      if (!isUnderground(worker)) continue;
-      const known = typeof values.at_working === 'string' && typeof values.offset_m === 'number' && scene.lines.has(values.at_working);
-      if (!known) {
-        if (worker.hasState) unplaced.push(worker.label);
-        continue;
-      }
-      if (!scene.drawn.has(values.at_working)) continue;
+      if (!isUnderground(worker) || !placed(worker) || !scene.drawn.has(values.at_working)) continue;
       const groupKey = `${values.at_working}|${Math.floor(values.offset_m / BIN_M)}`;
       if (!groups.has(groupKey)) groups.set(groupKey, []);
       groups.get(groupKey).push(worker);
@@ -665,11 +720,6 @@ export function mount(root, ctx) {
       setAttrs(g, {class: ['tag', spec.glide && 'move-transition', ...[].concat(spec.cls)]});
       updateTag(g, spec);
     });
-
-    bar.style.width = `${Math.round(scene.barPx)}px`;
-    setText(barText, text.quantity(scene.barM, 'm'));
-    setText(lostText, model.hasSnapshot ? (unplaced.length > 0 ? UI.scheme.noPosition(unplaced.join(', ')) : '') : UI.list.noState);
-    lostText.hidden = lostText.textContent === '';
 
     if (jump) {
       // The new positions are laid out with the glide switched off; no frame callback is needed for that.

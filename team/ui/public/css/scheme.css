@@ -1,110 +1,132 @@
-/* Scheme, legend and card. An engineering drawing: thin lines, few colours,
-   no shadows, filters or animation. A state is told by shape, hatch, line
-   style or a sign first; colour only repeats it. */
+/* The scheme mode of the stage and the legend: the mine as a cutaway model on
+   a graphite desk. Each level is a slab of stone; the workings are channels
+   carved in its top face (dark recess, pale floor). A state is told by shape,
+   hatch, line style or a sign first; colour only repeats it. Hazard colours
+   mean hazard and nothing else; copper marks what the user acts on,
+   verdigris the computed routes and available exits, chalk the marks of the
+   stand (a command of this page that is not confirmed yet). No shadows,
+   filters, gradients or animation. Tokens: base.css (spec 1.1). */
 
 /* ---- the picture ---------------------------------------------------------- */
 
-.scheme { background: var(--c-panel); }
-.scheme-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; }
+.scheme { background: var(--ink-0); }
+.scheme-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; font-family: var(--font-sans); }
 .scheme-svg .obj { cursor: pointer; }
 .scheme-svg.is-jump .move-transition { transition: none; }
-/* The default of every shape, with no specificity: each symbol below overrides it, in the scheme and in the legend alike. */
-:where(.scheme-svg, .legend svg) :where(path, circle, rect) {
-  fill: none; stroke: var(--c-text); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round;
+/* The default of every shape, with no specificity: each symbol below overrides it, in the scheme, the legend
+   and every standalone symbol (icons.js symbol()) alike. */
+:where(.scheme-svg, .legend svg, svg.symbol) :where(path, circle, rect) {
+  fill: none; stroke: var(--dust-1); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round;
 }
 .scheme-svg :focus-visible { outline: none; }
-/* Keyboard focus on the scheme: a dashed frame around the object, an element of its own (icons.js). The
-   selection is the solid mark on the object itself. The two differ by what is drawn, not by colour or
+/* Keyboard focus on the scheme: a dashed copper frame around the object, an element of its own (icons.js).
+   The selection is the solid mark on the object itself. The two differ by what is drawn, not by colour or
    weight, and an object that is both selected and focused shows both. */
 .obj__focus { display: none; pointer-events: none; }
 .scheme-svg .obj:focus-visible > .obj__focus {
-  display: inline; fill: none; stroke: var(--c-focus); stroke-width: 3; stroke-dasharray: 7 4;
+  display: inline; fill: none; stroke: var(--copper); stroke-width: 3; stroke-dasharray: 7 4;
   stroke-linecap: butt; stroke-linejoin: miter;
 }
 
+/* The scale and the honest note on the drawing: bottom right, the legend takes the bottom left. */
 .scheme__note {
-  position: absolute; left: 8px; bottom: 5px; right: 8px;
-  display: flex; align-items: center; gap: 6px;
-  color: var(--c-muted); font-size: var(--fs-xs); pointer-events: none;
+  position: absolute; right: 12px; bottom: 10px; max-width: calc(100% - 24px);
+  display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 8px;
+  color: var(--dust-3); font-size: 12px; line-height: 1.3; pointer-events: none;
 }
-.scheme__bar { height: 5px; border: 1px solid var(--c-muted); border-top: 0; }
-.scheme__lost { margin-left: auto; color: var(--c-unknown); font-style: italic; }
+.scheme__bar { flex: none; height: 6px; border: 1px solid var(--dust-2); border-top: 0; }
+.scheme__note .mono { color: var(--dust-2); font-variant-numeric: tabular-nums; }
+.scheme__lost { flex-basis: 100%; text-align: right; color: var(--dust-1); font-style: italic; }
 .scheme__empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  padding: var(--sp-5); color: var(--c-unknown); font-weight: 700; text-align: center;
+  padding: 16px; color: var(--dust-2); font-size: 16px; font-weight: 500; text-align: center;
 }
 
-.plane .plane__face { fill: #eef1ee; stroke: var(--c-border); stroke-width: 1; }
-.plane__label { fill: var(--c-text); font-size: 12px; font-weight: 700; }
-.scheme-svg .node { fill: var(--c-border-strong); stroke: none; }
+/* ---- slabs of the levels ------------------------------------------------------ */
 
-/* ---- hazard: the band of a working ------------------------------------------ */
+.plane .plane__face { fill: var(--stone-2); stroke: var(--stone-3); stroke-width: 1; stroke-linejoin: miter; }
+.plane .plane__front { fill: var(--stone-1); stroke: none; }
+.plane .plane__side { fill: var(--ink-3); stroke: none; }
+.plane .plane__strata { stroke: var(--ink-2); stroke-width: 1; stroke-linecap: butt; opacity: .7; }
+.plane__label { fill: var(--dust-1); font-size: 13px; font-weight: 600; letter-spacing: .02em; stroke: none; }
+.scheme-svg .node { fill: var(--ink-2); stroke: none; }
 
-.hatch rect { stroke: none; }
-.hatch--attention rect { fill: var(--c-attention-bg); }
-.hatch--attention path { stroke: var(--c-attention-border); stroke-width: 1.3; stroke-linecap: butt; }
-.hatch--danger rect { fill: var(--c-danger-bg); }
-.hatch--danger path { stroke: var(--c-danger); stroke-width: 1; stroke-linecap: butt; }
+/* ---- hazard: the floor of a channel ------------------------------------------ */
+
+.hatch rect, .hatch path { stroke-linecap: butt; }
+.hatch--attention rect { fill: var(--stone-3); stroke: none; }
+.hatch--attention path { stroke: var(--attention); stroke-width: 3.2; }
+.hatch--danger rect { fill: var(--ink-0); stroke: none; }
+.hatch--danger path { stroke: var(--danger); stroke-width: 1.1; }
+.hatch--unknown rect { fill: var(--ink-2); stroke: none; }
+.hatch--unknown path { stroke: var(--unknown); stroke-width: .9; }
 
 .working .working__hit { stroke: transparent; stroke-width: 16; pointer-events: stroke; }
-.working .working__band { stroke: var(--c-border-strong); stroke-width: 1.2; stroke-linejoin: miter; stroke-linecap: butt; }
-.working[data-hazard="normal"] .working__band { fill: #fff; }
-.working[data-hazard="attention"] .working__band { stroke: var(--c-attention); stroke-width: 1.5; }
-.working[data-hazard="danger"] .working__band { stroke: var(--c-danger); stroke-width: 3; }
-.working[data-hazard="unknown"] .working__band { fill: var(--c-panel); stroke: var(--c-unknown-border); stroke-width: 1.5; stroke-dasharray: 5 3.5; }
-.working.working--last-danger .working__band { stroke: var(--c-danger); stroke-width: 3; stroke-dasharray: 6 4; }
-/* No sensors by design: a bare thin line. Between two levels it is heavier, so that the links of the levels stand out. */
-.working .working__line { stroke: var(--c-border-strong); stroke-width: 1.7; }
-.working--between .working__line { stroke: var(--c-text); stroke-width: 3; }
+/* The dark walls of the channel: a wider line under the floor. */
+.working .working__recess { stroke: var(--ink-0); stroke-width: 13; stroke-linecap: butt; stroke-linejoin: miter; }
+.working .working__band { fill: var(--dust-2); stroke: var(--ink-1); stroke-width: 1; stroke-linejoin: miter; stroke-linecap: butt; }
+.working[data-hazard="attention"] .working__band { stroke: var(--attention); stroke-width: 1.6; }
+.working[data-hazard="danger"] .working__band { stroke: var(--danger); stroke-width: 3; }
+/* Unknown is fog, never the plain floor of «норма»: a hatch, a dashed rim and a «?». */
+.working[data-hazard="unknown"] .working__band { stroke: var(--unknown); stroke-width: 1.5; stroke-dasharray: 5 3.5; }
+.working.working--last-danger .working__band { stroke: var(--danger); stroke-width: 3; stroke-dasharray: 6 4; }
+/* No sensors by design: a narrow groove in the stone, no floor and no sign. Between two levels it is a
+   heavier cased line, so that the links of the levels (shaft, ramp, raise) stand out. */
+.working .working__line { stroke: var(--ink-1); stroke-width: 3; }
+.working--between .working__line { stroke: var(--steel); stroke-width: 4; }
 .working--between[data-kind] .working__line { stroke-linecap: butt; }
 
-.working .working__bars { stroke: var(--c-text); stroke-width: 3.2; stroke-linecap: butt; }
-.working .working__cross { stroke: var(--c-text); stroke-width: 2.2; }
-.working__mark .working__plate { fill: var(--c-panel); stroke: none; }
+/* A closed passage: a barricade across the channel, graphite and chalk-white, not a hazard colour. */
+.working .working__barrier .working__plate { fill: var(--ink-0); stroke: none; }
+.working .working__bars { stroke: var(--noroute); stroke-width: 3.2; stroke-linecap: butt; }
+.working .working__cross { stroke: var(--noroute); stroke-width: 2.2; }
+.working__mark .working__plate { fill: var(--ink-0); stroke: none; }
 .sign path, .sign circle, .sign rect { stroke-width: 1.5; }
-.sign--danger path, .sign--lastDanger path { stroke: var(--c-danger); }
-.sign--attention path { stroke: var(--c-attention); }
-.sign--unknown path, .sign--unknown circle, .sign--question path { stroke: var(--c-unknown); }
-.sign--pending path, .sign--pending circle { stroke: var(--c-stand); }
+.sign--danger path, .sign--lastDanger path { stroke: var(--danger); }
+.sign--attention path { stroke: var(--attention); }
+.sign--unknown path, .sign--unknown circle, .sign--question path { stroke: var(--unknown); }
+.sign--pending path, .sign--pending circle { stroke: var(--chalk); }
+.sign--blocked circle, .sign--blocked path { stroke: var(--dust-1); }
+.sign--stopped rect, .sign--stopped path, .sign--leaving path { stroke: var(--dust-1); }
 
-.working.is-selected .working__hit { stroke: var(--c-accent); stroke-opacity: .28; }
+/* Selection is the work light: a copper glow line along the channel, solid. */
+.working.is-selected .working__hit { stroke: var(--copper); stroke-opacity: .45; }
 
-/* ---- zones: a frame around their workings and a tag ------------------------- */
+/* ---- zones: a marked area of the slab and a tag ------------------------------ */
 
 .halo { cursor: pointer; }
-.halo .halo__rim { stroke: var(--c-border-strong); stroke-width: 31; }
-.halo .halo__pad { stroke: #fbfcfb; stroke-width: 29; }
-.halo--attention .halo__rim { stroke: var(--c-attention-border); stroke-width: 32; }
-.halo--attention .halo__pad { stroke: var(--c-attention-bg); }
-.halo--danger .halo__rim { stroke: var(--c-danger); stroke-width: 35; }
-.halo--danger .halo__pad { stroke: var(--c-danger-bg); }
-.halo--unknown .halo__rim { stroke: var(--c-unknown-border); stroke-width: 32; }
-.halo--unknown .halo__pad { stroke: var(--c-unknown-bg); }
-.halo--last-danger .halo__rim { stroke: var(--c-danger); stroke-width: 35; }
-.halo.is-selected .halo__rim { stroke: var(--c-accent); stroke-width: 35; }
+.halo .halo__rim { stroke: var(--dust-3); stroke-width: 31; }
+.halo .halo__pad { stroke: var(--stone-1); stroke-width: 29; }
+.halo--attention .halo__rim { stroke: var(--attention); stroke-width: 32; }
+.halo--danger .halo__rim { stroke: var(--danger); stroke-width: 35; }
+.halo--unknown .halo__rim { stroke: var(--unknown); stroke-width: 32; }
+.halo--unknown .halo__pad { stroke: var(--ink-3); }
+.halo--last-danger .halo__rim { stroke: var(--danger); stroke-width: 35; }
+.halo.is-selected .halo__rim { stroke: var(--copper); stroke-width: 35; }
 
-.tag .tag__box { fill: var(--c-panel); stroke: var(--c-border-strong); stroke-width: 1; }
+.tag .tag__box { fill: var(--ink-1); stroke: var(--line); stroke-width: 1; }
 .tag--plain .tag__box { fill: none; stroke: none; }
-.tag__text { fill: var(--c-text); font-size: 11px; stroke: none; }
-.tag--plain .tag__text { paint-order: stroke; stroke: var(--c-panel); stroke-width: 3px; stroke-linejoin: round; }
-.tag__text .is-bold, .tag__text.is-bold { font-weight: 700; }
-.tag__text .is-muted { fill: var(--c-muted); }
+.tag__text { fill: var(--dust-1); font-size: 11px; stroke: none; font-family: var(--font-sans); }
+.tag--plain .tag__text { paint-order: stroke; stroke: var(--ink-0); stroke-width: 3px; stroke-linejoin: round; }
+.tag__text .is-bold, .tag__text.is-bold { font-weight: 600; }
+.tag__text .is-muted { fill: var(--dust-2); }
 .layer--labels { pointer-events: none; }
-.tag--attention .tag__box { fill: var(--c-attention-bg); stroke: var(--c-attention-border); stroke-width: 1.4; stroke-dasharray: 5 3; }
-.tag--danger .tag__box { fill: var(--c-danger-bg); stroke: var(--c-danger); stroke-width: 3; }
-.tag--unknown .tag__box { fill: var(--c-unknown-bg); stroke: var(--c-unknown-border); stroke-width: 1.4; stroke-dasharray: 1.5 2.5; }
-.tag--closed .tag__box { stroke: var(--c-text); stroke-width: 2; }
-.tag--pending .tag__box { stroke: var(--c-stand-border); stroke-width: 1.4; stroke-dasharray: 5 3; }
-.zone.tag--selected .tag__box, .tag--selected .tag__box { stroke: var(--c-accent); stroke-width: 3; stroke-dasharray: none; }
+.tag--attention .tag__box { stroke: var(--attention); stroke-width: 1.4; stroke-dasharray: 5 3; }
+.tag--danger .tag__box { stroke: var(--danger); stroke-width: 3; }
+.tag--unknown .tag__box { fill: var(--ink-2); stroke: var(--unknown); stroke-width: 1.4; stroke-dasharray: 1.5 2.5; }
+.tag--closed .tag__box { stroke: var(--noroute); stroke-width: 2; }
+.tag--pending .tag__box { stroke: var(--chalk); stroke-width: 1.4; stroke-dasharray: 5 3; }
+.zone.tag--selected .tag__box, .tag--selected .tag__box { stroke: var(--copper); stroke-width: 3; stroke-dasharray: none; }
 
-/* ---- knowledge: sensors ------------------------------------------------------- */
+/* ---- knowledge: instrument posts ---------------------------------------------- */
 
 .sensor .sensor__hit, .worker .worker__hit, .exit .exit__hit { stroke: none; fill: transparent; }
-.sensor .sensor__body { fill: var(--c-panel); stroke-width: 1.5; }
-.sensor .sensor__dot { fill: var(--c-text); stroke: none; }
-.sensor .sensor__plate { fill: var(--c-panel); stroke-width: 2; }
-.sensor .sensor__stale path { stroke-width: 2; }
-.sensor .sensor__lost { stroke-width: 2.2; }
+.sensor .sensor__body { fill: var(--ink-1); stroke: var(--steel); stroke-width: 1.5; }
+.sensor .sensor__dot { fill: var(--dust-1); stroke: none; }
+.sensor .sensor__plate { fill: var(--ink-1); stroke: var(--dust-1); stroke-width: 2; }
+.sensor .sensor__stale path { stroke: var(--dust-1); stroke-width: 2; }
+.sensor .sensor__lost { stroke: var(--dust-1); stroke-width: 2.2; }
+.sensor .sensor__unknown { stroke: var(--unknown); }
 .sensor .sensor__dot, .sensor .sensor__stale, .sensor .sensor__lost { display: none; }
 .sensor[data-quality="fresh"] .sensor__dot,
 .sensor[data-quality="stale"] .sensor__stale,
@@ -112,90 +134,110 @@
 .sensor[data-quality="fresh"] .sensor__unknown,
 .sensor[data-quality="stale"] .sensor__unknown,
 .sensor[data-quality="lost"] .sensor__unknown { display: none; }
-.sensor[data-quality="stale"] .sensor__body { stroke: var(--c-attention); }
-.sensor[data-quality="lost"] .sensor__body { stroke: var(--c-unknown-border); stroke-dasharray: 2.5 2; }
-.sensor:not([data-quality="fresh"]):not([data-quality="stale"]):not([data-quality="lost"]) .sensor__body { stroke: var(--c-unknown-border); stroke-dasharray: 2.5 2; }
+.sensor[data-quality="stale"] .sensor__body { stroke: var(--dust-1); }
+.sensor[data-quality="lost"] .sensor__body { stroke: var(--unknown); stroke-dasharray: 2.5 2; }
+.sensor:not([data-quality="fresh"]):not([data-quality="stale"]):not([data-quality="lost"]) .sensor__body { stroke: var(--unknown); stroke-dasharray: 2.5 2; }
 
 /* ---- reachability: workers and exits ----------------------------------------- */
 
-.worker .worker__shape { fill: var(--c-panel); stroke-width: 1.8; }
-.worker .worker__danger { stroke: var(--c-danger); stroke-width: 2; }
-.worker .worker__none path { stroke-width: 1.6; }
-.worker .worker__go { stroke-width: 2; }
+/* Round head: a computed route. White crossed square: no computed route. Dashed «?»: not computed. */
+.worker .worker__shape { fill: var(--ink-1); stroke: var(--dust-1); stroke-width: 1.8; }
+.worker .worker__ok { fill: var(--dust-1); stroke: var(--ink-0); }
+.worker .worker__none .worker__shape { fill: var(--noroute); stroke: var(--ink-0); }
+.worker .worker__none path { stroke: var(--ink-0); stroke-width: 1.6; }
+.worker .worker__danger { stroke: var(--danger); stroke-width: 2.2; }
+.worker .worker__go { stroke: var(--dust-1); stroke-width: 2; }
 .worker .worker__ok, .worker .worker__none, .worker .worker__danger, .worker .worker__go { display: none; }
 .worker[data-egress="ok"] .worker__ok, .worker[data-egress="none"] .worker__none { display: inline; }
 .worker[data-egress="ok"] .worker__unknown, .worker[data-egress="none"] .worker__unknown { display: none; }
 .worker[data-location-hazard="danger"] .worker__danger { display: inline; }
 .worker.is-going .worker__go { display: inline; }
 .worker[data-pos-quality]:not([data-pos-quality="fresh"]) .worker__shape { stroke-dasharray: 2.4 2; }
-.worker .worker__unknown .worker__shape, .worker .worker__unknown path { stroke: var(--c-unknown); }
+.worker .worker__unknown .worker__shape { stroke: var(--unknown); }
+.worker .worker__unknown path { stroke: var(--unknown); }
 /* A worker whose status code is not known keeps the shape of its reachability and gets a dotted outline. */
 .worker.is-odd .worker__shape { stroke-dasharray: 1 2.6; }
 /* Other members of a group: the marker of the group is drawn once, by the member with the worst reachability. */
 .worker.is-merged > :not(.worker__hit, .obj__focus) { display: none; }
-.worker.is-selected .worker__hit { fill: var(--c-selected-bg); stroke: var(--c-accent); stroke-width: 2.5; }
-.sensor.is-selected .sensor__hit, .exit.is-selected .exit__hit { fill: var(--c-selected-bg); stroke: var(--c-accent); stroke-width: 2.5; }
+.worker.is-selected .worker__hit, .sensor.is-selected .sensor__hit, .exit.is-selected .exit__hit {
+  fill: none; stroke: var(--copper); stroke-width: 2.5;
+}
 
-.exit .exit__body { fill: var(--c-panel); stroke-width: 1.8; }
+.exit .exit__body { fill: var(--ink-1); stroke: var(--dust-1); stroke-width: 1.8; }
+.exit[data-state="available"] .exit__body, .exit[data-state="available"] .exit__arrow { stroke: var(--verdigris); }
 .exit .exit__arrow { stroke-width: 1.8; }
-.exit .exit__unavailable { stroke-width: 2.4; }
+.exit .exit__unavailable { stroke: var(--dust-1); stroke-width: 2.4; }
+.exit .exit__unknown { stroke: var(--unknown); }
 .exit .exit__arrow, .exit .exit__unavailable { display: none; }
 .exit[data-state="available"] .exit__arrow, .exit[data-state="unavailable"] .exit__arrow,
 .exit[data-state="unavailable"] .exit__unavailable { display: inline; }
 .exit[data-state="available"] .exit__unknown, .exit[data-state="unavailable"] .exit__unknown { display: none; }
-.exit:not([data-state="available"]):not([data-state="unavailable"]) .exit__body { stroke: var(--c-unknown-border); stroke-dasharray: 2.5 2; }
+.exit:not([data-state="available"]):not([data-state="unavailable"]) .exit__body { stroke: var(--unknown); stroke-dasharray: 2.5 2; }
 
+/* A computed route of the model: verdigris over a dark casing, with arrow heads. */
 .route { pointer-events: none; }
-.route .route__casing { stroke: var(--c-panel); stroke-width: 6.5; }
-.route .route__line { stroke: var(--c-accent); stroke-width: 2.6; }
-.route .route__arrows { stroke: var(--c-accent); stroke-width: 2.6; }
-.route[data-reason="incident"] .route__line, .route[data-reason="incident"] .route__arrows { stroke-width: 1.8; }
-.route[data-reason="incident"] .route__casing { stroke-width: 4.5; }
+.route .route__casing { stroke: var(--ink-0); stroke-width: 6.5; }
+.route .route__line { stroke: var(--verdigris); stroke-width: 2.6; }
+.route .route__arrows { stroke: var(--verdigris); stroke-width: 2.6; }
+.route[data-reason="incident"] .route__line, .route[data-reason="incident"] .route__arrows { stroke-width: 2; }
+.route[data-reason="incident"] .route__casing { stroke-width: 5; }
 
-/* ---- legend ------------------------------------------------------------------- */
+/* ---- legend: a chip at the bottom left of the stage, unfolding upwards -------- */
 
-.legend { padding: 2px var(--sp-3) 3px; font-size: var(--fs-xs); line-height: 1.25; }
-.legend__groups { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; }
-.legend__group { display: contents; }
-.legend__title { font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
-.legend__item { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
-.legend__item svg { flex: none; overflow: visible; }
-.legend__head { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.legend { font-family: var(--font-sans); font-size: 12px; line-height: 1.3; color: var(--dust-2); }
+/* On the stage: anchored at its bottom left corner, over the drawing. */
+.legend__defs { position: absolute; width: 0; height: 0; }
+.legend svg { flex: none; overflow: visible; }
 
-/* ---- card --------------------------------------------------------------------- */
+/* The frame of the chip and of the unfolded legend is the #legend box itself (layout.css). */
+.legend__chip {
+  display: inline-flex; align-items: center; gap: 12px;
+  min-height: 34px; max-width: 100%; padding: 4px 10px 4px 12px;
+  border: 0; border-radius: 0;
+  background: transparent; color: var(--dust-2);
+  font: inherit; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden;
+}
+.legend__chip:hover { background: var(--ink-2); color: var(--dust-1); }
+.legend__chip:focus-visible { outline: 2px solid var(--copper); outline-offset: -2px; }
+.legend__chip[aria-expanded="true"] { border-top: 1px solid var(--line); }
+.legend__chip .legend__group { display: inline-flex; align-items: center; gap: 4px; }
+.legend__chip .legend__title { margin-right: 2px; color: var(--dust-2); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.legend__chip .legend__item { display: inline-flex; align-items: center; gap: 3px; color: var(--dust-2); }
+.legend__chip .legend__more { margin-left: 2px; color: var(--dust-1); font-weight: 500; }
+.legend__caret { flex: none; width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+.legend__chip[aria-expanded="true"] .legend__caret { transform: rotate(180deg); }
 
-.card { padding: var(--sp-3) var(--sp-4) var(--sp-4); font-size: var(--fs-s); }
-.card .kv > div { display: contents; }
-.card__head { display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: var(--sp-2); }
-.card__kind { color: var(--c-muted); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.card__code { font-size: var(--fs-l); font-weight: 700; }
-.card__close { margin-left: auto; }
-.card__lead { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin-bottom: var(--sp-3); font-size: var(--fs-m); }
-.card__lead .card__main { font-weight: 700; }
-.card__section { margin-top: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid var(--c-border); }
-.card__section > .panel__title { margin-bottom: var(--sp-2); }
-.card__links { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.card__links .btn { font-weight: 400; }
-.card__rows { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-2); }
-.card__rows .btn { justify-content: flex-start; text-align: left; font-weight: 400; }
-.card__times { margin-top: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid var(--c-border); color: var(--c-muted); }
-.card__hint { color: var(--c-muted); margin-bottom: var(--sp-2); }
-.card__notes { display: grid; gap: var(--sp-1); color: var(--c-muted); font-size: var(--fs-xs); }
+.legend__panel {
+  display: grid; grid-template-columns: repeat(4, max-content); gap: 10px 24px; align-items: start;
+  padding: 12px 16px 14px;
+  color: var(--dust-2);
+}
+.legend__panel[hidden] { display: none; }
+/* Unfolded, the panel scrolls on its own inside the box layout.css gives the legend: the chip stays in sight. */
+.legend:has(.legend__panel:not([hidden])) { display: flex; flex-direction: column; }
+.legend__panel { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.legend__chip { flex: none; }
+.legend__heading { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; color: var(--dust-1); font-size: 13px; font-weight: 600; }
+.legend__heading .legend__hint { color: var(--dust-2); font-size: 12px; font-weight: 400; }
+.legend__panel .legend__group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.legend__panel .legend__title { margin-bottom: 2px; color: var(--dust-2); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.legend__panel .legend__item { display: flex; align-items: center; gap: 8px; max-width: 290px; color: var(--dust-1); }
+/* The commands go under the exit, in the fourth column. */
+.legend__panel .legend__group:last-child { grid-column: -2; }
+.legend__panel .legend__item > svg { min-width: 30px; }
+
+/* A working in the legend lies on a piece of its slab, as on the drawing. */
+.legend__slab { fill: var(--stone-2); stroke: none; }
 
 /* ---- compact layout ----------------------------------------------------------- */
 
 @media (max-width: 1599px), (max-height: 899px) {
-  /* The legend in four lines at 1280x720: the states of the three axes, the exits and the mark of a
-     command. The samples marked «more» are said in words in the summary of the shift (card.js). */
-  .legend__groups { gap: 0 8px; }
-  .legend__head { gap: 6px; }
-  .legend__title { letter-spacing: 0; }
-  .legend__item--more { display: none; }
-}
-
-/* ---- wide layout -------------------------------------------------------------- */
-
-@media (min-width: 1600px) and (min-height: 900px) {
-  /* The legend shows these marks itself. */
-  .card__note--compact { display: none; }
+  /* One row in the narrow stage: the words of the chip are in its title and in the unfolded legend. */
+  .legend__chip { gap: 7px; padding: 3px 8px; }
+  .legend__chip .legend__group { gap: 2px; }
+  .legend__chip .legend__title { letter-spacing: .02em; }
+  .legend__chip .legend__words, .legend__chip .legend__more { display: none; }
+  .legend__panel { grid-template-columns: repeat(2, max-content); gap: 8px 18px; padding: 10px 12px; }
+  /* Beside the legend chip, never under it: the note wraps into a narrow column at the right. */
+  .scheme__note { max-width: 210px; font-size: 11px; }
 }

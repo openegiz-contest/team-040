@@ -1,0 +1,2106 @@
+// The 3D stage: the mine as a cutaway stone model on a graphite desk. One
+// slab per horizon with its workings carved into the top face, the inter-level
+// workings stretched between the slabs, people, sensors, exits, barricades and
+// published routes on and above the floors, and HTML labels over the canvas.
+//
+// Everything placed comes from twin attributes and the last full snapshot
+// (layout.js, describe.js); nothing is invented. Rendering is on demand: a
+// frame is drawn when the camera moves, a transition runs or the visible state
+// changes, and no animation frame is requested while nothing changes.
+
+import * as THREE from 'three';
+import {showsOldData} from '../link.js';
+import {thingByName} from '../model.js';
+import * as geo from '../geometry.js';
+import {SCENE} from '../text3d.js';
+import * as text from '../text.js';
+import {createOrbit} from './camera.js';
+import {labelItems, tooltipLines} from './content.js';
+import {describe, groupWorkers} from './describe.js';
+import {createLabels} from './labels.js';
+import {
+  alongStep, buildLayout, DIMS, levelY, loaderPlaces, pointOnWorking, sceneBounds, sceneLine, silhouette, stepBetween, stepLength,
+  toScene, verticalFactor, WIDTH_FACTOR, zoneEntrances,
+} from './layout.js';
+import {drawAtlas, spriteGeometry, spriteMaterials, writeSprites} from './markers.js';
+import {TOKEN, TONE} from './palette.js';
+import {
+  arrowHead, barricade, carveSlab, casing, dashes, disc, frameLoops, merge, plane, portal, rampBand, ribbon, slabGeometry, tube,
+} from './shapes.js';
+import {makeTextures} from './textures.js';
+
+const DEG = Math.PI / 180;
+export const DEFAULT_VIEW = {az: 26 * DEG, el: 25 * DEG};
+const TWEEN_MS = 900;
+const DRAW_IN_MS = 550;
+const EXPLODE_MS = 600;
+const MAX_STEP_M = 80;
+/** The key of the decorative loader in picking and hover: not a twin, never selected. */
+const DECOR = 'decor:loader';
+/** The loader of lhd.glb is 10 m long; it is drawn enlarged as much as the width of the channels. */
+const LOADER_LENGTH = 10 * WIDTH_FACTOR;
+/** The loader is shown from this many pixels of its length on: smaller it would be a dark speck. */
+const LOADER_MIN_PX = 48;
+/** The most pixels the light quality renders (about a 1280×860 buffer). */
+const LOW_PIXELS = 1.1e6;
+const SPRITE_PX = {worker: 30, ring: 40, sensor: 22, exit: 30, sign: 24};
+const median = (values) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted.length === 0 ? 0 : sorted[Math.floor(sorted.length / 2)];
+};
+
+/**
+ * @param {HTMLElement} host the #stage-3d element
+ * @param {Object} options
+ * @param {Object} options.ctx                 the view context of main.js
+ * @param {'high'|'low'} options.quality
+ * @param {number} options.explode             0 compact … 1 spread
+ * @param {() => boolean} options.reducedMotion
+ * @param {(type: string, detail?: *) => void} options.onEvent   'frame', 'context-lost', 'context-restored', 'explode-key', 'status'
+ */
+export function createScene(host, options) {
+  const {ctx} = options;
+  const low = options.quality === 'low';
+  const reduced = () => options.reducedMotion();
+
+  // ---- DOM ------------------------------------------------------------------------------
+  const root = document.createElement('div');
+  root.className = 's3';
+  const canvas = document.createElement('canvas');
+  canvas.className = 's3__canvas';
+  canvas.tabIndex = 0;
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('data-testid', 'scene3d-canvas');
+  const labelLayer = document.createElement('div');
+  labelLayer.className = 's3__labels';
+  const tip = document.createElement('div');
+  tip.className = 's3__tip';
+  tip.hidden = true;
+  tip.setAttribute('role', 'tooltip');
+  const old = document.createElement('div');
+  old.className = 's3__old';
+  old.hidden = true;
+  const oldText = document.createElement('span');
+  oldText.className = 's3__old-text';
+  old.append(oldText);
+  const gizmo = createGizmo();
+  root.append(canvas, old, labelLayer, gizmo.element, tip);
+  host.append(root);
+
+  // ---- renderer, camera, lights ---------------------------------------------------------
+  const renderer = new THREE.WebGLRenderer({canvas, antialias: !low, alpha: false, powerPreference: 'high-performance'});
+  const pixelRatio = low ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(pixelRatio);
+  renderer.setClearColor(TOKEN.ink0, 1);
+  renderer.info.autoReset = true;
+  const gl = renderer.getContext();
+  const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+  const rendererName = String(gl.getParameter(debugInfo ? debugInfo.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 1, 10000);
+  const orbit = createOrbit(camera, {reducedMotion: reduced});
+  // A cool sky over a warm key: the stone stays a cool grey, the few lamps of the high quality are the warm points.
+  const hemi = new THREE.HemisphereLight('#DDE1E6', '#1C2025', low ? 1.45 : 1.2);
+  const key = new THREE.DirectionalLight('#FFF4E8', low ? 2.0 : 1.9);
+  key.position.set(420, 900, 520);
+  const fill = new THREE.DirectionalLight('#B6C3D1', 0.55);
+  fill.position.set(-700, 300, -300);
+  scene.add(hemi, key, fill);
+  const lamps = [];
+  const baseLight = {hemi: hemi.intensity, key: key.intensity, fill: fill.intensity};
+
+  const textures = makeTextures();
+  const materials = makeMaterials(textures, low);
+  const world = new THREE.Group();
+  scene.add(world);
+
+  // ---- state ---------------------------------------------------------------------------
+  let layout = null;
+  let attributesRef = null;
+  let levelGroups = [];
+  let staticParts = null;          // k-independent pieces per level, and zone frames
+  let interGroup = new THREE.Group();
+  let overlayGroups = [];
+  let interOverlay = new THREE.Group();
+  let routeGroup = new THREE.Group();
+  world.add(interGroup, interOverlay, routeGroup);
+  let desk = null;
+  let loader = null;
+  let loaderPlaceInfo = null;
+  let loaderCandidates = [];
+  let loaderNear = false;
+  let view = null;
+  let signature = '';
+  let groups = [];
+  let explode = Number.isFinite(options.explode) ? options.explode : DIMS.explodeDefault;
+  let k = verticalFactor(explode);
+  let explodeTween = null;
+  let overviewMode = true;
+  let width = 0;
+  let height = 0;
+  let rafId = 0;
+  let disposed = false;
+  let lost = false;
+  let frames = 0;
+  let firstFrameAt = null;
+  let renderMs = [];
+  let hovered = null;
+  let pointer = null;
+  let selected = null;
+  let state = null;
+  const drawn = new Map();          // worker name -> {working, offsetM} on the screen
+  const tweens = new Map();         // worker name -> {pieces, length, start}
+  const drawIn = new Map();         // route key -> {start, progress}
+  let routeMeshes = [];
+  let spriteList = [];
+  let spritesDirty = true;
+  let pendingFocus = null;
+  let obstaclesAt = 0;
+  let fixedObstacles = [];
+
+  const atlasTexture = new THREE.Texture();
+  atlasTexture.flipY = false;
+  atlasTexture.colorSpace = THREE.SRGBColorSpace;
+  atlasTexture.generateMipmaps = false;
+  atlasTexture.minFilter = THREE.LinearFilter;
+  const spriteMat = spriteMaterials(atlasTexture, pixelRatio);
+  let spriteGeo = spriteGeometry(64);
+  const spritesFront = new THREE.Points(spriteGeo, spriteMat.front);
+  const spritesBehind = new THREE.Points(spriteGeo, spriteMat.behind);
+  spritesFront.renderOrder = 20;
+  spritesBehind.renderOrder = 19;
+  spritesFront.frustumCulled = false;
+  spritesBehind.frustumCulled = false;
+  const pins = new THREE.LineSegments(new THREE.BufferGeometry(), materials.pin);
+  pins.frustumCulled = false;
+  scene.add(spritesFront, spritesBehind, pins);
+  atlasTexture.image = drawAtlas();
+  atlasTexture.needsUpdate = true;
+
+  const labels = createLabels(labelLayer, (thingId) => ctx.select(thingId), (thingId) => {
+    if (hovered !== thingId) {
+      hovered = thingId;
+      spritesDirty = true;
+      updateHoverOverlay();
+      invalidate();
+    }
+  });
+
+  // ---- materials -------------------------------------------------------------------------
+
+  function makeMaterials(tex, isLow) {
+    const Lit = isLow ? THREE.MeshLambertMaterial : THREE.MeshStandardMaterial;
+    const lit = (params, standard = {}) => new Lit(isLow ? params : {roughness: 0.93, metalness: 0, ...params, ...standard});
+    const hazard = (map) => lit({map, emissive: '#ffffff', emissiveMap: map, emissiveIntensity: 0.32,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
+    const flat = (color, opacity = 1, extra = {}) => new THREE.MeshBasicMaterial({
+      color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1, polygonOffset: true, polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4, ...extra,
+    });
+    return {
+      top: lit({map: tex.top}),
+      strata: lit({map: tex.strata, side: THREE.DoubleSide}),
+      wall: lit({map: tex.wall, side: THREE.DoubleSide}),
+      floor: lit({map: tex.floor}),
+      bottom: lit({color: TONE.bottom}),
+      zone: lit({map: tex.zone, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2}),
+      attention: hazard(tex.attention),
+      danger: hazard(tex.danger),
+      unknown: hazard(tex.unknown),
+      // A ramp is steep at the spread of the levels: its deck keeps a light of its own so it never turns black.
+      road: lit({color: TONE.road, emissive: TONE.roadGlow, side: THREE.DoubleSide}),
+      steel: lit({color: TONE.steel}, {metalness: 0.45, roughness: 0.5}),
+      portal: lit({color: TONE.steelDark}, {metalness: 0.4, roughness: 0.55}),
+      barricade: lit({map: tex.barricade}),
+      collar: flat(TONE.collar),
+      route: new THREE.MeshBasicMaterial({color: TOKEN.verdigris}),
+      routeCore: new THREE.MeshBasicMaterial({color: '#BFE3DC'}),
+      frame: {
+        normal: flat(TOKEN.dust2, 0.75),
+        attention: flat(TOKEN.attention),
+        danger: flat(TOKEN.danger),
+        unknown: flat(TOKEN.unknown),
+        lastDanger: flat(TOKEN.danger),
+        copper: flat(TOKEN.copper),
+        copperStrong: flat(TOKEN.copperStrong),
+      },
+      glow: flat(TOKEN.lightWarm, 0.34, {blending: THREE.AdditiveBlending}),
+      hover: flat('#ffffff', 0.16, {blending: THREE.AdditiveBlending}),
+      shadow: new THREE.MeshBasicMaterial({map: tex.shadow, transparent: true, depthWrite: false}),
+      pin: new THREE.LineBasicMaterial({color: TOKEN.dust2, transparent: true, opacity: 0.75}),
+    };
+  }
+
+  const meshOf = (geometry, material, order = 0) => {
+    if (!geometry) return null;
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = order;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
+    return mesh;
+  };
+
+  function disposeGroup(group) {
+    group.traverse((object) => {
+      if (object.geometry && object !== spritesFront && object !== spritesBehind) object.geometry.dispose();
+    });
+    group.clear();
+  }
+
+  // ---- static model ----------------------------------------------------------------------
+
+  /** The channel centre lines of a level, local plan, and the notches where an inter-level working leaves it. */
+  function levelSegments(level) {
+    const segments = [];
+    for (const name of level.workings) {
+      const line = layout.workings.get(name);
+      for (let i = 1; i < line.plan.length; i += 1) segments.push({a: line.plan[i - 1], b: line.plan[i], half: DIMS.half});
+    }
+    for (const line of layout.workings.values()) {
+      if (!line.between) continue;
+      const ends = [[line.from, line.mine, line.plan], [line.to, [...line.mine].reverse(), [...line.plan].reverse()]];
+      for (const [node, mineLine, plan] of ends) {
+        if (layout.nodeLevel.get(node) !== level.name) continue;
+        const rising = mineLine[mineLine.length - 1][2] > mineLine[0][2];
+        const planLength = Math.hypot(plan[1][0] - plan[0][0], plan[1][1] - plan[0][1]);
+        if (!rising || planLength < 1) continue;
+        const reach = Math.min(planLength, 16);
+        const t = reach / planLength;
+        segments.push({a: plan[0], b: [plan[0][0] + (plan[1][0] - plan[0][0]) * t, plan[0][1] + (plan[1][1] - plan[0][1]) * t], half: DIMS.half * 0.85});
+      }
+    }
+    return segments;
+  }
+
+  function buildStatic() {
+    for (const group of levelGroups) disposeGroup(group);
+    for (const group of levelGroups) world.remove(group);
+    levelGroups = [];
+    overlayGroups = [];
+    if (desk) {
+      disposeGroup(desk);
+      scene.remove(desk);
+      desk = null;
+    }
+    staticParts = {zoneFrames: new Map(), zoneSegments: new Map(), carved: []};
+    if (!layout) return;
+
+    for (const level of layout.levels) {
+      const group = new THREE.Group();
+      group.name = `level:${level.name}`;
+      const segments = levelSegments(level);
+      const carved = carveSlab(level.box, segments);
+      staticParts.carved.push(carved);
+      const slab = slabGeometry(level.box, carved);
+      const parts = [
+        meshOf(slab.top, materials.top), meshOf(merge([slab.rim, slab.sides]), materials.strata), meshOf(slab.walls, materials.wall),
+        meshOf(slab.floor, materials.floor), meshOf(slab.bottom, materials.bottom),
+      ].filter(Boolean);
+      for (const part of parts) {
+        part.userData.pickable = true;
+        group.add(part);
+      }
+      // Mouths of workings that leave the level through its floor, downwards.
+      const mouths = [];
+      for (const line of layout.workings.values()) {
+        if (!line.between) continue;
+        for (const [node, other] of [[line.from, line.mine[line.mine.length - 1]], [line.to, line.mine[0]]]) {
+          if (layout.nodeLevel.get(node) !== level.name) continue;
+          const here = layout.nodes.get(node);
+          if (other[2] < here[2]) mouths.push(disc(layout.toPlan(here), DIMS.half * 0.85, 0.06));
+        }
+      }
+      const mouthMesh = meshOf(merge(mouths), materials.collar, 2);
+      if (mouthMesh) group.add(mouthMesh);
+      // Exits: portals on the floor at their node.
+      const portals = [];
+      for (const exit of state && state.model ? state.model.byKind.exit || [] : []) {
+        const node = exit.attrs.node;
+        if (layout.nodeLevel.get(node) !== level.name || !layout.nodes.has(node)) continue;
+        const at = layout.toPlan(layout.nodes.get(node));
+        portals.push(portal([at[0], 0, at[1]], facingAt(level, node), 9));
+      }
+      const portalMesh = meshOf(merge(portals), materials.portal);
+      if (portalMesh) group.add(portalMesh);
+      const overlay = new THREE.Group();
+      group.add(overlay);
+      overlayGroups.push(overlay);
+      group.position.y = levelY(layout, level, k);
+      group.userData.level = level;
+      world.add(group);
+      levelGroups.push(group);
+    }
+    // Zone frames, computed once per topology.
+    for (const zone of state && state.model ? state.model.byKind.zone || [] : []) {
+      const names = (Array.isArray(zone.attrs.workings) ? zone.attrs.workings : []).filter((name) => layout.workings.has(name)
+        && !layout.workings.get(name).between);
+      if (names.length === 0) continue;
+      const segments = names.flatMap((name) => {
+        const line = layout.workings.get(name);
+        return line.plan.slice(1).map((b, i) => ({a: line.plan[i], b, half: DIMS.half}));
+      });
+      staticParts.zoneSegments.set(zone.name, segments);
+      staticParts.zoneFrames.set(zone.name, {
+        level: layout.workings.get(names[0]).level,
+        loops: frameLoops(segments, DIMS.zoneReach),
+      });
+    }
+    buildDesk();
+    loaderCandidates = state && state.model ? loaderPlaces(layout, state.attributes.mine.nodes || {}, zoneWorkingSet(), LOADER_LENGTH) : [];
+    loaderPlaceInfo = null;
+    if (loader) placeLoader();
+  }
+
+  function zoneWorkingSet() {
+    const names = new Set();
+    for (const zone of state.model.byKind.zone || []) for (const name of zone.attrs.workings || []) names.add(name);
+    return names;
+  }
+
+  /** The plan direction of the first horizontal working of a level at a node, for a portal to face along. */
+  function facingAt(level, node) {
+    for (const name of level.workings) {
+      const line = layout.workings.get(name);
+      if (line.from === node) return [line.plan[1][0] - line.plan[0][0], line.plan[1][1] - line.plan[0][1]];
+      if (line.to === node) {
+        const n = line.plan.length;
+        return [line.plan[n - 2][0] - line.plan[n - 1][0], line.plan[n - 2][1] - line.plan[n - 1][1]];
+      }
+    }
+    return [1, 0];
+  }
+
+  function buildDesk() {
+    desk = new THREE.Group();
+    const lowest = layout.levels[layout.levels.length - 1];
+    const box = layout.levels.reduce((acc, level) => ({
+      minX: Math.min(acc.minX, level.box.minX), maxX: Math.max(acc.maxX, level.box.maxX),
+      minZ: Math.min(acc.minZ, level.box.minZ), maxZ: Math.max(acc.maxZ, level.box.maxZ),
+    }), {minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity});
+    const grow = Math.max(box.maxX - box.minX, box.maxZ - box.minZ) * 0.18;
+    const shadow = meshOf(plane(box.minX - grow, box.maxX + grow, box.minZ - grow, box.maxZ + grow, 0), materials.shadow, -1);
+    desk.add(shadow);
+    desk.userData.lowest = lowest;
+    scene.add(desk);
+    placeDesk();
+  }
+
+  function placeDesk() {
+    if (!desk) return;
+    desk.position.y = levelY(layout, desk.userData.lowest, k) + DIMS.depth - DIMS.thickness - 0.6;
+  }
+
+  // ---- k-dependent: inter-level workings, positions ---------------------------------------
+
+  function buildInter() {
+    disposeGroup(interGroup);
+    if (!layout) return;
+    // The ways out between the levels carry the story of a withdrawal: they are drawn with weight. A shaft and
+    // a raise are cased columns (solid collars of lining, open between them); a ramp is a solid road band.
+    const casings = [];
+    const decks = [];
+    const sides = [];
+    const steel = [];
+    for (const line of layout.workings.values()) {
+      if (!line.between) continue;
+      const points = sceneLine(layout, line, k);
+      const planLength = line.plan.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - line.plan[i][0], p[1] - line.plan[i][1]), 0);
+      const vertical = planLength < 0.3 * line.total;
+      if (vertical) {
+        const raise = line.kind === 'raise';
+        casings.push(casing(points, raise ? {half: 3, every: 10, collar: 2.6, wall: 0.9, post: 1}
+          : {half: 4.6, every: 10, collar: 3, wall: 1.1, post: 1.3}));
+      } else {
+        const built = rampBand(points, 5, 2.4);
+        decks.push(built.deck);
+        sides.push(built.sides);
+        steel.push(built.steel);
+      }
+    }
+    const steelMesh = meshOf(merge([...casings, ...steel]), materials.steel);
+    const deckMesh = meshOf(merge(decks), materials.road);
+    const sideMesh = meshOf(merge(sides), materials.strata);
+    if (steelMesh) interGroup.add(steelMesh);
+    for (const mesh of [deckMesh, sideMesh]) {
+      if (!mesh) continue;
+      mesh.userData.pickable = true;
+      interGroup.add(mesh);
+    }
+  }
+
+  function applyK() {
+    levelGroups.forEach((group) => {
+      group.position.y = levelY(layout, group.userData.level, k);
+      group.updateMatrixWorld(true);
+    });
+    placeDesk();
+    if (loader) placeLoader();
+    buildInter();
+    buildInterOverlay();
+    buildRoutes(false);
+    spritesDirty = true;
+    const bounds = sceneBounds(layout, k);
+    const pad = 200;
+    orbit.limits.box = {minX: bounds.minX - pad, maxX: bounds.maxX + pad, minY: bounds.minY - pad, maxY: bounds.maxY + pad,
+      minZ: bounds.minZ - pad, maxZ: bounds.maxZ + pad};
+    orbit.limits.distMax = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ, 400) * 5;
+    gizmo.setVertical(k);
+  }
+
+  // ---- state overlays (per level, local frame) ---------------------------------------------
+
+  function lineOfPlan(line) {
+    return line.plan;
+  }
+
+  function planCum(plan) {
+    const cum = [0];
+    for (let i = 1; i < plan.length; i += 1) cum.push(cum[i - 1] + Math.hypot(plan[i][0] - plan[i - 1][0], plan[i][1] - plan[i - 1][1]));
+    return cum;
+  }
+
+  /** The floor of a horizontal working in pieces, leaving a gap around a barricade. */
+  function floorPieces(line, gap) {
+    const plan = lineOfPlan(line);
+    if (!gap) return [plan];
+    const cum = planCum(plan);
+    const total = cum[cum.length - 1];
+    const mid = total / 2;
+    const half = Math.min(6, total / 4);
+    return [geo.cut(plan, cum, 0, mid - half), geo.cut(plan, cum, mid + half, total)];
+  }
+
+  function frameStyle(zone) {
+    if (zone.hazard === 'unknown' && zone.lastKnown === 'danger') return {material: materials.frame.lastDanger, width: 2.2, dash: [7, 4]};
+    if (zone.hazard === 'danger') return {material: materials.frame.danger, width: 2.6, dash: null};
+    if (zone.hazard === 'attention') return {material: materials.frame.attention, width: 1.8, dash: null};
+    if (zone.hazard === 'unknown') return {material: materials.frame.unknown, width: 1.6, dash: [5, 4]};
+    return {material: materials.frame.normal, width: 1.1, dash: null};
+  }
+
+  function zoneFrame(name, reachExtra) {
+    const key = `${name}:${reachExtra}`;
+    if (!staticParts.zoneFrames.has(key)) {
+      const segments = staticParts.zoneSegments.get(name) || [];
+      staticParts.zoneFrames.set(key, {level: staticParts.zoneFrames.get(name).level, loops: frameLoops(segments, DIMS.zoneReach + reachExtra)});
+    }
+    return staticParts.zoneFrames.get(key);
+  }
+
+  function buildOverlays() {
+    for (const group of overlayGroups) disposeGroup(group);
+    if (!layout || !view) return;
+    const perLevel = layout.levels.map(() => new Map());
+    const add = (levelName, material, geometry, order = 3) => {
+      if (!geometry) return;
+      const index = layout.levels.findIndex((level) => level.name === levelName);
+      if (index < 0) return;
+      const map = perLevel[index];
+      if (!map.has(material)) map.set(material, {order, parts: []});
+      map.get(material).parts.push(geometry);
+    };
+    const d = DIMS.depth;
+    const sideRibbons = (plan, offset, width, y, dash) => {
+      const out = [];
+      for (const sign of [-1, 1]) {
+        if (dash) {
+          for (const piece of dashes(plan, dash[0], dash[1])) out.push(ribbon(piece, width, y, {offset: sign * offset}));
+        } else {
+          out.push(ribbon(plan, width, y, {offset: sign * offset}));
+        }
+      }
+      return out;
+    };
+
+    for (const [name, working] of Object.entries(view.workings)) {
+      const line = layout.workings.get(name);
+      if (line.between) continue;
+      const closed = working.passability === 'closed';
+      const bare = working.quality === 'none' && working.hazard === 'unknown';
+      let material = null;
+      if (!bare && view.hasSnapshot) {
+        material = {normal: materials.zone, attention: materials.attention, danger: materials.danger, unknown: materials.unknown}[working.hazard];
+      }
+      const width = DIMS.half * 2 - 1.2;
+      if (material) for (const piece of floorPieces(line, closed)) add(line.level, material, ribbon(piece, width, 0.05, {period: 9}));
+      if (closed) {
+        const cum = planCum(line.plan);
+        const mid = geo.pointAt(line.plan, cum, cum[cum.length - 1] / 2);
+        add(line.level, materials.barricade, barricade([mid.point[0], 0, mid.point[1]], [mid.dir[0], 0, mid.dir[1]], DIMS.half * 2 + 3, d + 6), 4);
+      }
+      const isSelected = working.thingId === view.selected;
+      if (isSelected) {
+        for (const piece of floorPieces(line, closed)) add(line.level, materials.glow, ribbon(piece, width, 0.12), 6);
+        for (const r of sideRibbons(line.plan, DIMS.half + 1.4, 1.5, d + 0.12, null)) add(line.level, materials.frame.copper, r, 7);
+      } else if (working.hazard === 'unknown' && working.lastKnown === 'danger') {
+        for (const r of sideRibbons(line.plan, DIMS.half + 1.2, 1.3, d + 0.1, [6, 4])) add(line.level, materials.frame.lastDanger, r, 7);
+      }
+      if (working.pending) {
+        for (const r of sideRibbons(line.plan, DIMS.half + 3.2, 1.2, d + 0.12, [5, 4])) add(line.level, materials.frame.copper, r, 7);
+      }
+    }
+    for (const [name, zone] of Object.entries(view.zones)) {
+      const frame = staticParts.zoneFrames.get(name);
+      if (!frame) continue;
+      const style = view.hasSnapshot ? frameStyle(zone) : {material: materials.frame.unknown, width: 1.4, dash: [5, 4]};
+      for (const loop of frame.loops) {
+        if (style.dash) for (const piece of dashes(loop, style.dash[0], style.dash[1], true)) add(frame.level, style.material, ribbon(piece, style.width, d + 0.08), 5);
+        else add(frame.level, style.material, ribbon(loop, style.width, d + 0.08, {closed: true}), 5);
+      }
+      if (zone.thingId === view.selected) {
+        for (const loop of zoneFrame(name, 3.2).loops) add(frame.level, materials.frame.copper, ribbon(loop, 1.8, d + 0.1, {closed: true}), 7);
+        for (const local of zone.workings) {
+          const line = layout.workings.get(local);
+          if (!line.between) add(line.level, materials.glow, ribbon(line.plan, DIMS.half * 2 - 1.2, 0.12), 6);
+        }
+      }
+      if (zone.pending) {
+        for (const loop of zoneFrame(name, 6).loops) {
+          for (const piece of dashes(loop, 6, 5, true)) add(frame.level, materials.frame.copper, ribbon(piece, 1.4, d + 0.1), 7);
+        }
+      }
+    }
+    perLevel.forEach((map, index) => {
+      for (const [material, entry] of map) {
+        const mesh = meshOf(merge(entry.parts), material, entry.order);
+        if (mesh) overlayGroups[index].add(mesh);
+      }
+    });
+    buildInterOverlay();
+    updateHoverOverlay();
+  }
+
+  /** Overlays of inter-level workings, in the scene frame: hazard decks, barricades, selection. */
+  function buildInterOverlay() {
+    disposeGroup(interOverlay);
+    if (!layout || !view) return;
+    const byMaterial = new Map();
+    const add = (material, geometry) => {
+      if (!geometry) return;
+      if (!byMaterial.has(material)) byMaterial.set(material, []);
+      byMaterial.get(material).push(geometry);
+    };
+    for (const [name, working] of Object.entries(view.workings)) {
+      const line = layout.workings.get(name);
+      if (!line.between) continue;
+      const points = sceneLine(layout, line, k);
+      if (working.passability === 'closed') {
+        const mid = geo.pointAt(points, line.cum, line.total / 2);
+        add(materials.barricade, barricade(mid.point, mid.dir, 9, 6));
+      }
+      const selectedHere = working.thingId === view.selected;
+      if (selectedHere || working.pending || (working.hazard !== 'unknown' && working.hazard !== 'normal')) {
+        const material = selectedHere || working.pending ? materials.frame.copper : materials.frame[working.hazard];
+        add(material, tube(points.map((p) => [p[0], p[1] + 0.4, p[2]]), selectedHere ? 1.1 : 0.8, 5));
+      }
+    }
+    for (const [material, parts] of byMaterial) {
+      const mesh = meshOf(merge(parts), material, 6);
+      if (mesh) interOverlay.add(mesh);
+    }
+  }
+
+  let hoverMesh = null;
+  function updateHoverOverlay() {
+    if (hoverMesh) {
+      if (hoverMesh.parent) hoverMesh.parent.remove(hoverMesh);
+      hoverMesh.geometry.dispose();
+      hoverMesh = null;
+    }
+    if (!layout || !hovered || !state || !state.model) return;
+    const thing = state.model.things[hovered];
+    if (!thing) return;
+    const names = thing.kind === 'working' ? [thing.name] : (thing.kind === 'zone' && view.zones[thing.name] ? view.zones[thing.name].workings : []);
+    const parts = [];
+    let levelIndex = -1;
+    for (const name of names) {
+      const line = layout.workings.get(name);
+      if (!line || line.between) continue;
+      levelIndex = layout.levels.findIndex((level) => level.name === line.level);
+      parts.push(ribbon(line.plan, DIMS.half * 2 - 1.2, 0.14));
+    }
+    const mesh = meshOf(merge(parts), materials.hover, 8);
+    if (mesh && levelIndex >= 0) {
+      overlayGroups[levelIndex].add(mesh);
+      hoverMesh = mesh;
+    }
+  }
+
+  // ---- routes -------------------------------------------------------------------------
+
+  function routeKey(route) {
+    return `${route.worker}:${route.pieces.map((piece) => piece.working).join(',')}`;
+  }
+
+  /** The published routes as tubes with arrow heads; a new route draws itself in once. */
+  function buildRoutes(animateNew) {
+    disposeGroup(routeGroup);
+    routeMeshes = [];
+    if (!layout || !view) return;
+    const keys = new Set();
+    for (const route of view.routes) {
+      const runs = [];
+      const arrows = [];
+      for (const piece of route.pieces) {
+        const line = layout.workings.get(piece.working);
+        const points = geo.cut(sceneLine(layout, line, k), line.cum, piece.start, piece.end)
+          .map((p) => [p[0], p[1] + (line.between ? 0.6 : 1.6), p[2]]);
+        const previous = runs[runs.length - 1];
+        if (previous && geo.dist(previous[previous.length - 1], points[0]) < 1) previous.push(...points.slice(1));
+        else runs.push(points);
+      }
+      const parts = [];
+      for (const points of runs) {
+        parts.push(tube(points, 1.9, low ? 5 : 7));
+        const cum = geo.cumulative(points);
+        const total = cum[cum.length - 1];
+        for (let at = 40; at < total - 10; at += 55) {
+          const {point, dir} = geo.pointAt(points, cum, at);
+          arrows.push(arrowHead(point.map((v, i) => v + dir[i] * 4), dir, 3.6));
+        }
+        const end = geo.pointAt(points, cum, total);
+        arrows.push(arrowHead(end.point, end.dir, 4.4));
+      }
+      const geometry = merge([...parts, ...arrows]);
+      if (!geometry) continue;
+      const mesh = meshOf(geometry, materials.route, 9);
+      const routeId = routeKey(route);
+      keys.add(routeId);
+      mesh.userData.key = routeId;
+      mesh.userData.count = geometry.attributes.position.count;
+      if (!drawIn.has(routeId)) drawIn.set(routeId, {start: animateNew && !reduced() ? null : -1});
+      routeGroup.add(mesh);
+      routeMeshes.push(mesh);
+    }
+    for (const routeId of [...drawIn.keys()]) if (!keys.has(routeId)) drawIn.delete(routeId);
+    stepDrawIn(performance.now());
+  }
+
+  function stepDrawIn(now) {
+    let active = false;
+    for (const mesh of routeMeshes) {
+      const entry = drawIn.get(mesh.userData.key);
+      let t = 1;
+      if (entry && entry.start !== -1) {
+        if (entry.start === null) entry.start = now;
+        t = Math.min((now - entry.start) / DRAW_IN_MS, 1);
+        if (t >= 1) entry.start = -1;
+        else active = true;
+      }
+      const count = mesh.userData.count;
+      mesh.geometry.setDrawRange(0, t >= 1 ? count : Math.floor((count * t) / 3) * 3);
+    }
+    return active;
+  }
+
+  // ---- workers: honest motion -------------------------------------------------------------
+
+  function motionAllowed() {
+    return Boolean(state) && view.linkOk && !view.old && view.runState === 'running' && !reduced();
+  }
+
+  /** New published positions: glide between two published positions, or jump. */
+  function updateMotion(previousRun) {
+    const allow = motionAllowed() && previousRun === view.run;
+    const now = performance.now();
+    const seen = new Set();
+    for (const [name, worker] of Object.entries(view.workers)) {
+      if (!worker.at) continue;
+      seen.add(name);
+      const target = {working: worker.at, offsetM: worker.offsetM};
+      const current = currentPosition(name, now);
+      tweens.delete(name);
+      if (current && allow && (current.working !== target.working || Math.abs(current.offsetM - target.offsetM) > 0.05)) {
+        const pieces = stepBetween(layout, current, target);
+        const length = pieces ? stepLength(pieces) : Infinity;
+        if (pieces && length <= MAX_STEP_M && length > 0.05) tweens.set(name, {pieces, length, start: null});
+      }
+      drawn.set(name, target);
+    }
+    for (const name of [...drawn.keys()]) {
+      if (!seen.has(name)) {
+        drawn.delete(name);
+        tweens.delete(name);
+      }
+    }
+    spritesDirty = true;
+  }
+
+  function currentPosition(name, now) {
+    const tween = tweens.get(name);
+    if (tween && tween.start !== null) {
+      const t = Math.min((now - tween.start) / TWEEN_MS, 1);
+      return alongStep(tween.pieces, tween.length * t);
+    }
+    if (tween) return alongStep(tween.pieces, 0);
+    return drawn.get(name) || null;
+  }
+
+  function snapMotion() {
+    if (tweens.size === 0) return;
+    tweens.clear();
+    spritesDirty = true;
+  }
+
+  function stepTweens(now) {
+    if (tweens.size === 0) return false;
+    let active = false;
+    for (const [name, tween] of tweens) {
+      if (tween.start === null) tween.start = now;
+      if (now - tween.start >= TWEEN_MS) tweens.delete(name);
+      else active = true;
+    }
+    spritesDirty = true;
+    return active;
+  }
+
+  function workerPoint(name, now = performance.now()) {
+    const position = currentPosition(name, now);
+    if (!position) return null;
+    const at = pointOnWorking(layout, position.working, position.offsetM, k);
+    return at ? at.point : null;
+  }
+
+  function groupPoint(group, now = performance.now()) {
+    const points = group.members.map((name) => workerPoint(name, now)).filter(Boolean);
+    if (points.length === 0) return null;
+    const p = [0, 1, 2].map((i) => points.reduce((sum, q) => sum + q[i], 0) / points.length);
+    return [p[0], p[1] + 6, p[2]];
+  }
+
+  // ---- sprites --------------------------------------------------------------------------
+
+  function sensorPoint(name) {
+    const thing = thingByName(state.model, name);
+    const at = pointOnWorking(layout, thing.attrs.working, thing.attrs.offset_m, k);
+    if (!at) return null;
+    const side = [-at.dir[2], 0, at.dir[0]];
+    const sl = Math.hypot(side[0], side[2]) || 1;
+    const offset = DIMS.half - 1.3;
+    return [at.point[0] + (side[0] / sl) * offset, at.point[1], at.point[2] + (side[2] / sl) * offset];
+  }
+
+  function exitPoint(name) {
+    const node = view.exits[name].node;
+    const p = toScene(layout, layout.nodes.get(node), k);
+    return [p[0], p[1] + 15, p[2]];
+  }
+
+  function zonePoint(name, lift = 6) {
+    const zone = view.zones[name];
+    const points = zone.workings.map((local) => {
+      const line = layout.workings.get(local);
+      const scenePts = sceneLine(layout, line, k);
+      return geo.pointAt(scenePts, line.cum, line.total / 2).point;
+    });
+    if (points.length === 0) return null;
+    const p = [0, 1, 2].map((i) => points.reduce((sum, q) => sum + q[i], 0) / points.length);
+    return [p[0], p[1] + DIMS.depth + lift, p[2]];
+  }
+
+  function workingPoint(name, closed) {
+    const line = layout.workings.get(name);
+    const mid = geo.pointAt(sceneLine(layout, line, k), line.cum, line.total / 2);
+    return [mid.point[0], mid.point[1] + DIMS.depth + (closed ? 7 : 3), mid.point[2]];
+  }
+
+  function buildSprites() {
+    spritesDirty = false;
+    const list = [];
+    const pinPoints = [];
+    if (!layout || !view || !state || !state.model) {
+      spriteGeo = writeSprites(spriteGeo, list);
+      spritesFront.geometry = spriteGeo;
+      spritesBehind.geometry = spriteGeo;
+      return;
+    }
+    const now = performance.now();
+    const signPosts = [];
+    for (const [name, exit] of Object.entries(view.exits)) {
+      const cell = ['available', 'unavailable'].includes(exit.state) ? `exit:${exit.state}` : 'exit:unknown';
+      const p = exitPoint(name);
+      if (exit.thingId === view.selected) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 4, key: exit.thingId});
+      list.push({position: p, cell, size: SPRITE_PX.exit, key: exit.thingId});
+    }
+    for (const [name, sensor] of Object.entries(view.sensors)) {
+      const base = sensorPoint(name);
+      if (!base) continue;
+      const p = [base[0], base[1] + 7.5, base[2]];
+      signPosts.push([base, [base[0], base[1] + 6, base[2]]]);
+      const cell = ['fresh', 'stale', 'lost'].includes(sensor.quality) ? `sensor:${sensor.quality}` : 'sensor:unknown';
+      if (sensor.thingId === view.selected) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.sensor + 14, key: sensor.thingId});
+      if (sensor.pending) list.push({position: p, cell: 'ring:pending', size: SPRITE_PX.sensor + 14, key: sensor.thingId});
+      if (sensor.thingId === hovered) list.push({position: p, cell: 'ring:hover', size: SPRITE_PX.sensor + 12, key: sensor.thingId});
+      list.push({position: p, cell, size: SPRITE_PX.sensor, key: sensor.thingId});
+    }
+    // Signs: restriction of entry at the entrances of a zone, the state of a zone at its centre, pending commands.
+    for (const [name, zone] of Object.entries(view.zones)) {
+      if (zone.workings.length === 0) continue;
+      if (zone.restriction === 'blocked') {
+        for (const node of zoneEntrances(layout, zone.workings)) {
+          const p = toScene(layout, layout.nodes.get(node), k);
+          signPosts.push([[p[0], p[1], p[2]], [p[0], p[1] + 9, p[2]]]);
+          list.push({position: [p[0], p[1] + 10.5, p[2]], cell: 'sign:blocked', size: SPRITE_PX.sign, key: zone.thingId});
+        }
+      }
+      const thing = thingByName(state.model, name);
+      const hazard = thing.hazard.state;
+      const cell = hazard === 'unknown' && zone.lastKnown === 'danger' ? 'sign:lastDanger' : (hazard === 'normal' ? null : `sign:${hazard}`);
+      if (cell && view.hasSnapshot) list.push({position: zonePoint(name, 3), cell, size: SPRITE_PX.sign + 4, key: zone.thingId});
+    }
+    for (const [name, working] of Object.entries(view.workings)) {
+      const zone = working.zone ? view.zones[working.zone] : null;
+      if (working.restriction === 'blocked' && !(zone && zone.restriction === 'blocked')) {
+        const p = workingPoint(name, false);
+        list.push({position: [p[0], p[1] + 4, p[2]], cell: 'sign:blocked', size: SPRITE_PX.sign, key: working.thingId});
+      }
+      if (working.pending) {
+        const p = workingPoint(name, working.passability === 'closed');
+        list.push({position: [p[0], p[1] + 8, p[2]], cell: 'sign:pending', size: SPRITE_PX.sign, key: working.thingId});
+      }
+    }
+    // People last: on top of every other sprite.
+    const rank = (group) => ({ok: 0, none: 2}[view.workers[group.front].egress] ?? 1);
+    for (const group of [...groups].sort((a, b) => rank(a) - rank(b))) {
+      const p = groupPoint(group, now);
+      if (!p) continue;
+      const front = view.workers[group.front];
+      const thingId = front.thingId;
+      const members = group.members.map((member) => view.workers[member]);
+      pinPoints.push([p[0], p[1] - 6 + 0.3, p[2]], [p[0], p[1] - 1.8, p[2]]);
+      if (members.some((member) => member.thingId === view.selected)) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 6, key: thingId});
+      if (members.some((member) => member.thingId === hovered)) list.push({position: p, cell: 'ring:hover', size: SPRITE_PX.ring + 4, key: thingId});
+      if (members.some((member) => member.locationHazard === 'danger')) list.push({position: p, cell: 'ring:danger', size: SPRITE_PX.ring, key: thingId});
+      const cell = front.egress === 'ok' ? 'worker:ok' : (front.egress === 'none' ? 'worker:none' : 'worker:unknown');
+      list.push({position: p, cell, size: SPRITE_PX.worker, key: thingId, group});
+    }
+    spriteList = list;
+    spriteGeo = writeSprites(spriteGeo, spriteList);
+    spritesFront.geometry = spriteGeo;
+    spritesBehind.geometry = spriteGeo;
+    // Pins of the people and posts of the sensors and signs.
+    const posts = signPosts.flat();
+    const pinArray = new Float32Array([...pinPoints, ...posts].flat());
+    pins.geometry.dispose();
+    pins.geometry = new THREE.BufferGeometry();
+    pins.geometry.setAttribute('position', new THREE.BufferAttribute(pinArray, 3));
+  }
+
+  // ---- loader (decor) -------------------------------------------------------------------
+
+  /**
+   * The first place of the list that nothing published occupies: no person, no route, no sensor on the
+   * stretch it covers, and the working is not closed (its barricade). None free: no loader.
+   */
+  function chooseLoaderPlace() {
+    if (!view || loaderCandidates.length === 0) return null;
+    const margin = 6;
+    const busy = (name, span) => {
+      const inside = (offset) => Number.isFinite(offset) && offset >= span[0] - margin && offset <= span[1] + margin;
+      const working = view.workings[name];
+      if (!working || working.passability === 'closed' || working.pending) return true;
+      if (Object.values(view.workers).some((worker) => worker.at === name && inside(worker.offsetM))) return true;
+      if (view.routes.some((route) => route.pieces.some((piece) => piece.working === name
+        && Math.max(piece.start, piece.end) >= span[0] - margin && Math.min(piece.start, piece.end) <= span[1] + margin))) return true;
+      return Object.keys(view.sensors).some((sensor) => {
+        const attrs = thingByName(state.model, sensor).attrs;
+        return attrs.working === name && inside(attrs.offset_m);
+      });
+    };
+    return loaderCandidates.find((place) => !busy(place.working, place.span)) || null;
+  }
+
+  function placeLoader() {
+    if (!loader || !loaderPlaceInfo || !layout) {
+      if (loader) loader.visible = false;
+      root.toggleAttribute('data-decor-placed', false);
+      return;
+    }
+    const line = layout.workings.get(loaderPlaceInfo.working);
+    const at = pointOnWorking(layout, loaderPlaceInfo.working, loaderPlaceInfo.offsetM, k);
+    if (!line || !at) return;
+    const dir = loaderPlaceInfo.towardsEnd ? at.dir : at.dir.map((v) => -v);
+    loader.position.set(at.point[0], at.point[1] + 0.06, at.point[2]);
+    loader.rotation.set(0, Math.atan2(-dir[2], dir[0]), 0);
+    loader.visible = loaderNear;
+    loader.updateMatrixWorld(true);
+    root.toggleAttribute('data-decor-placed', true);
+  }
+
+  /** The loader is drawn only when it is large enough on the screen to be recognised. */
+  function updateLoaderZoom() {
+    if (!loader || !loaderPlaceInfo) return;
+    const p = project([loader.position.x, loader.position.y, loader.position.z]);
+    const near = Boolean(p && p.visible && p.scale * LOADER_LENGTH >= LOADER_MIN_PX);
+    if (near !== loaderNear) {
+      loaderNear = near;
+      loader.visible = near;
+      root.setAttribute('data-decor-shown', String(near));
+      gizmo.setDecor(near);
+    }
+  }
+
+  /** Paint of the scene's copy of the model: lifted from the dark glb values so that it reads on stone. */
+  const LOADER_PAINT = {
+    lhd_paint_graphite: '#66717B', lhd_steel_worn: '#9A948A', lhd_rubber: '#34373B', lhd_lens: '#F2EADC', lhd_copper: '#B07A52',
+  };
+
+  async function loadLoader() {
+    try {
+      const {GLTFLoader} = await import('three/addons/loaders/GLTFLoader.js');
+      const gltf = await new GLTFLoader().loadAsync(new URL('../../models/lhd.glb', import.meta.url).href);
+      if (disposed) return;
+      const model = gltf.scene;
+      const outline = new THREE.MeshBasicMaterial({color: '#101215', side: THREE.BackSide});
+      const outlines = [];
+      model.traverse((object) => {
+        if (!object.isMesh) return;
+        const source = Array.isArray(object.material) ? object.material[0] : object.material;
+        const paint = new THREE.Color(LOADER_PAINT[source && source.name] || (source ? source.color : '#7A7F86'));
+        object.material = low
+          ? new THREE.MeshLambertMaterial({color: paint, emissive: '#1B2128'})
+          : new THREE.MeshStandardMaterial({color: paint, roughness: 0.6, metalness: 0.1, emissive: '#1B2128'});
+        if (source) source.dispose();
+        // An ink outline (the back faces pushed out along the normals): the machine keeps its silhouette on any floor.
+        const geometry = object.geometry.clone();
+        const position = geometry.attributes.position;
+        const normal = geometry.attributes.normal;
+        if (normal) {
+          for (let i = 0; i < position.count; i += 1) {
+            position.setXYZ(i, position.getX(i) + normal.getX(i) * 0.07, position.getY(i) + normal.getY(i) * 0.07,
+              position.getZ(i) + normal.getZ(i) * 0.07);
+          }
+          const edge = new THREE.Mesh(geometry, outline);
+          edge.position.copy(object.position);
+          edge.quaternion.copy(object.quaternion);
+          edge.scale.copy(object.scale);
+          outlines.push([object.parent, edge]);
+        }
+      });
+      for (const [parent, edge] of outlines) parent.add(edge);
+      model.scale.setScalar(WIDTH_FACTOR);
+      // A soft contact shadow on the floor: the machine stands, it does not float.
+      const shadow = new THREE.Mesh(plane(-LOADER_LENGTH * 0.62, LOADER_LENGTH * 0.62, -2.6 * WIDTH_FACTOR, 2.6 * WIDTH_FACTOR, 0.05),
+        new THREE.MeshBasicMaterial({map: textures.shadow, transparent: true, depthWrite: false, opacity: 0.9,
+          polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6}));
+      shadow.renderOrder = 8;
+      loader = new THREE.Group();
+      loader.add(shadow, model);
+      loader.name = 'decor:loader';
+      loader.visible = false;
+      world.add(loader);
+      loaderPlaceInfo = chooseLoaderPlace();
+      placeLoader();
+      root.setAttribute('data-decor', 'loaded');
+      setLabels();
+      invalidate();
+    } catch (error) {
+      // The model is decoration: the scene is complete without it.
+      root.setAttribute('data-decor', 'absent');
+    }
+  }
+
+  // ---- labels and the overlay -------------------------------------------------------------
+
+  const anchors = {
+    level(level) {
+      const y = levelY(layout, level, k) + DIMS.depth;
+      const b = level.box;
+      const corners = [[b.minX, y, b.minZ], [b.maxX, y, b.minZ], [b.maxX, y, b.maxZ], [b.minX, y, b.maxZ]];
+      let best = null;
+      let bestX = Infinity;
+      const v = new THREE.Vector3();
+      for (const c of corners) {
+        v.set(c[0], c[1], c[2]).project(camera);
+        if (v.x < bestX && v.z < 1) {
+          bestX = v.x;
+          best = c;
+        }
+      }
+      return best;
+    },
+    zone: (name) => zonePoint(name, 16),
+    working: workingPoint,
+    group: (group) => groupPoint(group),
+    sensor: (name) => {
+      const p = sensorPoint(name);
+      return p ? [p[0], p[1] + 7.5, p[2]] : null;
+    },
+    exit: exitPoint,
+  };
+
+  function setLabels() {
+    if (!layout || !view || !state || !state.model) {
+      labels.set([]);
+      return;
+    }
+    labels.set(labelItems({model: state.model, view, layout, groups, anchors}));
+  }
+
+  const v3 = new THREE.Vector3();
+  function project(point) {
+    if (!point) return null;
+    v3.set(point[0], point[1], point[2]).project(camera);
+    const visible = v3.z > -1 && v3.z < 1 && Math.abs(v3.x) < 1.2 && Math.abs(v3.y) < 1.2;
+    const x = ((v3.x + 1) / 2) * width;
+    const y = ((1 - v3.y) / 2) * height;
+    // Pixels per metre at the point, from the distance to the camera.
+    const distance = camera.position.distanceTo(new THREE.Vector3(point[0], point[1], point[2]));
+    const scale = height / (2 * distance * Math.tan((camera.fov * DEG) / 2));
+    return {x, y, visible, scale};
+  }
+
+  function refreshObstacles() {
+    const now = performance.now();
+    if (now - obstaclesAt < 400) return;
+    obstaclesAt = now;
+    const origin = root.getBoundingClientRect();
+    fixedObstacles = [];
+    // Controls over the stage: the HUD, the tabs when they lie over it, the legend chip (view/legend.js), the notice
+    // of a fallback, the gizmo and the caption of old data.
+    const others = [...document.querySelectorAll('#stage-hud .hud__row, #stage-hud .hud__status, .hud__keys[open] .hud__keys-body, '
+      + '#legend, .stage-notice:not([hidden]), #centre > .centre__bar')];
+    for (const element of [...others, gizmo.element, ...(old.hidden ? [] : [oldText])]) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        fixedObstacles.push({x: rect.left - origin.left - 4, y: rect.top - origin.top - 4, w: rect.width + 8, h: rect.height + 8, key: 'fixed'});
+      }
+    }
+  }
+
+  function placeLabels() {
+    refreshObstacles();
+    const obstacles = [...fixedObstacles];
+    for (const sprite of spriteList) {
+      if (!sprite.cell.startsWith('worker') && !sprite.cell.startsWith('exit') && !sprite.cell.startsWith('sign')) continue;
+      const p = project(sprite.position);
+      if (!p || !p.visible) continue;
+      const r = sprite.size / 2 + 2;
+      obstacles.push({x: p.x - r, y: p.y - r, w: 2 * r, h: 2 * r, key: sprite.group ? `worker:${sprite.group.key}` : sprite.key});
+    }
+    // The decorative loader, while it is drawn: the labels of the scene leave it visible.
+    if (loader && loader.visible) {
+      const p = project([loader.position.x, loader.position.y + WIDTH_FACTOR, loader.position.z]);
+      if (p && p.visible) {
+        const r = (LOADER_LENGTH / 2) * p.scale;
+        obstacles.push({x: p.x - r, y: p.y - r * 0.6, w: 2 * r, h: r * 1.2, key: DECOR});
+      }
+    }
+    // Barricades: a label never covers the barrier it explains.
+    if (view) {
+      for (const [name, working] of Object.entries(view.workings)) {
+        if (working.passability !== 'closed') continue;
+        const p = project(workingPoint(name, false));
+        if (p && p.visible) obstacles.push({x: p.x - 16, y: p.y - 14, w: 32, h: 28, key: 'barrier'});
+      }
+    }
+    const focused = labelLayer.contains(document.activeElement) ? document.activeElement : null;
+    labels.place(project, width, height, obstacles, {focused, selected: view ? view.selected : null, hovered});
+  }
+
+  // ---- gizmo: north arrow, scale bar and honest captions --------------------------------------
+
+  function createGizmo() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const element = document.createElement('div');
+    element.className = 's3__gizmo';
+    element.setAttribute('data-testid', 'scene3d-gizmo');
+    const compass = document.createElementNS(NS, 'svg');
+    compass.setAttribute('viewBox', '-20 -20 40 40');
+    compass.setAttribute('class', 's3__compass');
+    compass.setAttribute('aria-hidden', 'true');
+    const dial = document.createElementNS(NS, 'circle');
+    dial.setAttribute('r', '17');
+    dial.setAttribute('class', 's3__dial');
+    const needle = document.createElementNS(NS, 'g');
+    const arrow = document.createElementNS(NS, 'path');
+    arrow.setAttribute('d', 'M0 -14L5 2L0 -1L-5 2Z');
+    arrow.setAttribute('class', 's3__needle');
+    const letter = document.createElementNS(NS, 'text');
+    letter.setAttribute('class', 's3__north');
+    letter.setAttribute('x', '0');
+    letter.setAttribute('y', '12');
+    letter.setAttribute('text-anchor', 'middle');
+    letter.textContent = SCENE.north;
+    needle.append(arrow, letter);
+    compass.append(dial, needle);
+    const scale = document.createElement('div');
+    scale.className = 's3__scale';
+    const barEl = document.createElement('span');
+    barEl.className = 's3__bar';
+    const barText = document.createElement('span');
+    barText.className = 's3__bar-text';
+    scale.append(barEl, barText);
+    const notes = document.createElement('div');
+    notes.className = 's3__notes';
+    const vertical = document.createElement('span');
+    const thickness = document.createElement('span');
+    thickness.textContent = SCENE.notToScale;
+    const decor = document.createElement('span');
+    decor.hidden = true;
+    decor.textContent = SCENE.decorNote(WIDTH_FACTOR);
+    notes.append(vertical, thickness, decor);
+    const col = document.createElement('div');
+    col.className = 's3__gizmo-text';
+    col.append(scale, notes);
+    element.append(compass, col);
+    let lastAngle = null;
+    let lastBar = null;
+    return {
+      element,
+      /** The caption of the decorative loader, while it is drawn. */
+      setDecor(shown) {
+        decor.hidden = !shown;
+      },
+      setVertical(factor) {
+        const value = SCENE.vertical(factor);
+        if (vertical.textContent !== value) vertical.textContent = value;
+      },
+      update() {
+        if (!width) return;
+        const target = orbit.state.target;
+        const a = project([target.x, target.y, target.z]);
+        const north = project([target.x, target.y, target.z - 100]);
+        if (a && north) {
+          const angle = Math.round((Math.atan2(north.x - a.x, a.y - north.y) * 180) / Math.PI);
+          if (angle !== lastAngle) {
+            needle.setAttribute('transform', `rotate(${angle})`);
+            lastAngle = angle;
+          }
+        }
+        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+        const b = project([target.x + right.x * 100, target.y + right.y * 100, target.z + right.z * 100]);
+        if (a && b) {
+          const perMetre = Math.hypot(b.x - a.x, b.y - a.y) / 100;
+          const nice = [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000].find((m) => m * perMetre >= 56) || 1000;
+          const px = Math.round(nice * perMetre);
+          const key2 = `${nice}:${px}`;
+          if (key2 !== lastBar) {
+            barEl.style.width = `${px}px`;
+            barText.textContent = `${text.quantity(nice, 'm')} ${SCENE.scaleAt}`;
+            lastBar = key2;
+          }
+        }
+      },
+    };
+  }
+
+  // ---- frames -------------------------------------------------------------------------
+
+  function invalidate() {
+    if (disposed || lost || rafId || !width) return;
+    rafId = requestAnimationFrame(frame);
+    if (root.getAttribute('data-rendering') !== 'active') {
+      root.setAttribute('data-rendering', 'active');
+      options.onEvent('frame', {frames});
+    }
+  }
+
+  function frame(now) {
+    rafId = 0;
+    if (disposed || lost) return;
+    let active = false;
+    active = orbit.step(now) || active;
+    active = stepExplode(now) || active;
+    active = stepTweens(now) || active;
+    active = stepDrawIn(now) || active;
+    if (spritesDirty) buildSprites();
+    updateLoaderZoom();
+    const started = performance.now();
+    renderer.render(scene, camera);
+    renderMs.push(performance.now() - started);
+    if (renderMs.length > 30) renderMs.shift();
+    frames += 1;
+    const firstWithContent = firstFrameAt === null && layout !== null && view !== null;
+    if (firstWithContent) {
+      firstFrameAt = performance.now();
+      root.setAttribute('data-first-frame-ms', String(Math.round(firstFrameAt)));
+    }
+    placeLabels();
+    gizmo.update();
+    mirrorCamera();
+    root.setAttribute('data-frames', String(frames));
+    root.setAttribute('data-tweens', String(tweens.size));
+    if (active) invalidate();
+    else root.setAttribute('data-rendering', 'idle');
+    options.onEvent('frame', {frames});
+    if (firstWithContent) options.onEvent('ready');
+  }
+
+  function mirrorCamera() {
+    const {az, el, dist} = orbit.state;
+    const azDeg = Math.round(((((az / DEG) % 360) + 540) % 360) - 180);
+    root.setAttribute('data-camera', `${azDeg} ${Math.round(el / DEG)} ${Math.round(dist)}`);
+  }
+
+  // ---- explode ----------------------------------------------------------------------------
+
+  function setExplode(value, animate = true) {
+    const target = Math.min(Math.max(value, 0), 1);
+    if (Math.abs(target - explode) < 1e-4 && !explodeTween) return;
+    if (!layout || !animate || reduced()) {
+      explodeTween = null;
+      explode = target;
+      k = verticalFactor(explode);
+      if (layout) {
+        applyK();
+        if (overviewMode) overview(false);
+      }
+      root.setAttribute('data-explode', explode.toFixed(2));
+      invalidate();
+      return;
+    }
+    explodeTween = {from: explode, to: target, start: null};
+    if (overviewMode) {
+      const fitted = fitAll(verticalFactor(target));
+      orbit.glideTo({target: fitted.target, dist: fitted.dist}, EXPLODE_MS);
+    }
+    invalidate();
+  }
+
+  function stepExplode(now) {
+    if (!explodeTween) return false;
+    if (explodeTween.start === null) explodeTween.start = now;
+    const t = Math.min((now - explodeTween.start) / EXPLODE_MS, 1);
+    const e = t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2;
+    explode = explodeTween.from + (explodeTween.to - explodeTween.from) * e;
+    k = verticalFactor(explode);
+    applyK();
+    root.setAttribute('data-explode', explode.toFixed(2));
+    if (t >= 1) {
+      explodeTween = null;
+      return false;
+    }
+    return true;
+  }
+
+  // ---- camera views -----------------------------------------------------------------------
+
+  /** Pixels kept free around the model in the overview: room for the labels of the exits (top) and the ramps (right). */
+  const PAD = {left: 14, right: 48, top: 44, bottom: 14};
+  /** The label of a level stands to the left of its slab: this much room, in pixels, is part of the silhouette. */
+  const LEVEL_LABEL_PX = 100;
+  /** Around a focused object: it stays well inside the free part of the stage. */
+  const PAD_FOCUS = {left: 120, right: 120, top: 90, bottom: 80};
+  const probe = camera.clone();
+  let lastCover = '';
+
+  /**
+   * Rectangles over the stage that the picture keeps clear of, in pixels of the stage: the HUD, the tabs,
+   * the legend chip, the gizmo, a notice; the dock when it is unfolded over the stage (compact layout) and
+   * the open stand drawer.
+   */
+  function coverRects() {
+    obstaclesAt = 0;
+    refreshObstacles();
+    const rects = fixedObstacles.map(({x, y, w, h}) => ({x, y, w, h}));
+    const origin = root.getBoundingClientRect();
+    const add = (element, grow = 8) => {
+      const r = element.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) rects.push({x: r.left - origin.left - grow, y: r.top - origin.top - grow, w: r.width + 2 * grow, h: r.height + 2 * grow});
+    };
+    const dock = document.getElementById('decision-dock');
+    if (dock && !dock.hidden && document.body.dataset.dock === 'open' && getComputedStyle(dock).position === 'absolute') add(dock);
+    const drawer = document.getElementById('stand-drawer');
+    if (drawer && document.body.dataset.stand === 'open') add(drawer, 12);
+    // The dock and the drawer cover a part of the stage; the other rectangles are chips that may give way.
+    rects.forEach((r, index) => {
+      r.cover = index >= fixedObstacles.length;
+    });
+    return rects.filter((r) => r.x < width && r.y < height && r.x + r.w > 0 && r.y + r.h > 0);
+  }
+
+  function placeProbe(target, dist, az, el) {
+    probe.fov = camera.fov;
+    probe.aspect = width / Math.max(height, 1);
+    probe.position.set(target.x + dist * Math.sin(az) * Math.cos(el), target.y + dist * Math.sin(el), target.z + dist * Math.cos(az) * Math.cos(el));
+    probe.up.set(0, 1, 0);
+    probe.lookAt(target);
+    probe.near = Math.max(dist / 200, 0.5);
+    probe.far = dist * 6 + 4000;
+    probe.updateProjectionMatrix();
+    probe.updateMatrixWorld();
+  }
+
+  /** Pixels of points seen from the probe. */
+  function probePixels(vectors) {
+    const v = new THREE.Vector3();
+    return vectors.map((p) => {
+      v.copy(p).project(probe);
+      return [((v.x + 1) / 2) * width, ((1 - v.y) / 2) * height];
+    });
+  }
+
+  /** The convex hull of pixel points (monotone chain), counter-clockwise on the screen. */
+  function hull(points) {
+    const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const half = (list) => {
+      const out = [];
+      for (const p of list) {
+        while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+        out.push(p);
+      }
+      out.pop();
+      return out;
+    };
+    return [...half(sorted), ...half([...sorted].reverse())];
+  }
+
+  /** True when a convex polygon and a rectangle overlap (separating axes). */
+  function overlaps(poly, r) {
+    const axes = [[1, 0], [0, 1]];
+    for (let i = 0; i < poly.length; i += 1) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      axes.push([a[1] - b[1], b[0] - a[0]]);
+    }
+    const corners = [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]];
+    for (const [ax, ay] of axes) {
+      let p0 = Infinity;
+      let p1 = -Infinity;
+      for (const p of poly) {
+        const d = p[0] * ax + p[1] * ay;
+        p0 = Math.min(p0, d);
+        p1 = Math.max(p1, d);
+      }
+      let r0 = Infinity;
+      let r1 = -Infinity;
+      for (const p of corners) {
+        const d = p[0] * ax + p[1] * ay;
+        r0 = Math.min(r0, d);
+        r1 = Math.max(r1, d);
+      }
+      if (p1 <= r0 || r1 <= p0) return false;
+    }
+    return true;
+  }
+
+  function clear(poly, rects, pad, dx = 0, dy = 0) {
+    for (const [x, y] of poly) {
+      const px = x + dx;
+      const py = y + dy;
+      if (px < pad.left || px > width - pad.right || py < pad.top || py > height - pad.bottom) return false;
+    }
+    const moved = dx === 0 && dy === 0 ? poly : poly.map(([x, y]) => [x + dx, y + dy]);
+    return rects.every((r) => !overlaps(moved, r));
+  }
+
+  /**
+   * The largest view of `points` from the azimuth and elevation that keeps their silhouette inside the stage
+   * (with `pad` pixels) and clear of every control over it. The view is shrunk and shifted step by step;
+   * a shift is tried in pixels first and confirmed with a real projection (perspective is not a translation).
+   */
+  function frameView(points, az, el, pad, rects, leftLabels = []) {
+    return frameWith(points, az, el, pad, rects, leftLabels)
+      // Too little room between the chips: only what covers the stage is avoided.
+      || frameWith(points, az, el, pad, rects.filter((r) => r.cover), leftLabels)
+      || {...orbit.fit(points.map((p) => new THREE.Vector3(p[0], p[1], p[2])), width / Math.max(height, 1), {x: 0.04, top: 0.1, bottom: 0.08},
+        az, el), ok: false};
+  }
+
+  /** frameView against one set of rectangles; null when nothing fits down to a small view. */
+  function frameWith(points, az, el, pad, rects, leftLabels) {
+    const vectors = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+    const labelVectors = leftLabels.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+    const silhouettePx = () => hull([...probePixels(vectors), ...probePixels(labelVectors).map(([x, y]) => [x - LEVEL_LABEL_PX, y])]);
+    const aspect = width / Math.max(height, 1);
+    const ndc = (px, total) => (2 * px) / Math.max(total, 1);
+    const base = orbit.fit(vectors, aspect, {x: ndc((pad.left + pad.right) / 2, width), top: ndc(pad.top, height),
+      bottom: ndc(pad.bottom, height)}, az, el);
+    const offsets = [];
+    for (let i = -6; i <= 6; i += 1) {
+      for (let j = -6; j <= 6; j += 1) offsets.push([i * 0.04 * width, j * 0.035 * height]);
+    }
+    offsets.sort((a, b) => Math.hypot(a[0] / width, a[1] / height) - Math.hypot(b[0] / width, b[1] / height));
+    for (let s = 1; s >= 0.45; s -= 0.025) {
+      const dist = base.dist / s;
+      placeProbe(base.target, dist, az, el);
+      const poly = silhouettePx();
+      const right = new THREE.Vector3().setFromMatrixColumn(probe.matrixWorld, 0);
+      const up = new THREE.Vector3().setFromMatrixColumn(probe.matrixWorld, 1);
+      const perPixel = (2 * dist * Math.tan((camera.fov * DEG) / 2)) / Math.max(height, 1);
+      for (const [dx, dy] of offsets) {
+        if (!clear(poly, rects, pad, dx, dy)) continue;
+        const target = base.target.clone().addScaledVector(right, -dx * perPixel).addScaledVector(up, dy * perPixel);
+        placeProbe(target, dist, az, el);
+        if (clear(silhouettePx(), rects, pad)) return {target, dist, ok: true};
+        placeProbe(base.target, dist, az, el);
+      }
+    }
+    return null;
+  }
+
+  /** The controls over the stage changed (the legend chip appeared, the HUD wrapped, the dock or the drawer opened): refit the overview. */
+  function refitOverview(animate = false) {
+    if (!layout || !width || !overviewMode || orbit.gliding || explodeTween) return;
+    const before = lastCover;
+    const fitted = fitAll();
+    // Nothing fits in what is left of the stage (the dock unfolded over a small stage): the view stays.
+    if (lastCover === before || !fitted.ok) return;
+    if (animate) orbit.glideTo({target: fitted.target, dist: fitted.dist});
+    else orbit.set({target: fitted.target, dist: fitted.dist});
+    invalidate();
+  }
+
+  function fitAll(factor = k) {
+    const rects = coverRects();
+    lastCover = `${width}x${height}:${rects.map((r) => [r.x, r.y, r.w, r.h].map(Math.round).join(',')).join(';')}`;
+    const corners = layout.levels.flatMap((level) => {
+      const y = levelY(layout, level, factor) + DIMS.depth;
+      const b = level.box;
+      return [[b.minX, y, b.minZ], [b.maxX, y, b.minZ], [b.minX, y, b.maxZ], [b.maxX, y, b.maxZ]];
+    });
+    return frameView(silhouette(layout, factor), DEFAULT_VIEW.az, DEFAULT_VIEW.el, PAD, rects, corners);
+  }
+
+  function overview(animate = true) {
+    if (!layout || !width) return false;
+    overviewMode = true;
+    const fitted = fitAll();
+    const goal = {target: fitted.target, dist: fitted.dist, az: nearestAngle(orbit.state.az, DEFAULT_VIEW.az), el: DEFAULT_VIEW.el};
+    if (animate) orbit.glideTo(goal);
+    else orbit.set(goal);
+    invalidate();
+    return true;
+  }
+
+  function nearestAngle(from, to) {
+    const turn = Math.PI * 2;
+    return to + Math.round((from - to) / turn) * turn;
+  }
+
+  function fitPoints(points, minDist) {
+    const fitted = frameView(points, orbit.state.az, orbit.state.el, PAD_FOCUS, coverRects());
+    if (fitted.dist >= minDist) return fitted;
+    // Not closer than minDist: the object is then centred in the free part of the stage, as framed above.
+    const vectors = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+    placeProbe(fitted.target, fitted.dist, orbit.state.az, orbit.state.el);
+    const centre = probePixels(vectors).reduce((sum, p) => [sum[0] + p[0] / vectors.length, sum[1] + p[1] / vectors.length], [0, 0]);
+    const right = new THREE.Vector3().setFromMatrixColumn(probe.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(probe.matrixWorld, 1);
+    const mid = vectors.reduce((sum, v) => sum.add(v), new THREE.Vector3()).multiplyScalar(1 / vectors.length);
+    const perPixel = (2 * minDist * Math.tan((camera.fov * DEG) / 2)) / Math.max(height, 1);
+    const target = mid.addScaledVector(right, -(centre[0] - width / 2) * perPixel).addScaledVector(up, (centre[1] - height / 2) * perPixel);
+    return {target, dist: minDist};
+  }
+
+  /** Glide to an object (full thingId) or a level (local name); the azimuth is kept. */
+  function focus(id) {
+    if (!layout || !state || !state.model) {
+      pendingFocus = id;
+      return true;
+    }
+    if (!width) {
+      pendingFocus = id;
+      return true;
+    }
+    const model = state.model;
+    const level = layout.levels.find((entry) => entry.name === id || (entry.thingId && entry.thingId === id));
+    let goal = null;
+    if (level) {
+      const y = levelY(layout, level, k);
+      const b = level.box;
+      goal = fitPoints([[b.minX, y + DIMS.depth, b.minZ], [b.maxX, y + DIMS.depth, b.maxZ], [b.minX, y - DIMS.thickness, b.maxZ],
+        [b.maxX, y + DIMS.depth, b.minZ]], 120);
+    } else {
+      const thing = model.things[id] || thingByName(model, id);
+      if (!thing) return false;
+      let points = [];
+      let minDist = 160;
+      if (thing.kind === 'zone' && view.zones[thing.name]) {
+        for (const local of view.zones[thing.name].workings) points.push(...sceneLine(layout, layout.workings.get(local), k));
+        minDist = 200;
+      } else if (thing.kind === 'working' && layout.workings.has(thing.name)) {
+        points = sceneLine(layout, layout.workings.get(thing.name), k);
+        minDist = 150;
+      } else if (thing.kind === 'worker') {
+        const p = workerPoint(thing.name);
+        if (p) points = [p];
+      } else if (thing.kind === 'sensor' && view.sensors[thing.name]) {
+        const p = sensorPoint(thing.name);
+        if (p) points = [p];
+        minDist = 130;
+      } else if (thing.kind === 'exit' && view.exits[thing.name]) {
+        points = [exitPoint(thing.name)];
+      } else if (thing.kind === 'level') {
+        return focus(thing.name);
+      } else if (thing.kind === 'incident' && typeof thing.values.zone === 'string') {
+        return focus(thing.values.zone);
+      }
+      if (points.length === 0) return false;
+      if (points.length === 1) {
+        const p = points[0];
+        points = [[p[0] - 30, p[1] - 4, p[2] - 30], [p[0] + 30, p[1] + 8, p[2] + 30]];
+      }
+      goal = fitPoints(points, minDist);
+    }
+    overviewMode = false;
+    orbit.glideTo({target: goal.target, dist: goal.dist});
+    invalidate();
+    return true;
+  }
+
+  function focusLevelStep(direction) {
+    if (!layout) return;
+    const y = orbit.state.target.y;
+    const ordered = layout.levels.map((level) => ({level, y: levelY(layout, level, k)}));
+    let index = ordered.reduce((best, entry, i) => (Math.abs(entry.y - y) < Math.abs(ordered[best].y - y) ? i : best), 0);
+    index = Math.min(Math.max(index + direction, 0), ordered.length - 1);
+    const level = ordered[index].level;
+    focus(level.name || level.thingId);
+  }
+
+  // ---- picking -------------------------------------------------------------------------
+
+  const raycaster = new THREE.Raycaster();
+
+  /** The nearest stone along the ray through a screen point: distance from the camera, or Infinity. */
+  function stoneDistance(x, y) {
+    raycaster.setFromCamera(new THREE.Vector2((x / width) * 2 - 1, 1 - (y / height) * 2), camera);
+    const targets = [];
+    for (const group of [...levelGroups, interGroup]) {
+      group.traverse((object) => {
+        if (object.isMesh && object.userData.pickable) targets.push(object);
+      });
+    }
+    const hits = raycaster.intersectObjects(targets, false);
+    return hits.length > 0 ? hits[0] : null;
+  }
+
+  function segmentDistance(p, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    let t = l2 > 0 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2 : 0;
+    t = Math.min(Math.max(t, 0), 1);
+    return {d: Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy), t};
+  }
+
+  /** The object under a screen point: a marker first, then a working, then a zone; decor separately. */
+  function pick(x, y) {
+    if (!layout || !view) return null;
+    const pointerAt = {x, y};
+    let best = null;
+    for (const sprite of spriteList) {
+      if (sprite.cell.startsWith('ring')) continue;
+      const p = project(sprite.position);
+      if (!p || !p.visible) continue;
+      const d = Math.hypot(p.x - x, p.y - y);
+      const r = sprite.size / 2 + 3;
+      if (d <= r && (!best || d < best.d)) {
+        let thingId = sprite.key;
+        if (sprite.group) {
+          const members = sprite.group.members.map((member) => view.workers[member].thingId);
+          const index = members.indexOf(view.selected);
+          // A second click on a group cycles through its people.
+          thingId = index >= 0 ? members[(index + 1) % members.length] : view.workers[sprite.group.front].thingId;
+        }
+        best = {d, thingId};
+      }
+    }
+    if (best) return best.thingId;
+    if (overDecor(x, y)) return DECOR;
+    const hit = stoneDistance(x, y);
+    const stoneAt = hit ? hit.distance : Infinity;
+    // The floor of a channel lies under the top face: stone in front of it by up to the channel's width,
+    // seen at the camera's elevation, still lets the channel be picked.
+    const tolerance = DIMS.half * 1.6 + DIMS.depth / Math.tan(Math.max(orbit.state.el, 0.12)) + 8;
+    let chosen = null;
+    for (const [name] of Object.entries(view.workings)) {
+      const line = layout.workings.get(name);
+      const points = sceneLine(layout, line, k);
+      for (let i = 1; i < points.length; i += 1) {
+        const a3 = points[i - 1];
+        const b3 = points[i];
+        const pa = project(a3);
+        const pb = project(b3);
+        if (!pa || !pb) continue;
+        const {d, t} = segmentDistance(pointerAt, pa, pb);
+        const scale = (pa.scale + pb.scale) / 2;
+        const reach = Math.max(DIMS.half * scale + 2, 6);
+        if (d > reach) continue;
+        const point = new THREE.Vector3(...a3.map((v, j) => v + (b3[j] - v) * t));
+        const distance = camera.position.distanceTo(point);
+        if (stoneAt + tolerance < distance) continue;
+        if (!chosen || d < chosen.d) chosen = {d, thingId: view.workings[name].thingId};
+      }
+    }
+    if (chosen) return chosen.thingId;
+    if (hit) {
+      // Inside the frame of a zone on the top face of its slab.
+      const group = levelGroups.find((entry) => entry.getObjectById(hit.object.id));
+      if (group) {
+        const local = [hit.point.x, hit.point.z];
+        for (const [name, zone] of Object.entries(view.zones)) {
+          const frame = staticParts.zoneFrames.get(name);
+          if (!frame || frame.level !== group.userData.level.name) continue;
+          if (frame.loops.some((loop) => insideLoop(local, loop))) return zone.thingId;
+        }
+      }
+    }
+    return null;
+  }
+
+  function insideLoop(point, loop) {
+    let hit = false;
+    for (let i = 0, j = loop.length - 1; i < loop.length; j = i, i += 1) {
+      const [xi, zi] = loop[i];
+      const [xj, zj] = loop[j];
+      if ((zi > point[1]) !== (zj > point[1]) && point[0] < ((xj - xi) * (point[1] - zi)) / (zj - zi) + xi) hit = !hit;
+    }
+    return hit;
+  }
+
+  function overDecor(x, y) {
+    if (!loader || !loader.visible) return false;
+    const p = project([loader.position.x, loader.position.y + 1.2 * WIDTH_FACTOR, loader.position.z]);
+    return Boolean(p && p.visible && Math.hypot(p.x - x, p.y - y) < Math.max((LOADER_LENGTH / 2) * p.scale, 8));
+  }
+
+  // ---- input ----------------------------------------------------------------------------
+
+  let dragging = null;
+  const local = (event) => {
+    const rect = canvas.getBoundingClientRect();
+    return {x: event.clientX - rect.left, y: event.clientY - rect.top};
+  };
+
+  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+  canvas.addEventListener('pointerdown', (event) => {
+    canvas.focus({preventScroll: true});
+    const at = local(event);
+    dragging = {
+      id: event.pointerId, x: at.x, y: at.y, startX: at.x, startY: at.y, moved: false, t: performance.now(),
+      kind: event.button === 2 || event.shiftKey ? 'pan' : 'rotate',
+    };
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    const at = local(event);
+    pointer = at;
+    if (dragging && dragging.id === event.pointerId) {
+      const dx = at.x - dragging.x;
+      const dy = at.y - dragging.y;
+      if (!dragging.moved && Math.hypot(at.x - dragging.startX, at.y - dragging.startY) < 4) return;
+      dragging.moved = true;
+      const now = performance.now();
+      orbit.drag(dragging.kind, dx, dy, height, now - dragging.t);
+      dragging.x = at.x;
+      dragging.y = at.y;
+      dragging.t = now;
+      overviewMode = false;
+      hideTip();
+      invalidate();
+      return;
+    }
+    updateHover(at.x, at.y);
+  });
+  const endDrag = (event) => {
+    if (!dragging || dragging.id !== event.pointerId) return;
+    const wasMoved = dragging.moved;
+    dragging = null;
+    orbit.release();
+    if (!wasMoved && event.type === 'pointerup') {
+      const at = local(event);
+      const thingId = pick(at.x, at.y);
+      ctx.select(thingId === DECOR ? null : thingId);
+    }
+    invalidate();
+  };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('pointerleave', () => {
+    pointer = null;
+    if (hovered) {
+      hovered = null;
+      spritesDirty = true;
+      updateHoverOverlay();
+      invalidate();
+    }
+    hideTip();
+  });
+  canvas.addEventListener('dblclick', (event) => {
+    const at = local(event);
+    const thingId = pick(at.x, at.y);
+    if (thingId && thingId !== DECOR) {
+      ctx.select(thingId);
+      focus(thingId);
+    }
+  });
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    const factor = Math.exp(Math.max(Math.min(event.deltaY, 200), -200) * 0.0015);
+    orbit.zoom(factor, false);
+    overviewMode = false;
+    invalidate();
+  }, {passive: false});
+  canvas.addEventListener('keydown', (event) => {
+    const step = 15 * DEG;
+    const panBy = orbit.state.dist * 0.12;
+    let handled = true;
+    switch (event.key) {
+      case 'ArrowLeft': if (event.shiftKey) orbit.pan(-panBy, 0); else orbit.rotate(step, 0); break;
+      case 'ArrowRight': if (event.shiftKey) orbit.pan(panBy, 0); else orbit.rotate(-step, 0); break;
+      case 'ArrowUp': if (event.shiftKey) orbit.pan(0, panBy); else orbit.rotate(0, 6 * DEG); break;
+      case 'ArrowDown': if (event.shiftKey) orbit.pan(0, -panBy); else orbit.rotate(0, -6 * DEG); break;
+      case '+': case '=': orbit.zoom(0.8, true); break;
+      case '-': case '_': orbit.zoom(1.25, true); break;
+      case 'Home': overview(true); break;
+      case 'PageUp': focusLevelStep(-1); break;
+      case 'PageDown': focusLevelStep(1); break;
+      case 'Escape': ctx.select(null); break;
+      default:
+        if (event.code === 'KeyE' && !event.ctrlKey && !event.metaKey && !event.altKey) options.onEvent('explode-key');
+        else handled = false;
+    }
+    if (handled) {
+      event.preventDefault();
+      if (event.key !== 'Home' && event.key !== 'Escape' && event.code !== 'KeyE') overviewMode = false;
+      invalidate();
+    }
+  });
+
+  function updateHover(x, y) {
+    const next = pick(x, y);
+    const decor = next === DECOR;
+    if (next !== hovered) {
+      hovered = next;
+      spritesDirty = true;
+      updateHoverOverlay();
+      invalidate();
+    }
+    if (!next) {
+      hideTip();
+      canvas.style.cursor = '';
+      return;
+    }
+    canvas.style.cursor = decor ? 'help' : 'pointer';
+    const lines = decor ? [SCENE.decor(WIDTH_FACTOR)] : tooltipLines(labels.items, next);
+    if (lines.length === 0) {
+      hideTip();
+      return;
+    }
+    tip.replaceChildren(...lines.map((line, index) => {
+      const span = document.createElement('span');
+      span.className = index === 0 ? 's3__tip-line is-bold' : 's3__tip-line';
+      span.textContent = line;
+      return span;
+    }));
+    tip.hidden = false;
+    const tx = Math.min(x + 16, width - tip.offsetWidth - 4);
+    const ty = Math.min(y + 18, height - tip.offsetHeight - 4);
+    tip.style.transform = `translate(${Math.max(tx, 4)}px, ${Math.max(ty, 4)}px)`;
+  }
+
+  function hideTip() {
+    if (!tip.hidden) tip.hidden = true;
+  }
+
+  // ---- size --------------------------------------------------------------------------
+
+  function resize() {
+    const rect = host.getBoundingClientRect();
+    const w = Math.round(rect.width);
+    const hh = Math.round(rect.height);
+    if (w === width && hh === height) return;
+    width = w;
+    height = hh;
+    if (width < 10 || height < 10) {
+      width = 0;
+      return;
+    }
+    if (low) {
+      // Software rendering is bound by the pixels it fills: the light quality draws at most about
+      // LOW_PIXELS and lets the browser scale the picture up.
+      const ratio = Math.min(1, Math.sqrt(LOW_PIXELS / (width * height)));
+      renderer.setPixelRatio(ratio);
+      spriteMat.front.uniforms.uPixelRatio.value = ratio;
+      spriteMat.behind.uniforms.uPixelRatio.value = ratio;
+    }
+    renderer.setSize(width, height, false);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    obstaclesAt = 0;
+    if (layout && overviewMode) overview(false);
+    if (pendingFocus && layout) {
+      const id = pendingFocus;
+      pendingFocus = null;
+      focus(id);
+    }
+    invalidate();
+  }
+  const resizeObserver = new ResizeObserver((entries) => {
+    if (entries.some((entry) => entry.target === host)) resize();
+    refitOverview(entries.some((entry) => entry.target.id === 'decision-dock'));
+  });
+  resizeObserver.observe(host);
+  for (const id of ['legend', 'stage-hud', 'decision-dock']) {
+    const element = document.getElementById(id);
+    if (element) resizeObserver.observe(element);
+  }
+  // The dock unfolding over the stage and the stand drawer change no size of the stage: the overview glides
+  // to the part of the stage they leave free.
+  let coverTimer = 0;
+  const coverObserver = new MutationObserver(() => {
+    clearTimeout(coverTimer);
+    coverTimer = setTimeout(() => refitOverview(true), 40);
+  });
+  coverObserver.observe(document.body, {attributes: true, attributeFilter: ['data-dock', 'data-stand']});
+
+  // ---- context loss ----------------------------------------------------------------------
+
+  const onLost = (event) => {
+    event.preventDefault();
+    lost = true;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+    if (!disposed) options.onEvent('context-lost');
+  };
+  const onRestored = () => {
+    if (!disposed) options.onEvent('context-restored');
+  };
+  canvas.addEventListener('webglcontextlost', onLost);
+  canvas.addEventListener('webglcontextrestored', onRestored);
+
+  // ---- updates from the store ------------------------------------------------------------
+
+  function update(next) {
+    if (disposed) return;
+    const previousRun = view ? view.run : null;
+    const previousLinkOk = view ? view.linkOk && !view.old : true;
+    state = next;
+    // Attributes of another topology than the model's: no picture of a mine the model does not use (as the scheme).
+    const link = next.link || {};
+    const mismatch = link.snapshot === 'invalid' && link.invalid && link.invalid.code === 'topology_mismatch';
+    if (!next.attributes || !next.model || mismatch) {
+      layout = null;
+      attributesRef = null;
+      buildStatic();
+      view = null;
+      signature = '';
+      loaderPlaceInfo = null;
+      if (loader) placeLoader();
+      setLabels();
+      root.removeAttribute('data-levels');
+      root.removeAttribute('data-workings');
+      invalidate();
+      return;
+    }
+    let rebuilt = false;
+    if (next.attributes !== attributesRef) {
+      attributesRef = next.attributes;
+      layout = buildLayout(next.model, next.attributes.mine);
+      drawn.clear();
+      tweens.clear();
+      buildStatic();
+      rebuilt = true;
+      root.setAttribute('data-levels', String(layout ? layout.levels.length : 0));
+      root.setAttribute('data-workings', String(layout ? layout.workings.size : 0));
+      if (layout) {
+        applyK();
+        if (overviewMode || !width) overview(false);
+        if (!loader && !root.hasAttribute('data-decor')) {
+          root.setAttribute('data-decor', 'loading');
+          loadLoader();
+        }
+      }
+    }
+    if (!layout) return;
+    const described = describe(next, layout);
+    const linkNowOk = described.view.linkOk && !described.view.old;
+    if (!linkNowOk && previousLinkOk) snapMotion();
+    if (!rebuilt && described.signature === signature) {
+      if (!linkNowOk && tweens.size > 0) snapMotion();
+      return;
+    }
+    const firstView = view === null;
+    view = described.view;
+    signature = described.signature;
+    groups = groupWorkers(view.workers);
+    updateMotion(previousRun);
+    if (!linkNowOk) snapMotion();
+    buildOverlays();
+    buildRoutes(!firstView);
+    // The loader keeps out of the way of what the model publishes: it moves to the next free place, or goes.
+    const place = chooseLoaderPlace();
+    const moved = place !== loaderPlaceInfo;
+    loaderPlaceInfo = place;
+    if (moved && loader) placeLoader();
+    setLabels();
+    old.hidden = !view.old;
+    root.toggleAttribute('data-old', view.old);
+    // The moment of the data is named by the line above the stage (view/overlay.js); the caption says what it means here.
+    oldText.textContent = view.old ? SCENE.oldData : '';
+    const dim = view.selected ? 0.78 : 1;
+    hemi.intensity = baseLight.hemi * dim;
+    key.intensity = baseLight.key * dim;
+    fill.intensity = baseLight.fill * dim;
+    root.setAttribute('data-workers-drawn', String(Object.values(view.workers).filter((worker) => worker.at).length));
+    root.setAttribute('data-routes', String(view.routes.length));
+    root.setAttribute('data-selected', view.selected || '');
+    canvas.setAttribute('aria-label', summary());
+    if (pendingFocus && width) {
+      const id = pendingFocus;
+      pendingFocus = null;
+      focus(id);
+    }
+    spritesDirty = true;
+    invalidate();
+  }
+
+  function summary() {
+    const shift = state.model.shift ? state.model.shift.values : {};
+    const parts = [SCENE.levelsCount(layout.levels.length), SCENE.workingsCount(layout.workings.size)];
+    if (view.hasSnapshot) {
+      parts.push(SCENE.workersShown(Object.values(view.workers).filter((worker) => worker.at).length));
+      if (Number.isFinite(shift.workers_in_danger)) parts.push(SCENE.inDanger(shift.workers_in_danger));
+      if (Number.isFinite(shift.workers_no_route)) parts.push(SCENE.noRoute(shift.workers_no_route));
+    } else {
+      parts.push(SCENE.noState);
+    }
+    return SCENE.canvas(parts);
+  }
+
+  // ---- lamps of the high quality ------------------------------------------------------------
+
+  if (!low) {
+    for (let i = 0; i < 3; i += 1) {
+      const lamp = new THREE.PointLight(TOKEN.lightWarm, 0, 140, 1.6);
+      lamps.push(lamp);
+      scene.add(lamp);
+    }
+  }
+
+  function placeLamps() {
+    if (low || !layout || !view) return;
+    const spots = Object.keys(view.exits).map((name) => exitPoint(name));
+    lamps.forEach((lamp, i) => {
+      const p = spots[i];
+      if (p) {
+        lamp.position.set(p[0], p[1] - 4, p[2]);
+        lamp.intensity = 2200;
+      } else {
+        lamp.intensity = 0;
+      }
+    });
+  }
+
+  // ---- measuring ---------------------------------------------------------------------------
+
+  /**
+   * Render `count` frames back to back, each finished on the GPU before the next,
+   * and give the median wall time of one frame (the first, with shader compilation, left out).
+   */
+  async function measure(count = 6) {
+    const times = [];
+    const pixel = new Uint8Array(4);
+    for (let i = 0; i < count; i += 1) {
+      if (disposed || lost) break;
+      await new Promise((resolve) => {
+        requestAnimationFrame(() => {
+          const started = performance.now();
+          if (spritesDirty) buildSprites();
+          renderer.render(scene, camera);
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+          times.push(performance.now() - started);
+          frames += 1;
+          resolve();
+        });
+      });
+    }
+    root.setAttribute('data-frames', String(frames));
+    // Frames asked for while measuring are drawn now, with the labels.
+    invalidate();
+    return median(times.slice(1));
+  }
+
+  function silhouetteBox() {
+    const points = silhouette(layout, k).map((p) => project(p)).filter(Boolean);
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map(Math.round);
+  }
+
+  function info() {
+    return {
+      renderer: rendererName,
+      triangles: renderer.info.render.triangles,
+      calls: renderer.info.render.calls,
+      geometries: renderer.info.memory.geometries,
+      textures: renderer.info.memory.textures,
+      frames,
+      firstFrameAt,
+      renderMedianMs: median(renderMs),
+      // The pixels of the stage the model takes (its silhouette), and the size of the stage.
+      model: layout && width ? silhouetteBox() : null,
+      stage: [width, height],
+      // The decorative loader: where it stands (a working and an offset of length_m), how large, whether drawn.
+      decor: loader && loaderPlaceInfo ? {
+        working: (layout.workings.get(loaderPlaceInfo.working) || {}).thingId || null, offsetM: loaderPlaceInfo.offsetM,
+        span: loaderPlaceInfo.span, lengthM: LOADER_LENGTH, factor: WIDTH_FACTOR, shown: loader.visible,
+        world: [loader.position.x, loader.position.y, loader.position.z].map((v) => Math.round(v * 100) / 100),
+      } : null,
+    };
+  }
+
+  function dispose() {
+    disposed = true;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+    resizeObserver.disconnect();
+    coverObserver.disconnect();
+    clearTimeout(coverTimer);
+    canvas.removeEventListener('webglcontextlost', onLost);
+    canvas.removeEventListener('webglcontextrestored', onRestored);
+    scene.traverse((object) => {
+      if (object.geometry) object.geometry.dispose();
+      if (object.material) [].concat(object.material).forEach((material) => material.dispose());
+    });
+    for (const value of Object.values(textures)) value.dispose();
+    atlasTexture.dispose();
+    renderer.dispose();
+    root.remove();
+  }
+
+  root.setAttribute('data-quality', low ? 'low' : 'high');
+  root.setAttribute('data-explode', explode.toFixed(2));
+  root.setAttribute('data-rendering', 'idle');
+  gizmo.setVertical(k);
+  resize();
+
+  return {
+    root, canvas, rendererName,
+    update(next) {
+      update(next);
+      placeLamps();
+    },
+    focus, overview, setExplode, measure, info, dispose,
+    get explode() {
+      return explode;
+    },
+    /** Pixel position of an object's marker or label anchor, for tests and the card. */
+    screenOf(thingId) {
+      if (!layout || !view || !state) return null;
+      const sprite = spriteList.find((entry) => !entry.cell.startsWith('ring') && (entry.key === thingId
+        || (entry.group && entry.group.members.some((member) => view.workers[member].thingId === thingId))));
+      const at = (point) => {
+        const p = project(point);
+        return p ? {...p, world: point.map((v) => Math.round(v * 100) / 100)} : null;
+      };
+      if (sprite) return at(sprite.position);
+      if (thingId === DECOR) return loader && loader.visible ? at([loader.position.x, loader.position.y + 1.2 * WIDTH_FACTOR, loader.position.z]) : null;
+      const thing = state.model.things[thingId];
+      if (thing && thing.kind === 'working' && layout.workings.has(thing.name)) {
+        const line = layout.workings.get(thing.name);
+        const mid = geo.pointAt(sceneLine(layout, line, k), line.cum, line.total / 2).point;
+        return at([mid[0], mid[1] + 0.2, mid[2]]);
+      }
+      return null;
+    },
+    invalidate,
+  };
+}

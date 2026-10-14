@@ -1,17 +1,32 @@
-/* The regions of the screen (DESIGN.md 2.3 and 2.5): a grid that fills the
-   viewport. The page itself never scrolls; every region scrolls inside.
+/* The composition of the screen (redesign spec 2): a grid that fills the
+   viewport. The page never scrolls; a region scrolls inside.
 
-   Wide layout (from 1600x900): left 300, right 440, journal 220.
-   Compact layout (1280x720): left 230, right 320 with the decision panel and
-   the card as tabs, the journal folded to its latest entry under the centre
-   column, run and seed behind the «Прогон» button. Never folded: the notice, link and data age,
-   the incident numbers, the legend, the two groups of the left panel. */
+   ┌ top bar ─────────────────────────────────────────────────────────────┐
+   ├ situation strip (only with an open incident or a banner) ────────────┤
+   ├ centre: tabs · stage (3D or scheme) · decision dock ─┬ right column ─┤
+   │   the stand drawer opens over the left edge          │ card, actions,│
+   │                                                      │ sent, journal │
+   └──────────────────────────────────────────────────────┴───────────────┘
+
+   Wide (from 1600x900): right column 400, top bar 60, the dock in the flow
+   under the stage. Compact (1280x720): right column 320, top bar 52, the dock
+   folds to its bar and unfolds over the stage, the strip is one line of chips.
+   Never hidden: the notice, link state and data age, the people figures,
+   incident step 1, the legend chip, the separation of the stand controls
+   (drawer, chalk) from the dispatcher actions (right column, copper).
+
+   Stage corners (for the stage module and the legend):
+     top-left      the stand drawer when open; nothing else
+     top-right     stage HUD controls (mode, quality, explode, level, overview)
+     bottom-left   the legend chip (#legend)
+     bottom-right  orientation gizmo and scale note */
 
 :root {
-  --w-left: 300px;
-  --w-right: 440px;
-  --h-journal: 220px;
-  --h-journal-bar: 28px;
+  --w-right: 400px;
+  --h-top: 60px;
+  --h-bar: 40px;
+  --w-stand: 340px;
+  --h-dock-bar: 30px;
 }
 
 html, body { height: 100%; overflow: hidden; }
@@ -20,195 +35,340 @@ html, body { height: 100%; overflow: hidden; }
   display: grid;
   width: 100vw;
   height: 100vh;
-  grid-template-columns: var(--w-left) minmax(0, 1fr) var(--w-right);
-  grid-template-rows: auto auto auto minmax(0, 1fr) var(--h-journal);
+  grid-template-columns: minmax(0, 1fr) var(--w-right);
+  grid-template-rows: var(--h-top) auto minmax(0, 1fr);
   grid-template-areas:
-    "top      top      top"
-    "incident incident incident"
-    "banners  banners  banners"
-    "left     centre   right"
-    "left     journal  journal";
+    "top       top"
+    "situation situation"
+    "centre    right";
   overflow: hidden;
+  background: var(--ink-0);
 }
 
-/* ---- top bar: two rows here, the incident strip is the third ------------ */
+/* ---- top bar ---------------------------------------------------------------- */
 
 .topbar {
   grid-area: top;
+  display: flex; align-items: center;
   min-width: 0;
-  background: var(--c-panel);
-  border-bottom: 1px solid var(--c-border);
+  padding: 0 var(--sp-4) 0 var(--sp-3);
+  overflow: hidden;
+  background: var(--ink-1);
+  border-bottom: 1px solid var(--line);
 }
-.topbar__row {
+.topbar__brand, .topbar__cluster {
   display: flex; align-items: center; gap: var(--sp-4);
-  min-height: 34px;
-  padding: 3px var(--sp-4);
   min-width: 0;
+  height: 100%;
+  padding: 0 14px;
 }
-.topbar__row--notice { border-bottom: 1px solid var(--c-border); }
-.topbar__right { display: flex; align-items: center; gap: var(--sp-4); margin-left: auto; min-width: 0; }
+.topbar__cluster { border-left: 1px solid var(--line); }
+.topbar__brand { flex: none; gap: var(--sp-3); padding-left: 0; }
+.topbar__time { flex: none; }
+.topbar__people { flex: none; gap: var(--sp-3); }
+.topbar__link { flex: none; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
+.topbar__stand { flex: 1 1 auto; min-width: 104px; justify-content: flex-end; gap: var(--sp-3); border-left: 0; padding-right: 0; }
+.topbar__rule { align-self: stretch; margin: 12px 0; border-left: 1px solid var(--line); }
+.topbar__line { display: flex; align-items: center; gap: var(--sp-2); max-width: 100%; white-space: nowrap; min-width: 0; overflow: hidden; }
+.topbar__line > .status { min-width: 0; }
+.topbar__line--sub { color: var(--dust-2); font-size: var(--fs-caption); }
+.topbar__dot { color: var(--dust-3); }
 
+.mark { flex: none; width: 28px; height: 28px; fill: none; stroke-linejoin: round; }
+.mark__slab { stroke: var(--copper); stroke-width: 1.4; fill: var(--ink-1); }
+.mark__shaft { stroke: var(--dust-2); stroke-width: 1.2; stroke-dasharray: 2 2; }
+.brand { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.brand__name { font-size: var(--fs-body); font-weight: 600; line-height: 16px; color: var(--dust-1); white-space: nowrap; }
+
+/* The synthetic-data notice: quiet, always there, a hairline frame. */
 .notice {
-  flex: none;
-  padding: 2px 8px;
-  border: 1px solid var(--c-border-strong);
-  border-left-width: 6px;
-  background: var(--c-panel-2);
-  font-size: var(--fs-s);
-  font-weight: 700;
-  letter-spacing: .03em;
-  text-transform: uppercase;
+  display: flex; flex-direction: column;
+  width: max-content;
+  padding: 2px 6px;
+  border: 1px solid var(--stone-1);
+  border-radius: 2px;
+  color: var(--dust-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 12px;
+  font-variant-caps: all-small-caps;
+  letter-spacing: .05em;
   white-space: nowrap;
 }
 
-.status { display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+/* A figure: caption over a large tabular value; the smaller parts follow the value on its line. */
+.figure {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  column-gap: 0;
+  min-width: 0;
+}
+.figure__cap {
+  flex: 0 0 100%;
+  color: var(--dust-2);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.figure__value {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 30px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dust-1);
+  white-space: nowrap;
+}
+.figure__sep { margin: 0 5px; color: var(--dust-3); font-size: var(--fs-caption); }
+.figure__sep:empty { display: none; }
+.figure__sep:first-of-type { margin-left: 8px; visibility: hidden; width: 0; margin-right: 0; }
+.figure__sub, .figure__state {
+  color: var(--dust-2);
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+}
+.figure--run {
+  display: grid;
+  grid-template-rows: 14px 15px 15px;
+  align-items: center;
+}
+.figure--run .figure__cap { grid-row: 1; }
+.figure--run .figure__value { grid-row: 2; font-size: var(--fs-secondary); line-height: 15px; }
+.figure--run .figure__sub { grid-row: 3; font-family: var(--font-mono); font-size: 11px; line-height: 15px; }
+.figure--run .figure__sep { display: none; }
+.figure--time {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: 14px 15px 15px;
+  column-gap: 10px;
+  align-items: center;
+}
+.figure--time .figure__cap { grid-column: 1 / -1; grid-row: 1; }
+.figure--time .figure__value { grid-column: 1; grid-row: 2 / 4; align-self: center; }
+.figure--time .figure__sub { grid-column: 2; grid-row: 2; align-self: end; line-height: 14px; }
+.figure--time .figure__state { grid-column: 2; grid-row: 3; align-self: start; line-height: 14px; }
+.figure--time .figure__sep { display: none; }
+.figure--time[data-run-state="paused"] .figure__state,
+.figure--time[data-run-state="resetting"] .figure__state { color: var(--dust-1); }
+
+.figure--people {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  column-gap: 6px;
+}
+.figure--people .figure__value { grid-column: 2; grid-row: 1; min-width: 1.2ch; text-align: right; }
+.figure--people .figure__cap {
+  grid-column: 3; grid-row: 1;
+  max-width: 90px;
+  white-space: normal;
+  line-height: 13px;
+  letter-spacing: .02em;
+}
+.figure__sign {
+  grid-column: 1; grid-row: 1;
+  align-self: center;
+  display: none;
+  width: 16px; height: 16px;
+  fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  visibility: hidden;
+}
+/* A counter above zero takes the shape and colour of its axis: octagon, crossed square, dashed «?». */
+.figure--people.is-alert .figure__sign { display: block; }
+.figure--people.is-alert--danger .figure__value, .figure--people.is-alert--danger .figure__sign { color: var(--danger-ink); }
+.figure--people.is-alert--noroute .figure__value, .figure--people.is-alert--noroute .figure__sign { color: var(--noroute); }
+.figure--people.is-alert--noroute .figure__value { font-weight: 600; }
+.figure--people.is-alert--unknown .figure__value, .figure--people.is-alert--unknown .figure__sign { color: var(--unknown); font-style: italic; }
+.figure--people.is-alert .figure__cap { color: var(--dust-1); }
+
+.status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .status__glyph { display: inline-flex; }
-.status__label { color: var(--c-muted); }
-.status--link { font-weight: 700; }
-.status--link[data-link="ok"] { color: var(--c-ok); }
-.status--link[data-link="degraded"] { color: var(--c-attention); }
-.status--link[data-link="stale"],
-.status--link[data-link="unavailable"] {
+.status--link { font-size: var(--fs-secondary); font-weight: 500; line-height: 16px; }
+.status--link[data-link="ok"] .status__glyph { color: var(--verdigris); }
+.status--link[data-link="degraded"] { color: var(--attention); }
+.status--link[data-link="stale"], .status--link[data-link="unavailable"] {
   padding: 0 6px;
-  border: 3px double var(--c-danger-border);
-  background: var(--c-danger-bg);
-  color: var(--c-danger);
+  border: 3px double var(--danger);
+  color: var(--danger-ink);
 }
-.status--age { min-width: 15ch; text-align: right; font-variant-numeric: tabular-nums; }
-.status[data-publications="alive"] { color: var(--c-muted); }
-.status[data-publications="stopped"] { font-weight: 700; color: var(--c-danger); text-decoration: underline; }
-.status[data-publications="unknown"] { color: var(--c-unknown); font-style: italic; }
+.status--age { font-variant-numeric: tabular-nums; }
+.status--publications[data-publications="stopped"] { color: var(--danger-ink); font-weight: 600; text-decoration: underline; }
+.status--publications[data-publications="unknown"] { color: var(--unknown); font-style: italic; }
+/* Commands blocked: a sign in the top bar (its words for a screen reader and in its title); the reason is in the
+   banner of the strip and above every group of buttons. */
+.status--commands > span:not(.status__glyph) {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 .status--commands {
-  padding: 0 6px;
-  border: 1px solid var(--c-text);
-  background: var(--c-text);
-  color: #fff;
-  font-weight: 600;
+  padding: 1px 4px;
+  line-height: 16px;
+  border: 1px dotted var(--dust-2);
+  border-radius: 2px;
+  color: var(--dust-1);
+  font-size: var(--fs-caption);
 }
-.status--commands .status__reason { margin-left: -4px; }
-.status--model { font-weight: 600; }
-.status--conditions { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; white-space: normal; }
+.status--conditions { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 300px; overflow: hidden; }
+.status--conditions .chips { flex-wrap: nowrap; min-width: 0; }
+
+.stand-toggle { flex: none; gap: 6px; padding: 0 var(--sp-3) 0 var(--sp-2); }
+.stand-toggle__chevron { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; transition: transform 160ms var(--ease); }
+.stand-toggle[aria-expanded="true"] { border-style: solid; background: var(--hatch-chalk), transparent; color: var(--dust-1); }
+.stand-toggle[aria-expanded="true"] .stand-toggle__chevron { transform: rotate(180deg); }
+.stand-toggle__count {
+  min-width: 18px;
+  padding: 0 4px;
+  border: 1px dashed currentColor;
+  border-radius: 2px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
 
 .old-tag {
   flex: none;
-  padding: 0 6px;
-  border: 1px dotted var(--c-unknown-border);
-  background: var(--c-unknown-bg);
-  color: var(--c-unknown);
-  font-size: var(--fs-s);
+  max-width: 11ch;
+  padding: 1px 6px;
+  border: 1px dashed var(--unknown);
+  background: var(--hatch-unknown);
+  color: var(--unknown);
+  font-size: 11px;
   font-style: italic;
+  line-height: 13px;
 }
 
-.run-box { position: relative; display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
-.run-box::before { content: ""; align-self: stretch; border-left: 1px solid var(--c-border); margin-right: var(--sp-3); }
-.run-box::after { content: ""; align-self: stretch; border-left: 1px solid var(--c-border); margin-left: var(--sp-3); }
-.run-box__toggle { display: none; }
+/* ---- situation strip ---------------------------------------------------------- */
 
-/* ---- incident strip ----------------------------------------------------- */
-
-.incident {
-  grid-area: incident;
+.situation {
+  grid-area: situation;
+  display: flex; flex-wrap: wrap; align-items: stretch;
   min-width: 0;
-  background: var(--c-panel);
-  border-bottom: 2px solid var(--c-border-strong);
+  background: var(--ink-1);
+  border-bottom: 1px solid var(--line);
 }
+/* Shown only with an open incident or a banner. */
+.situation:not(:has(.banner)):not(:has(.incident__strip[data-open])) { display: none; }
+/* The banners are items of the strip: a danger or attention banner takes a line of its own above the
+   incident; the information banner (the pause for a decision) sits after the steps. */
+.banners { display: contents; }
+.banner { flex: 1 1 100%; order: 0; }
+.banner--info {
+  flex: 0 1 auto; order: 2; align-self: center;
+  max-width: 340px;
+  margin: 6px var(--sp-3) 6px 0; padding: 3px var(--sp-3);
+  border-radius: 0 3px 3px 0;
+  font-size: var(--fs-caption);
+  line-height: 1.3;
+}
+.banner--info .banner__text { display: block; }
+.incident { flex: 1 1 0; order: 1; min-width: 0; }
+.incident:not(:has(.incident__strip[data-open])) { display: none; }
+
 .incident__strip {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 2px var(--sp-5);
-  min-height: 38px;
-  padding: 4px var(--sp-4);
-}
-.incident__head { display: inline-flex; align-items: center; gap: var(--sp-3); font-weight: 700; font-size: var(--fs-l); min-width: 0; }
-.incident__glyph { display: inline-flex; }
-/* An open incident is a call for a decision, not a hazard state: a heavy plain frame, not the danger outline. */
-.incident__strip[data-incident-state="active"] .incident__head,
-.incident__strip[data-incident-state="executing"] .incident__head {
-  padding: 1px 8px;
-  border: 2px solid var(--c-text);
-  background: var(--c-attention-bg);
-  color: var(--c-text);
-}
-.incident__note { margin-left: auto; font-size: var(--fs-s); }
-
-.counter { display: inline-flex; align-items: baseline; gap: var(--sp-2); white-space: nowrap; }
-.counter__label { color: var(--c-muted); }
-.counter__value {
-  min-width: 2.2ch;
-  padding: 0 5px;
-  border: 1px solid var(--c-border);
-  background: var(--c-panel-2);
-  font-size: var(--fs-l);
-  text-align: center;
-}
-/* A counter above zero is framed heavily and inverted: readable without colour. */
-.counter.is-alert .counter__label { color: var(--c-text); font-weight: 700; }
-.counter.is-alert .counter__value { border: 2px solid var(--c-text); background: var(--c-text); color: #fff; }
-
-/* ---- banners ------------------------------------------------------------ */
-
-.banners {
-  grid-area: banners;
+  display: flex; align-items: stretch;
   min-width: 0;
-  max-height: 30vh;
-  overflow-y: auto;
+  height: 100%;
+  padding: 0 var(--sp-2);
 }
-
-/* ---- left panel: two groups that must not be confused -------------------- */
-
-.left {
-  grid-area: left;
-  display: flex; flex-direction: column; gap: var(--sp-3);
-  min-width: 0; min-height: 0;
-  padding: var(--sp-3);
-  overflow-y: auto;
-  background: var(--c-panel);
-  border-right: 1px solid var(--c-border-strong);
+.step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  column-gap: var(--sp-2);
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px var(--sp-3);
 }
-.group { min-width: 0; padding: var(--sp-3); }
-.group:empty { display: none; }
-.group--stand { border: 2px dashed var(--c-stand-border); background: var(--c-stand-bg); }
-.group--dispatch { border: 3px solid var(--c-dispatch-border); background: var(--c-dispatch-bg); }
-.group--pending { border: 1px solid var(--c-border-strong); background: var(--c-panel-2); }
-.group--reset { margin-top: auto; border: 1px solid var(--c-danger-border); border-top-width: 4px; background: var(--c-panel); }
+.step--1 { flex: 0 1 auto; max-width: 46%; }
+.step__head { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.step__num {
+  flex: none;
+  display: inline-grid; place-items: center;
+  width: 18px; height: 18px;
+  border: 1px solid var(--stone-2);
+  border-radius: 50%;
+  color: var(--dust-1);
+  font-size: 11px;
+  line-height: 1;
+}
+.step__label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dust-2); }
+.step__note { overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--dust-2); }
+.step__body {
+  grid-column: 1; grid-row: 2;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-secondary);
+  color: var(--dust-1);
+}
+.step__body--title { display: flex; align-items: center; gap: 6px; }
+.incident__glyph { flex: none; display: inline-flex; color: var(--dust-1); }
+.incident__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.step__meta { flex: none; color: var(--dust-2); font-size: var(--fs-caption); }
+.step__show { grid-column: 2; grid-row: 2; align-self: baseline; font-size: var(--fs-caption); white-space: nowrap; }
+.step__arrow { flex: none; align-self: center; width: 14px; height: 1px; background: var(--stone-1); position: relative; }
+.step__arrow::after {
+  content: ""; position: absolute; right: 0; top: -3px;
+  width: 6px; height: 6px;
+  border-top: 1px solid var(--stone-2); border-right: 1px solid var(--stone-2);
+  transform: rotate(45deg);
+}
+/* The open incident is a call for a decision, not a hazard: a copper base line under step 1. */
+.incident__strip[data-incident-state="active"] .step--1 { border-bottom: 2px solid var(--copper); }
+.incident__strip[data-incident-state="active"] .step--4 .step__body { color: var(--dust-1); }
 
-/* ---- centre -------------------------------------------------------------- */
+/* ---- centre column ------------------------------------------------------------ */
 
 .centre {
   grid-area: centre;
+  position: relative;
   display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
+  background: var(--ink-0);
   /* The frame is always there, so that marking old data does not shift the content. */
-  border: 3px solid var(--c-panel);
-  background: var(--c-panel);
+  outline: 1px solid transparent; outline-offset: -1px;
 }
 .centre__bar {
   flex: none;
-  display: flex; align-items: flex-end; gap: var(--sp-4);
-  padding: var(--sp-2) var(--sp-3) 0;
-  border-bottom: 1px solid var(--c-border-strong);
-  background: var(--c-panel-2);
+  display: flex; align-items: center; gap: var(--sp-3);
+  height: var(--h-bar);
+  padding: 0 var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--ink-1);
 }
-.tabs { display: flex; margin-bottom: -1px; }
-.centre__controls { display: flex; align-items: center; gap: var(--sp-3); margin-left: auto; padding-bottom: var(--sp-2); min-width: 0; }
+.centre__controls { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; min-width: 0; }
+/* In the 3D view the bar holds only the tabs: it lies over the top-left corner of the stage, as a chip of the
+   stage HUD, and the stage takes its height. The scheme keeps the bar in the flow (its own controls are there),
+   and so does the view of old data (the line that names the moment of the data stands under the bar). */
+.centre { --bar-flow: var(--h-bar); }
+body[data-view="scheme"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .centre { --bar-flow: 0px; }
+body[data-view="scheme"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .centre__bar {
+  position: absolute; top: 8px; left: var(--sp-3); z-index: 8;
+  height: auto; padding: 0;
+  border: 0; background: none;
+}
+body[data-view="scheme"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .tabs { background: var(--ink-1); }
+/* The open stand drawer covers the left edge of the stage: the tabs move out from under it, as the legend chip does. */
+body[data-view="scheme"][data-stand="open"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .centre__bar {
+  left: calc(var(--w-stand) + var(--sp-3));
+}
 
-/* The mark of old data: a dashed frame around the centre and a line that
-   names the moment of the data. Shown whenever the picture is not current. */
+/* Old data: a dashed frame around the centre and a line that names the moment of the data. */
 .old-data {
   flex: none;
-  display: flex; align-items: center; gap: var(--sp-3);
-  padding: 3px var(--sp-4);
-  border-bottom: 1px dashed var(--c-unknown-border);
-  background: var(--c-unknown-bg);
-  color: var(--c-unknown);
-  font-weight: 700;
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 4px var(--sp-4);
+  border-bottom: 1px dashed var(--unknown);
+  background: var(--hatch-unknown), var(--unknown-tint);
+  color: var(--dust-1);
+  font-size: var(--fs-secondary);
+  font-weight: 500;
 }
-.old-data__glyph { display: inline-flex; }
-body[data-old-data] .centre { border-color: var(--c-unknown-border); border-style: dashed; }
-/* The last model time, run, conditions and counters stay readable but are set apart as not current. */
-body[data-old-data] .topbar__row--model,
-body[data-old-data] .incident { background: var(--c-unknown-bg); }
-body[data-old-data] .incident { border-bottom-style: dashed; }
+.old-data__glyph { display: inline-flex; color: var(--unknown); }
+body[data-old-data] .centre { outline: 1px dashed var(--unknown); }
+body[data-old-data] .topbar__time, body[data-old-data] .topbar__people { background: var(--hatch-unknown); }
 
-.centre__body { flex: 1 1 auto; position: relative; min-width: 0; min-height: 0; }
+.centre__body { flex: 1 1 auto; position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .view {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
@@ -218,74 +378,128 @@ body[data-old-data] .incident { border-bottom-style: dashed; }
   flex: none;
   display: flex; align-items: center; gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-4);
-  border-bottom: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--line);
 }
 .view__bar .panel__title { margin-right: var(--sp-4); }
 .view__scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
-.scheme { flex: 1 1 auto; position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+/* The stage: the desk under the model, full bleed; the 3D picture and the scheme fill it, the HUD overlays it. */
+.view--scheme { background: var(--ink-0); }
+.view--scheme > .stage { position: absolute; inset: 0; overflow: hidden; background: var(--ink-0); }
+.stage__3d, .scheme { position: absolute; inset: 0; min-width: 0; min-height: 0; }
+/* The bar of a folded dock lies over the bottom of the stage (compact layout): the picture is fitted above it. */
+.view--scheme > .stage > .stage__3d, .view--scheme > .stage > .scheme { bottom: var(--dock-bar-cover, 0px); }
+.stage__3d:empty { display: none; }
+.stage__hud { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.stage__hud > * { pointer-events: auto; }
+
+/* The legend chip: bottom-left corner of the stage, above the folded dock bar in the compact layout. */
 .legend {
-  flex: none;
-  max-height: 34%;
-  overflow-y: auto;
-  border-top: 1px solid var(--c-border-strong);
-  background: var(--c-panel-2);
+  position: absolute; left: var(--sp-3); bottom: calc(var(--dock-cover, 0px) + var(--sp-3)); z-index: 5;
+  max-width: calc(100% - 2 * var(--sp-3) - 180px);
+  max-height: 50%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--ink-1);
 }
 .legend:empty { display: none; }
+/* The open stand drawer covers the left edge: the legend chip moves out from under it. */
+body[data-stand="open"] .legend { left: calc(var(--w-stand) + var(--sp-3)); max-width: calc(100% - var(--w-stand) - 2 * var(--sp-3) - 180px); }
 
 .table--list .cell-note { display: block; width: fit-content; margin-top: 2px; }
-.table--list td:nth-child(1) { color: var(--c-muted); }
-.table--list td:nth-child(2) { font-weight: 700; }
+.table--list td:nth-child(1) { color: var(--dust-2); }
+.table--list td:nth-child(2) { font-weight: 600; }
 .table--list td:nth-child(3) { min-width: 96px; }
 .table--list td:nth-child(8), .table--list td:nth-child(9) { white-space: nowrap; }
 
-/* ---- right panel --------------------------------------------------------- */
+/* ---- the stand drawer: chalk mark-up over the left edge of the stage ------------------ */
+
+.stand {
+  position: absolute; top: 0; left: 0; bottom: 0; z-index: 20;
+  display: flex; flex-direction: column;
+  width: var(--w-stand);
+  max-width: 100%;
+  background: var(--ink-1);
+  border-right: 1px dashed var(--chalk);
+  visibility: hidden;
+  transform: translateX(-16px);
+  opacity: 0;
+  transition: transform 180ms var(--ease), opacity 180ms var(--ease), visibility 0s linear 180ms;
+}
+.stand[data-open="true"] {
+  visibility: visible;
+  transform: none;
+  opacity: 1;
+  transition: transform 180ms var(--ease), opacity 180ms var(--ease), visibility 0s;
+}
+.stand__head {
+  flex: none;
+  display: flex; align-items: flex-start; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+  border-bottom: 1px dashed var(--stone-1);
+  background: var(--hatch-chalk);
+}
+.stand__titles { flex: 1 1 auto; min-width: 0; }
+.stand__title { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-emphasis); color: var(--chalk); }
+.stand__subtitle { margin-top: 2px; font-size: var(--fs-caption); color: var(--dust-2); }
+.stand__close { flex: none; }
+.stand__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 var(--sp-4) var(--sp-4); }
+.stand__part { padding-top: var(--sp-3); }
+.stand__part--reset { margin-top: var(--sp-4); border-top: 1px dashed var(--stone-1); }
+
+/* ---- the decision dock -------------------------------------------------------------- */
+
+.dock {
+  flex: none;
+  display: flex; flex-direction: column;
+  min-height: 0;
+  /* Under the stage the dock leaves the stage at least 58 % of the viewport height; what does not fit scrolls. */
+  max-height: clamp(220px, calc(100% - var(--bar-flow) - 58vh), 46%);
+  background: var(--ink-1);
+  border-top: 1px solid var(--stone-1);
+}
+.dock__bar {
+  flex: none;
+  display: flex; align-items: center; gap: var(--sp-3);
+  min-height: var(--h-dock-bar);
+  padding: 0 var(--sp-3) 0 var(--sp-4);
+}
+.dock__title { flex: none; font-size: var(--fs-caption); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dust-2); }
+.dock__summary { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-secondary); }
+.dock__toggle { flex: none; margin-left: auto; }
+.dock__body { flex: 1 1 auto; min-height: 0; overflow: auto; border-top: 1px solid var(--line); }
+body[data-dock="collapsed"] .dock__body { display: none; }
+
+/* ---- right column --------------------------------------------------------------------- */
 
 .right {
   grid-area: right;
   display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
-  background: var(--c-panel);
-  border-left: 1px solid var(--c-border-strong);
+  background: var(--ink-1);
+  border-left: 1px solid var(--line);
 }
-.right__tabs { display: none; }
-.right__part { min-width: 0; min-height: 0; overflow-y: auto; }
-/* While an incident is open the decision is the main content of the right panel: it may take up to
-   72 % of the height (the whole table with its run button at 1920x1080). The card keeps the rest,
-   at least 28 %, and scrolls. */
-.right__part--decision { flex: 0 1 auto; max-height: 72%; border-bottom: 2px solid var(--c-border-strong); }
-.right__part--decision:empty { display: none; }
-.right__part--card { flex: 1 1 0; }
-
-/* ---- journal ------------------------------------------------------------- */
-
-.journal {
-  grid-area: journal;
-  position: relative;
-  min-width: 0; min-height: 0;
-}
-.journal__panel {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  display: flex; flex-direction: column;
-  height: 100%;
-  background: var(--c-panel);
-  border-top: 2px solid var(--c-border-strong);
-}
+.right__card { flex: 1 1 auto; min-height: 140px; overflow-y: auto; }
+.right > .group { flex: none; }
+.journal { flex: none; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--line); }
 .journal__bar {
   flex: none;
-  display: flex; align-items: center; gap: var(--sp-4);
-  min-height: var(--h-journal-bar);
-  padding: 2px var(--sp-4);
-  background: var(--c-panel-2);
-  border-bottom: 1px solid var(--c-border);
+  display: flex; align-items: center; gap: var(--sp-2);
+  min-height: 36px;
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+  overflow: hidden;
+  white-space: nowrap;
 }
-.journal__toggle { display: none; margin-left: auto; }
-.journal__body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; }
+.journal__order { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dust-2); font-size: 11px; }
+.journal__title { flex: none; }
+.journal__toggle { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block; line-height: 24px; }
+.journal__body { flex: 1 0 auto; min-width: 0; min-height: 0; overflow: hidden; }
+body[data-journal="open"] .journal { flex: 0 0 52%; }
+body[data-journal="open"] .journal__body { overflow-y: auto; }
 
-/* In the wide layout the list has fixed column shares: automatic sizing gives
-   the rarely long last text column the room the state columns need. A state
-   of the hazard and knowledge columns stays on one line, so a row is one or
-   two lines high. */
+/* ---- wide layout -------------------------------------------------------------------- */
+
 @media (min-width: 1600px) and (min-height: 900px) {
   .table--list { table-layout: fixed; }
   .table--list td { overflow-wrap: anywhere; }
@@ -301,86 +515,76 @@ body[data-old-data] .incident { border-bottom-style: dashed; }
   .table--list th:nth-child(8) { width: 12%; }
   .table--list th:nth-child(9) { width: 8%; }
   .table--list td:nth-child(4) .badge, .table--list td:nth-child(5) .badge { white-space: nowrap; }
-  .table--list td:nth-child(8), .table--list td:nth-child(9) { font-size: var(--fs-xs); }
+  .table--list td:nth-child(8), .table--list td:nth-child(9) { font-size: 11px; }
 }
 
-/* ---- compact layout ------------------------------------------------------ */
+/* ---- compact layout ------------------------------------------------------------------ */
 
 @media (max-width: 1599px), (max-height: 899px) {
   :root {
-    --w-left: 230px;
     --w-right: 320px;
-    --h-journal: 30px;
-    --h-journal-bar: 28px;
+    --h-top: 52px;
+    --h-bar: 36px;
+    --w-stand: 320px;
+    --h-dock-bar: 36px;
   }
 
-  /* The journal stays under the centre column: unfolded, it covers the lower part of the scheme and
-     never the right panel. */
-  .app {
-    grid-template-areas:
-      "top      top      top"
-      "incident incident incident"
-      "banners  banners  banners"
-      "left     centre   right"
-      "left     journal  right";
+  .topbar { padding: 0 var(--sp-3) 0 var(--sp-2); }
+  .topbar__brand, .topbar__cluster { gap: var(--sp-3); padding: 0 9px; }
+  .topbar__brand { padding-left: 0; gap: var(--sp-2); }
+  .brand__name { display: none; }
+  .notice { width: 152px; letter-spacing: 0; white-space: normal; }
+  .notice > span { display: inline; }
+  .mark { width: 24px; height: 24px; }
+  .topbar__people { gap: 7px; }
+  .figure--people { column-gap: 4px; }
+  .topbar__stand { padding-right: 0; gap: var(--sp-2); }
+  .figure__value { font-size: 20px; line-height: 24px; }
+  .figure__cap { font-size: 10.5px; letter-spacing: .02em; }
+  /* Run and seed fold away (the reset in the stand drawer names the run); tick and speed too: the time and the state stay. */
+  .figure--run { display: none; }
+  .figure--time { grid-template-rows: 13px auto; column-gap: 8px; }
+  .figure--time .figure__value { grid-row: 2; }
+  .figure--time .figure__sub { display: none; }
+  .figure--time .figure__state { grid-row: 2; align-self: center; max-width: 124px; white-space: normal; font-size: 11px; line-height: 13px; }
+  .figure--people .figure__cap { max-width: 70px; font-size: 10.5px; line-height: 12px; letter-spacing: 0; }
+  .status--link[data-link="stale"], .status--link[data-link="unavailable"] { padding: 0 3px; }
+  .status__reason, .status__who { display: none; }
+
+  /* The publications are named here only when they stopped: going on is the normal case, unknown is said by the banner. */
+  .topbar__line--sub .topbar__dot, .topbar__line--sub .status--publications:not([data-publications="stopped"]) { display: none; }
+  .old-tag { max-width: 70px; font-size: 10px; line-height: 11px; }
+  .status--conditions { max-width: 150px; }
+  .banner--info { max-width: 200px; }
+  .banner--info .banner__text { display: none; }
+
+  /* One line of compact steps; «показать маршруты» says «показать» (its full words are its accessible name). */
+  .step { padding: 4px var(--sp-2); }
+  .step--1 { max-width: 42%; }
+  .step__show-more { display: none; }
+  /* Beside the open drawer the HUD fills the top of the narrow stage: the tabs stand under it. */
+  body[data-view="scheme"][data-stand="open"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .centre__bar { top: 52px; }
+  .step__note { display: none; }
+  .step__label { font-size: 10.5px; letter-spacing: .04em; }
+
+  /* The dock folds to its bar at the bottom of the stage and unfolds over the stage. Over the list and the
+     runs it stays in the flow: they scroll, the stage does not. */
+  body[data-view="scheme"] .dock {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 15;
+    max-height: 58%;
+    border-top: 1px solid var(--copper);
   }
 
-  .topbar__row { min-height: 30px; gap: var(--sp-3); padding: 2px var(--sp-3); }
-  .topbar__right { gap: var(--sp-3); }
-  .notice { font-size: var(--fs-xs); letter-spacing: 0; }
-  .status--age { min-width: 0; }
-  /* The reason of the block is in the banner below; the top row keeps the fact. */
-  .status__reason { display: none; }
-  .incident__strip { min-height: 34px; gap: 2px var(--sp-4); padding: 3px var(--sp-3); }
-  .incident__head { font-size: var(--fs-m); }
-  .incident__note { display: none; }
-
-  /* Run and seed go behind a button. */
-  .run-box__toggle { display: inline-flex; }
-  .run-box__info { display: none; }
-  .run-box.is-open .run-box__info {
-    display: block;
-    position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
-    padding: 4px 10px;
-    border: 2px solid var(--c-border-strong);
-    background: var(--c-panel);
-  }
-
-  /* Decision panel and card share the right panel as tabs. */
-  .right__tabs {
-    flex: none;
-    display: flex;
-    padding: var(--sp-2) var(--sp-3) 0;
-    border-bottom: 1px solid var(--c-border-strong);
-    background: var(--c-panel-2);
-  }
-  .right__tabs .tab { margin-bottom: -1px; }
-  .right__part { flex: 1 1 0; max-height: none; border-bottom: 0; }
-  .right__part--decision:empty { display: block; }
-  body[data-right="card"] .right__part--decision,
-  body[data-right="decision"] .right__part--card { display: none; }
-
-  /* The journal is one line with its latest entry; the button unfolds it over the bottom of the centre. */
-  .journal__panel { flex-direction: row; align-items: stretch; z-index: 20; }
-  .journal__bar { order: 2; border-bottom: 0; border-left: 1px solid var(--c-border); padding: 1px var(--sp-3); }
+  .right__card { min-height: 116px; }
+  .journal__bar { min-height: 32px; }
+  .old-data { padding: 2px var(--sp-3); font-size: var(--fs-caption); }
   .journal__order { display: none; }
-  .journal__title { display: none; }
-  .journal__toggle { display: inline-flex; margin-left: 0; }
-  .journal__body { order: 1; overflow: hidden; }
-  body[data-journal="open"] .journal__panel { flex-direction: column; height: 240px; }
-  body[data-journal="open"] .journal__bar { order: 0; border-left: 0; border-bottom: 1px solid var(--c-border); }
-  body[data-journal="open"] .journal__title { display: block; }
-  body[data-journal="open"] .journal__toggle { margin-left: auto; }
-  body[data-journal="open"] .journal__body { order: 1; overflow-y: auto; }
 
-  .left { padding: var(--sp-2); gap: var(--sp-2); }
-  .group { padding: var(--sp-2) var(--sp-3); }
   .view__bar { padding: var(--sp-2) var(--sp-3); }
-  .table th, .table td { padding: 2px 5px; }
+  .table th, .table td { padding: 3px 5px; }
   .table th { white-space: normal; letter-spacing: 0; }
-  /* Nine columns in 730 px: the headings are not what sets the width of a column. */
   .table--list th { text-transform: none; }
   .table--list td:nth-child(6), .table--list td:nth-child(7) { overflow-wrap: anywhere; }
-  .table--list td:nth-child(8), .table--list td:nth-child(9) { white-space: normal; font-size: var(--fs-xs); }
+  .table--list td:nth-child(8), .table--list td:nth-child(9) { white-space: normal; font-size: 11px; }
   .table--list td:nth-child(3) { min-width: 80px; }
 }
