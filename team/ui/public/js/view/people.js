@@ -19,14 +19,14 @@
 //
 // The rail folds to a strip of figures (shell.rail = 'collapsed').
 //
-// Motion (clarity spec B): a changed counter crossfades (200 ms) with a fading
-// underline (1 s); a zone row whose hazard changed flashes once (450 ms). Never
+// Motion (variant 3): a changed counter slides from the old published value to
+// the new one (420 ms) with a fading accent underline (600 ms); a zone row whose hazard changed flashes once (450 ms). Never
 // on load, over old data or under reduced motion.
 
 import {h, reconcile, s, setAttrs, setText} from '../dom.js';
 import {workerMarker} from '../icons.js';
 import {fullId, incidentOf, knownHazard, labelOf, thingsOfKind, zoneOfWorking} from '../model.js';
-import {EASE, MS, motionAllowed, play} from '../motion.js';
+import {LIMIT_MS, MS, motionAllowed, play, reducedMotion, slideValue} from '../motion.js';
 import {zoneActions} from './actions.js';
 import {setSign} from './signs.js';
 
@@ -92,18 +92,12 @@ export function mount(root, ctx) {
     rows);
   root.append(h('div', {class: 'rail__inner', role: 'region', 'aria-labelledby': 'rail-title'}, head, figureBox, where));
 
-  /** A new published value: the old number crossfades into the new one and an underline fades out. Never on the first value. */
+  /** A new published value: the old number slides up out of its mask, the new one rises into place, and an
+   *  accent underline fades out. Never on the first value, never through intermediate values. */
   function changed(item, before) {
-    const ghost = h('span', {class: 'rail-fig__ghost', 'aria-hidden': 'true', text: before});
-    item.slot.append(ghost);
-    const out = play(ghost, [{opacity: 1}, {opacity: 0}], {duration: MS.digits, easing: EASE});
-    if (!out) {
-      ghost.remove();
-      return;
-    }
-    out.finished.then(() => ghost.remove(), () => ghost.remove());
-    play(item.value, [{opacity: 0}, {opacity: 1}], {duration: MS.digits, easing: EASE});
-    play(item.mark, [{opacity: 1}, {opacity: 0}], {duration: MS.underline, easing: 'ease-out'});
+    if (reducedMotion()) return;
+    slideValue(item.slot, item.value, before, 420);
+    play(item.mark, [{opacity: 1, transform: 'scaleX(1)'}, {opacity: 0, transform: 'scaleX(1)'}], {duration: LIMIT_MS, easing: 'ease-out'});
   }
   let shownRun = null;
 

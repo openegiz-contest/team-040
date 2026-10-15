@@ -14,8 +14,7 @@
 // icons beside the gizmo), data-loaders (the loaders of
 // the zones drawn), data-choreo (the last camera move that followed the situation of the shift).
 
-import {h, reconcile, s, setAttrs, setText} from '../dom.js';
-import {thingsOfKind} from '../model.js';
+import {h, s, setAttrs, setText} from '../dom.js';
 import {STAGE} from '../text3d.js';
 
 const PREFS_KEY = 'mine-ui.stage';
@@ -24,7 +23,7 @@ export const SLOW_FRAME_MS = 200;
 const SOFTWARE = /swiftshader|llvmpipe|softpipe|software|basic render/i;
 const EXPLODE_DEFAULT = 0.8;
 const MIRRORED = ['data-rendering', 'data-levels', 'data-workings', 'data-workers-drawn', 'data-camera', 'data-frames',
-  'data-tweens', 'data-routes', 'data-first-frame-ms', 'data-decor', 'data-loaders', 'data-choreo'];
+  'data-tweens', 'data-routes', 'data-first-frame-ms', 'data-decor', 'data-loaders', 'data-choreo', 'data-intro'];
 
 /** Icons of the HUD (16 px, stroked): the row folds to them while the dock is unfolded over a small stage. */
 const ICONS = {
@@ -88,6 +87,8 @@ export function mount(root, ctx) {
   let pending = null;           // {kind: 'focus'|'overview', id}
   let mode = null;
   let builtQuality = null;
+  // The intro of the 3D stage plays once per page load, and only when the page opens on the 3D stage.
+  let introAllowed = true;
 
   const setUi = (change) => store.update((state) => {
     const ui = {...state.ui, ...change};
@@ -107,12 +108,6 @@ export function mount(root, ctx) {
   const overviewButton = h('button', {type: 'button', class: 'hud__btn', 'data-testid': 'stage-overview', title: STAGE.overview,
     'aria-label': STAGE.overview, on: {click: () => (instance ? instance.overview(true) : null)}},
   icon('overview'), h('span', {class: 'hud__text', text: STAGE.overview}));
-  const levelSelect = h('select', {class: 'hud__select', 'data-testid': 'stage-level', 'aria-label': STAGE.levels, title: STAGE.levels});
-  levelSelect.addEventListener('change', () => {
-    const value = levelSelect.value;
-    levelSelect.value = '';
-    if (value && instance) instance.focus(value);
-  });
   const explodeInput = h('input', {type: 'range', min: 0, max: 100, step: 1, class: 'hud__range', id: 'stage-explode',
     'data-testid': 'stage-explode', title: STAGE.explodeHint});
   explodeInput.addEventListener('input', () => applyExplode(Number(explodeInput.value) / 100, false));
@@ -121,7 +116,6 @@ export function mount(root, ctx) {
   // Folded HUD: the spread of the slabs as one button, as the key E.
   const explodeToggle = h('button', {type: 'button', class: 'hud__btn hud__btn--fold', 'data-testid': 'stage-explode-toggle',
     title: STAGE.explodeHint, 'aria-label': STAGE.explodeToggle, on: {click: () => toggleExplode()}}, icon('explode'));
-  const levelField = h('span', {class: 'hud__level'}, icon('levels'), levelSelect);
   const qualitySelect = h('select', {class: 'hud__select', id: 'stage-quality', 'data-testid': 'stage-quality', title: STAGE.qualityHint},
     h('option', {value: 'high'}), h('option', {value: 'low'}));
   qualitySelect.addEventListener('change', () => {
@@ -133,9 +127,11 @@ export function mount(root, ctx) {
   const keys = h('details', {class: 'hud__keys', 'data-testid': 'stage-settings'},
     h('summary', {class: 'hud__btn', title: STAGE.settings, 'aria-label': STAGE.settings}, icon('settings'),
       h('span', {class: 'hud__text', text: STAGE.settings})),
-    h('div', {class: 'hud__keys-body'}, qualityField, h('p', {class: 'hud__keys-title', text: STAGE.keysTitle}),
+    h('div', {class: 'hud__keys-body'}, qualityField, explodeField, h('p', {class: 'hud__keys-title', text: STAGE.keysTitle}),
       h('dl', null, STAGE.keyList.map(([keyName, what]) => [h('dt', {text: keyName}), h('dd', {text: what})]))));
-  const tools = h('div', {class: 'hud__tools'}, levelField, explodeField, explodeToggle, overviewButton, keys);
+  // Variant 3: the horizons are chosen on the rail of the stage (view/horizons.js); the HUD keeps 3D/Схема, the overview
+  // and the settings (quality, the spread of the slabs, the keys).
+  const tools = h('div', {class: 'hud__tools'}, explodeToggle, overviewButton, keys);
   const rowMain = h('div', {class: 'hud__row'}, modeGroup, tools);
   const status = h('p', {class: 'hud__status', 'data-testid': 'stage-status', hidden: true});
   hud.append(rowMain, status);
@@ -248,8 +244,9 @@ export function mount(root, ctx) {
       const module = await import('../scene3d/scene.js');
       if (loading !== token || mode !== '3d') return;
       instance = module.createScene(stage3d, {
-        ctx, quality: wanted, explode: explodeValue(), reducedMotion, onEvent,
+        ctx, quality: wanted, explode: explodeValue(), reducedMotion, onEvent, intro: introAllowed,
       });
+      introAllowed = false;
       builtQuality = wanted;
       instance.update(store.getState());
       loading = null;
@@ -275,6 +272,7 @@ export function mount(root, ctx) {
     if (requested === '3d' && !probe) probe = probeWebgl();
     if (requested === '3d' && probe && !probe.ok) fallback = 'no-webgl';
     const next = requested === '3d' && !fallback ? '3d' : 'scheme';
+    if (next === 'scheme') introAllowed = false;
     const q = quality();
     if (mode !== next) {
       mode = next;
@@ -325,15 +323,6 @@ export function mount(root, ctx) {
     for (const name of MIRRORED) attrs[name] = source ? source.getAttribute(name) : null;
     if (source) attrs['data-explode'] = source.getAttribute('data-explode');
     setAttrs(root, attrs);
-  }
-
-  function updateLevels(state) {
-    const levels = state.model ? thingsOfKind(state.model, 'level')
-      .filter((level) => Number.isFinite(level.attrs.elevation_m))
-      .sort((a, b) => b.attrs.elevation_m - a.attrs.elevation_m) : [];
-    reconcile(levelSelect, [{name: '', label: STAGE.levelPick}, ...levels], (level) => level.name || '-',
-      (level) => h('option', {value: level.name}), (option, level) => setText(option, level.label));
-    if (levelSelect.value !== '') levelSelect.value = '';
   }
 
   // ---- requests of other views -------------------------------------------------------------
@@ -393,6 +382,5 @@ export function mount(root, ctx) {
   store.watch((state) => [state.model, state.attributes, state.pending, state.ui.selected, state.ui.hoverOption, state.link, state.boot], (_, state) => {
     if (instance) instance.update(state);
   });
-  store.watch((state) => state.attributes, (_, state) => updateLevels(state));
   if (motionQuery && motionQuery.addEventListener) motionQuery.addEventListener('change', () => instance && instance.invalidate());
 }

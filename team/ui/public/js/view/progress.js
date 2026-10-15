@@ -19,7 +19,7 @@
 import {h, reconcile, s, setAttrs, setGlyph, setText} from '../dom.js';
 import {symbol} from '../icons.js';
 import {causesOf, incidentOf, isUnderground, labelOf, thingByName, thingsOfKind, workersInZone, zoneOfWorking} from '../model.js';
-import {EASE, MS, motionAllowed, play} from '../motion.js';
+import {motionAllowed, slideValue} from '../motion.js';
 import {decisionOf, headline, metricsTable, optionVerb, peopleOf, peoplePatterns, qualityMark} from './decision.js';
 import {sentTitle} from './pending.js';
 
@@ -122,22 +122,22 @@ export function updateWho(button, worker, figure = workerFigure(worker), words =
     'aria-label': words ? `${worker.label}: ${words}` : worker.label});
 }
 
-/** One big published figure with its label; the number crossfades when the model publishes another one. */
+/** One big published figure with its label; the number slides from the old published value to the new one. */
 function figure(text, testid) {
-  const number = h('span', {class: 'dp-fig__num'});
+  const value = h('span', {class: 'dp-fig__v'});
+  const number = h('span', {class: 'dp-fig__num'}, value);
   const node = h('p', {class: 'dp-fig', 'data-testid': testid}, number, h('span', {class: 'dp-fig__label'}));
   let shown = null;
   return {
     node,
-    update(value, label, state, extra = {}) {
-      const words = typeof value === 'number' ? text.num(value) : text.DASH;
-      if (shown !== null && shown !== words && motionAllowed(state)) {
-        play(number, [{opacity: 0.15}, {opacity: 1}], {duration: MS.digits, easing: EASE});
-      }
+    update(published, label, state, extra = {}) {
+      const words = typeof published === 'number' ? text.num(published) : text.DASH;
+      const before = shown;
       shown = words;
-      setText(number, words);
+      setText(value, words);
+      if (before !== null && before !== words && motionAllowed(state)) slideValue(number, value, before, 420);
       setText(node.lastChild, label);
-      setAttrs(node, {'data-value': typeof value === 'number' ? value : null, ...extra});
+      setAttrs(node, {'data-value': typeof published === 'number' ? published : null, ...extra});
     },
   };
 }

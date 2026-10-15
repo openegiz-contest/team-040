@@ -210,7 +210,8 @@ export function createLabels(layer, onSelect, onHover) {
       const scaleOk = !item.minScale || (p && p.scale >= item.minScale);
       const candidatesOf = (w, hh) => {
         const candidates = [];
-        const rings = item.always || pinned ? [GAP, GAP + 26, GAP + 56] : [GAP];
+        // Poster-scale markers (variant 3) crowd a cluster of people: a label that must stay may go farther, on its leader.
+        const rings = item.always || pinned ? [GAP, GAP + 26, GAP + 56, GAP + 96, GAP + 140] : [GAP];
         for (const gap of rings) {
           if (item.place === 'centre') candidates.push({x: p.x - w / 2, y: p.y - hh / 2});
           if (item.place === 'left') candidates.push({x: p.x - w - gap, y: p.y - hh / 2}, {x: p.x - w - gap, y: p.y - hh - gap / 2});

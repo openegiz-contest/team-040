@@ -1,0 +1,217 @@
+/* Variant 3 «Глубина»: the poster pieces over the stage — the situation
+   headline (view/headline.js) top left and the horizon rail (view/horizons.js)
+   at the right edge. Type straight on the scene, over a soft solid scrim (no
+   blur, no glass), no boxes. Both are `#centre > .centre__bar`, which the 3D
+   stage keeps its labels and its framing clear of. Tokens: base.css. */
+
+/* ---- the situation headline ------------------------------------------------------------ */
+
+.headline {
+  position: absolute; z-index: 5;
+  left: calc(var(--cover-left) + 44px);
+  top: var(--hl-top, calc(var(--notices-h, 0px) + 28px));
+  max-width: min(980px, var(--hl-room, 9999px), calc(100% - var(--cover-left) - var(--cover-right) - 280px));
+  pointer-events: none;
+}
+/* The scrim: a solid darkening that fades into the scene, so the type reads over any part of the model. */
+.headline::before {
+  content: ""; position: absolute; z-index: -1;
+  left: -44px; top: -28px; right: -160px; bottom: -64px;
+  background: radial-gradient(ellipse 100% 100% at 0 0, rgba(10, 11, 13, .86) 0, rgba(10, 11, 13, .62) 48%, rgba(10, 11, 13, 0) 100%);
+}
+.hl__kicker {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0;
+  color: var(--dust-2);
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500; line-height: 16px;
+  letter-spacing: var(--track-caps); text-transform: uppercase;
+}
+.hl__tick { flex: none; width: 28px; height: 2px; background: var(--accent); }
+.headline[data-tone="danger"] .hl__tick { background: var(--danger); }
+.headline[data-tone="attention"] .hl__tick { background: var(--attention); }
+.headline[data-tone="unknown"] .hl__tick { background: var(--unknown); }
+
+.hl__title {
+  position: relative;
+  margin: 12px 0 0;
+  color: var(--dust-1);
+  font-family: var(--font-sans); font-size: var(--hl-size); font-weight: 600; line-height: .96;
+  letter-spacing: -.035em; text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+/* A word in its mask: it rises from below (motion.js stagger), a number slides (slideValue). */
+.hl__m { position: relative; display: inline-block; overflow: hidden; vertical-align: top; padding: 0 .02em .06em 0; margin-bottom: -.06em; }
+.hl__w { display: inline-block; }
+.hl__m .k-ghost { font: inherit; letter-spacing: inherit; }
+.hl__title--ghost { position: absolute; left: 0; top: 0; right: 0; margin: 0; pointer-events: none; }
+.hl__m[data-tone="danger"] { color: var(--danger-ink); }
+.hl__m[data-tone="attention"] { color: var(--attention); }
+.hl__m[data-tone="unknown"] { color: var(--unknown); }
+.hl__m[data-tone="accent"] { color: var(--accent); }
+.hl__m[data-tone="noroute"] { color: var(--noroute); text-decoration: underline 3px; text-underline-offset: .12em; }
+.headline[data-tone="unknown"] .hl__title { color: var(--unknown); }
+
+.hl__lines { display: grid; gap: 6px; margin: 18px 0 0; padding: 0; list-style: none; }
+.hl__line { display: flex; align-items: center; gap: 12px; color: var(--dust-1); font-size: 17px; font-weight: 500; line-height: 1.3; }
+.hl__sign { flex: none; position: relative; width: 12px; height: 12px; background: var(--dust-3); clip-path: inset(5px 0); }
+/* Each line carries the shape of its axis: octagon red, triangle amber, dashed «?» ring, crossed square, accent bar. */
+.hl__line[data-tone="danger"] .hl__sign { background: var(--danger); clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%); }
+.hl__line[data-tone="danger"] { color: var(--danger-ink); font-weight: 600; }
+.hl__line[data-tone="attention"] .hl__sign { background: var(--attention); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.hl__line[data-tone="unknown"] .hl__sign { background: none; clip-path: none; border: 1.5px dashed var(--unknown); border-radius: 50%; }
+.hl__line[data-tone="unknown"] { color: var(--dust-1); font-style: italic; }
+.hl__line[data-tone="noroute"] .hl__sign {
+  background: linear-gradient(45deg, transparent 44%, var(--ink-0) 44% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, var(--ink-0) 44% 56%, transparent 56%), var(--noroute);
+  clip-path: none;
+}
+.hl__line[data-tone="accent"] .hl__sign { background: var(--accent); clip-path: inset(4px 0); }
+.hl__line[data-tone="accent"] { color: var(--accent); font-family: var(--font-mono); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }
+.hl__line[data-tone="forecast"] .hl__sign { background: none; clip-path: none; border-top: 1.5px dashed var(--dust-2); height: 0; }
+.hl__line[data-tone="forecast"] { color: var(--dust-2); }
+/* Old data: the headline says so and turns to the fog of the unknown. */
+.headline[data-old] .hl__title { color: var(--unknown); }
+.headline[data-old] .hl__m[data-tone] { color: var(--unknown); }
+.headline[data-old] .hl__kicker { color: var(--dust-1); }
+.headline[data-old] .hl__tick { background: repeating-linear-gradient(90deg, var(--unknown) 0 4px, transparent 4px 7px); }
+
+/* The size of the title: a longer title (view/headline.js data-length) and a narrower free stage (the panel shown)
+   are set smaller, so that the title keeps to two lines. */
+.headline { --hl-size: clamp(44px, 4.4vw, 88px); }
+.headline[data-length="mid"] { --hl-size: clamp(40px, 3.8vw, 76px); }
+.headline[data-length="long"] { --hl-size: clamp(34px, 3vw, 60px); }
+body[data-panel="shown"] .headline { --hl-size: clamp(40px, 3.9vw, 76px); }
+body[data-panel="shown"] .headline[data-length="mid"] { --hl-size: clamp(36px, 3.4vw, 66px); }
+body[data-panel="shown"] .headline[data-length="long"] { --hl-size: clamp(32px, 2.8vw, 56px); }
+.hl__g { display: inline-block; white-space: nowrap; }
+
+/* The panel takes over the right of the stage: the headline keeps to the part left free. */
+body[data-panel="shown"] .headline { max-width: min(900px, var(--hl-room, 9999px), calc(100% - var(--cover-left) - var(--cover-right) - 190px)); }
+
+/* ---- the horizon rail: a borehole log at the right edge of the stage ------------------------------ */
+
+.hz {
+  position: absolute; z-index: 5;
+  right: calc(var(--cover-right) + 20px);
+  top: calc(var(--notices-h, 0px) + 92px);
+  bottom: 120px;
+  width: 176px;
+  display: flex; flex-direction: column;
+  pointer-events: none;
+}
+.hz::before {
+  content: ""; position: absolute; z-index: -1; left: -32px; right: -20px; top: -24px; bottom: -24px;
+  background: linear-gradient(to left, rgba(10, 11, 13, .78) 0, rgba(10, 11, 13, .5) 60%, rgba(10, 11, 13, 0) 100%);
+}
+.hz__head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--line);
+  pointer-events: auto;
+}
+.hz__title { color: var(--dust-2); font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; letter-spacing: var(--track-caps); text-transform: uppercase; }
+.hz__all {
+  min-height: 28px; padding: 0 10px;
+  border: 1px solid var(--line); background: transparent;
+  color: var(--dust-2); font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; letter-spacing: var(--track-caps); text-transform: uppercase;
+  cursor: pointer;
+}
+.hz__all:hover { border-color: var(--dust-2); color: var(--dust-1); }
+.hz__all[aria-current="true"] { border-color: var(--accent); color: var(--accent); }
+
+/* The gauge: the axis at 44 px from the right edge, metres to its right, horizons to its left. */
+.hz__gauge { --axis: 44px; position: relative; flex: 1 1 auto; min-height: 120px; margin: var(--sp-5) 0 var(--sp-3); }
+.hz__axis { position: absolute; right: var(--axis); top: 0; bottom: 0; width: 1px; background: var(--dust-3); transform-origin: top center; }
+.hz__ticks { position: absolute; inset: 0; }
+.hz__tick { position: absolute; left: calc(100% - var(--axis)); width: 5px; height: 1px; background: var(--dust-3); }
+.hz__tick--major { width: 11px; background: var(--dust-2); }
+.hz__tick-label {
+  position: absolute; left: 15px; top: -7px;
+  color: var(--dust-3); font-family: var(--font-mono); font-size: 10px; line-height: 14px; letter-spacing: .02em; white-space: nowrap;
+}
+.hz__levels { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
+.hz__item { position: absolute; right: calc(var(--axis) - 10px); transform: translateY(-50%); }
+.hz__level {
+  display: grid; grid-template-columns: auto auto 48px; grid-template-areas: "sign elev bar" "name name bar";
+  align-items: center; column-gap: 8px; row-gap: 0;
+  padding: 6px 0 6px 10px;
+  border: 0; background: transparent;
+  color: var(--dust-2); text-align: right;
+  cursor: pointer; pointer-events: auto;
+}
+.hz__elev { grid-area: elev; font-family: var(--font-sans); font-size: 34px; font-weight: 600; line-height: 1; letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums; transition: color 120ms var(--ease); }
+.hz__bar { grid-area: bar; align-self: center; height: 3px; background: var(--dust-3); transform-origin: right center;
+  transition: background-color 120ms var(--ease), height 120ms var(--ease); }
+.hz__name { grid-area: name; justify-self: end; color: var(--dust-3); font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em;
+  text-transform: uppercase; white-space: nowrap; }
+.hz__sign { grid-area: sign; display: inline-flex; }
+.hz__sign .glyph { width: 18px; height: 18px; }
+.hz__level:hover { color: var(--dust-1); }
+.hz__level:hover .hz__bar { background: var(--dust-1); }
+.hz__level[aria-current="true"] { color: var(--dust-1); }
+.hz__level[aria-current="true"] .hz__bar { height: 6px; background: var(--accent); }
+.hz__level[aria-current="true"] .hz__name { color: var(--accent); }
+.hz__level[data-hazard="danger"] .hz__sign { color: var(--danger); }
+.hz__level[data-hazard="attention"] .hz__sign { color: var(--attention); }
+.hz__level[data-hazard="unknown"] .hz__sign { color: var(--unknown); }
+.hz__level[data-hazard="danger"] .hz__bar { box-shadow: 0 0 0 1px var(--danger); }
+
+/* While the panel takes over the right of the stage, the rail keeps only its horizons: a slim column of depths. */
+body[data-panel="shown"] .hz { width: 112px; }
+body[data-panel="shown"] .hz__title, body[data-panel="shown"] .hz__tick-label, body[data-panel="shown"] .hz__name { display: none; }
+body[data-panel="shown"] .hz__head { justify-content: flex-end; }
+body[data-panel="shown"] .hz__gauge { --axis: 12px; }
+body[data-panel="shown"] .hz__elev { font-size: 26px; }
+body[data-panel="shown"] .hz__level { grid-template-columns: auto auto 28px; grid-template-areas: "sign elev bar"; }
+
+/* The object card floats beside the rail, never over it (--hz-w: the room the rail takes at the right edge). */
+.centre { --hz-w: 200px; }
+body[data-panel="shown"] .centre { --hz-w: 132px; }
+.sheet { right: calc(var(--cover-right) + var(--hz-w) + var(--gap-stage)); }
+
+/* ---- the scheme mode: the SVG fits the part of the stage the headline, the horizon rail and the controls leave ---- */
+
+.stage[data-stage-mode="scheme"] > .scheme {
+  top: var(--hl-bottom, 0px); bottom: 64px;
+  left: var(--cover-left); right: calc(var(--cover-right) + 200px);
+}
+body[data-panel="shown"] .stage[data-stage-mode="scheme"] > .scheme { right: calc(var(--cover-right) + 120px); }
+
+/* ---- compact (1280×720) -------------------------------------------------------------------------- */
+
+@media (max-width: 1599px), (max-height: 899px) {
+  .headline { left: calc(var(--cover-left) + 28px); top: var(--hl-top, calc(var(--notices-h, 0px) + 20px));
+    max-width: min(var(--hl-room, 9999px), calc(100% - var(--cover-left) - var(--cover-right) - 170px)); }
+  .headline::before { left: -28px; top: -20px; }
+  .hl__kicker { font-size: 10.5px; gap: 8px; }
+  .hl__tick { width: 20px; }
+  .hl__title { margin-top: 8px; }
+  .headline { --hl-size: clamp(34px, 3.9vw, 56px); }
+  .headline[data-length="mid"] { --hl-size: 44px; }
+  .headline[data-length="long"] { --hl-size: 36px; }
+  body[data-panel="shown"] .headline { --hl-size: 36px; }
+  body[data-panel="shown"] .headline[data-length="mid"] { --hl-size: 34px; }
+  body[data-panel="shown"] .headline[data-length="long"] { --hl-size: 30px; }
+  body[data-panel="shown"] .headline { max-width: min(var(--hl-room, 9999px), calc(100% - var(--cover-left) - var(--cover-right) - 48px)); }
+  .hl__lines { margin-top: 10px; gap: 3px; }
+  .hl__line { font-size: 14px; gap: 9px; }
+  .hl__line[data-tone="accent"] { font-size: 11px; }
+  .hl__sign { width: 10px; height: 10px; }
+
+  .hz { width: 112px; top: calc(var(--notices-h, 0px) + 72px); bottom: 96px; right: calc(var(--cover-right) + 12px); }
+  .hz__title { display: none; }
+  .hz__head { justify-content: flex-end; }
+  .hz__gauge { --axis: 34px; margin-top: var(--sp-3); }
+  .hz__elev { font-size: 24px; }
+  .hz__name { display: none; }
+  .hz__level { grid-template-areas: "sign elev bar"; }
+  .hz__level { grid-template-columns: auto auto 36px; padding: 4px 0 4px 8px; }
+  .hz__tick:not(.hz__tick--major) { display: none; }
+  /* The panel takes the right of a small stage: the rail gives way while it is shown. */
+  body[data-panel="shown"] .hz { display: none; }
+  .centre { --hz-w: 124px; }
+  body[data-panel="shown"] .centre { --hz-w: 0px; }
+  .stage[data-stage-mode="scheme"] > .scheme { right: calc(var(--cover-right) + 124px); bottom: 56px; }
+  body[data-panel="shown"] .stage[data-stage-mode="scheme"] > .scheme { right: var(--cover-right); }
+}

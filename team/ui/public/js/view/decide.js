@@ -24,7 +24,7 @@
 
 import {h, reconcile, s, setAttrs, setGlyph, setText} from '../dom.js';
 import {incidentOf, isUnderground, thingByName, thingsOfKind, workersInZone} from '../model.js';
-import {EASE_OUT, MS, motionAllowed, play} from '../motion.js';
+import {EASE_POSTER, motionAllowed, play, playIn, stagger} from '../motion.js';
 import {situationOf} from '../situation.js';
 import {decisionOf, headline, launchOption, metricsTable, optionVerb, peopleBar, peopleOf, peoplePatterns, qualityMark,
   scopeText, secondaryFacts} from './decision.js';
@@ -103,6 +103,7 @@ function decisionView(ctx) {
   let chosen = null;
   let hovered = null;
   let decisionSeen = null;
+  let cascaded = null;
 
   function pointAt() {
     const {model} = store.getState();
@@ -118,10 +119,15 @@ function decisionView(ctx) {
     if (!card || card.getAttribute('aria-disabled') === 'true') return;
     const name = card.getAttribute('data-option');
     if (name === chosen) return;
+    const wasIdle = chosen === null;
     chosen = name;
     render(store.getState());
     if (motionAllowed(store.getState())) {
-      play(card, [{borderColor: 'rgba(242, 239, 233, 0)'}, {borderColor: 'rgba(242, 239, 233, 1)'}], {duration: MS.scope, easing: EASE_OUT});
+      // The chosen card expands: a short push towards the stage, its facts unfold; the launch wakes up once.
+      play(card, [{transform: 'translateX(-10px)'}, {transform: 'none'}], {duration: 320, easing: EASE_POSTER});
+      const facts = card.querySelector('.dp-card__facts');
+      if (facts) playIn(facts, [{opacity: 0, transform: 'translateY(-6px)'}, {opacity: 1, transform: 'none'}], {duration: 300, delay: 60, easing: EASE_POSTER});
+      if (wasIdle) play(execute, [{opacity: 0.4, transform: 'translateY(8px)'}, {opacity: 1, transform: 'none'}], {duration: 360, easing: EASE_POSTER});
     }
   }
 
@@ -203,7 +209,8 @@ function decisionView(ctx) {
     stateNode.hidden = offered;
     // A forecast the model did not publish has no sentence and no numbers.
     setText(line, forecast ? forecast.text : P.notPublished);
-    setAttrs(line, {id: ids.line, 'data-rule': forecast ? forecast.rule : 'not_published', title: forecast ? text.UI.decision.forecast : null});
+    setAttrs(line, {id: ids.line, 'data-rule': forecast ? forecast.rule : 'not_published', title: forecast ? text.UI.decision.forecast : null,
+      'data-long': forecast && forecast.text.length > 36 ? 'true' : null});
     const people = peopleOf(option.values, 'forecast_', decision.total);
     barBox.hidden = !forecast;
     if (forecast) bars.get(node).update(people, 'forecast', `${text.UI.decision.forecast}: ${forecast.text}`);
@@ -319,6 +326,15 @@ function decisionView(ctx) {
 
     const info = {model, decision, sameQuality: qualities.length <= 1};
     reconcile(cards, options, (option) => option.name, createCard, (node, option) => updateCard(node, option, info));
+    // A decision that appears (or a new one of the model): its cards cascade in from the right, once.
+    const cascadeKey = `${decision.decisionIds.join()}|${options.map((option) => option.name).join()}`;
+    if (cascadeKey !== cascaded && options.length > 0) {
+      cascaded = cascadeKey;
+      if (motionAllowed(state)) {
+        stagger([...cards.children], [{opacity: 0, transform: 'translateX(72px)'}, {opacity: 1, transform: 'none'}],
+          {duration: 460, step: 80, easing: EASE_POSTER});
+      }
+    }
     // Roving tab stop: the chosen card, or else the first that can be chosen.
     const tabStop = cards.querySelector('.dp-card.is-chosen') || selectable()[0] || null;
     for (const card of cards.children) setAttrs(card, {tabindex: card === tabStop ? 0 : -1});
@@ -349,6 +365,7 @@ function decisionView(ctx) {
     leave() {
       chosen = null;
       hovered = null;
+      cascaded = null;
       if (store.getState().ui.hoverOption !== null) ctx.hoverOption(null);
     },
   };
@@ -394,8 +411,8 @@ export function mount(root, ctx) {
   function slide() {
     panel.setAttribute('data-panel-motion', 'running');
     const done = () => panel.removeAttribute('data-panel-motion');
-    const motion = play(body, [{opacity: 0, transform: 'translateX(16px)'}, {opacity: 1, transform: 'none'}],
-      {duration: MS.drawer, easing: EASE_OUT});
+    const motion = play(body, [{opacity: 0, transform: 'translateX(56px)'}, {opacity: 1, transform: 'none'}],
+      {duration: 440, easing: EASE_POSTER});
     if (motion) motion.finished.then(done, done);
     else done();
   }

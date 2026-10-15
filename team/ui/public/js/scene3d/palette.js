@@ -1,36 +1,41 @@
-// Colours of the scene: the tokens of base.css (redesign spec 1.1 and the
-// colour roles of the clarity pass) and the tones of the stone model derived
-// from them. Hazard colours mean hazard only; selection is a chalk-white double
-// ring with the warm work light; the light steel of the primary action marks
-// what a decision option would act on; verdigris is a computed route or an
-// available exit. Copper is not used in the scene.
+// Colours of the scene: the tokens of base.css (variant 3 «Глубина») and the
+// tones of the stone model derived from them. Hazard colours mean hazard only;
+// selection is a white double ring with the warm work light; the electric
+// verdigris accent is a computed route, an available exit and what a hovered
+// decision option would act on. Copper is not a state in the scene.
 
 export const TOKEN = {
-  ink0: '#111316',
-  ink1: '#171A1E',
-  ink2: '#1F2328',
-  ink3: '#2A2F36',
-  line: '#323840',
-  dust1: '#E8E3DA',
-  dust2: '#B8B1A5',
-  dust3: '#847D72',
+  ink0: '#0A0B0D',
+  ink1: '#111316',
+  ink2: '#181A1E',
+  ink3: '#22252A',
+  line: '#2A2D33',
+  dust1: '#F2EEE6',
+  dust2: '#A8A39A',
+  dust3: '#85807A',
   copper: '#C8834F',
   copperStrong: '#E39A62',
-  verdigris: '#5FA89E',
+  /** The signature accent (electric verdigris): a computed route, an available exit, interaction. */
+  verdigris: '#2EF2C2',
+  verdigrisCore: '#C9FFF1',
+  verdigrisTint: '#0C2A24',
   steel: '#7E8B97',
   stone1: '#57534D',
   stone2: '#726D65',
   stone3: '#938C80',
-  attention: '#E2A43B',
-  danger: '#E0483A',
-  unknown: '#A3A7AD',
-  noroute: '#F2EFE9',
+  attention: '#FFB020',
+  danger: '#FF4B3E',
+  unknown: '#9AA0A6',
+  noroute: '#F2EEE6',
   chalk: '#D7D1C3',
   lightWarm: '#FFD7A1',
-  /** Selection: the chalk-white double ring. */
-  select: '#F2EFE9',
-  /** The primary action (--action): the zones and people a hovered decision option covers. */
-  action: '#AEBBC7',
+  /** Selection: the white double ring. */
+  select: '#FFFFFF',
+  /** The primary action (--action, the accent): the zones and people a hovered decision option covers. */
+  action: '#2EF2C2',
+  /** The stylised edges of the stone (scene.js edgeLines): bone white, and the accent-tinted cut of a horizon. */
+  edge: '#F2EEE6',
+  edgeAccent: '#7FE8CF',
 };
 
 /** Tones of the model, all from the stone and ink tokens. */
@@ -81,9 +86,9 @@ export const ENV = {
   bornite: '#6B5260',
   malachite: '#4F7F66',
   // The scene behind the model: a cool graphite with a soft vignette (high quality), or its plain tone (light quality).
-  backCentre: '#181B20',
-  backEdge: '#08090B',
-  back: '#121418',
+  backCentre: '#13161A',
+  backEdge: '#050607',
+  back: '#0A0B0D',
   // The light: a warm work light as the key, a cool sky over a dark ground, a cool rim from behind.
   key: '#FFEBD8',
   sky: '#CDD6E0',

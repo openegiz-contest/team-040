@@ -101,6 +101,20 @@ class Stage3dCase(BrowserTestCase):
     def js(self, body, timeout=20.0):
         return self.page.evaluate("(async () => {" + body + "})()", timeout=timeout)
 
+    def wait_stage_size_settled(self, quiet=1.5, timeout=12.0):
+        """Until the stage has kept one size for `quiet` seconds."""
+        size = "(() => { const r = document.getElementById('stage').getBoundingClientRect(); return [r.x, r.y, r.width, r.height].join(','); })()"
+        end = time.time() + timeout
+        last, since = self.page.evaluate(size), time.time()
+        while time.time() < end:
+            time.sleep(0.1)
+            now = self.page.evaluate(size)
+            if now != last:
+                last, since = now, time.time()
+            elif time.time() - since >= quiet:
+                return
+        self.fail("the stage kept changing its size")
+
     def wait_idle(self, timeout=10.0):
         self.page.wait_for("document.querySelector('#stage').dataset.rendering === 'idle'", timeout=timeout,
                            message="the stage stopped rendering")
@@ -299,7 +313,9 @@ class IdleAndMotionTest(Stage3dCase):
         self.wait_idle()
         boot = self.page.evaluate("window.__probe.raf")
         self.assertGreater(boot, 0, "the boot frames were drawn")
-        self.assertLessEqual(boot, 16, "a bounded number of boot frames")
+        # The intro «вскрытие массива» (variant 3, at most 1.8 s once per page load) adds its frames to the boot.
+        intro = self.stage().get("intro") in ("done", "cut")
+        self.assertLessEqual(boot, 16 + (140 if intro else 0), "a bounded number of boot frames")
         tick = int(self.body()["tick"])
         contexts = self.page.evaluate("window.__probe.canvas")
         self.page.evaluate("window.__probe.raf = 0")
@@ -494,7 +510,9 @@ class CompositionTest(Stage3dCase):
                 got = self.page.evaluate(self.GEOMETRY)
                 stage_left, _, stage_right, _ = got["stage"]
                 free_right = got["panel"][0] if got["panel"][0] < stage_right else stage_right
-                self.assertGreaterEqual((free_right - stage_left) / width, 0.5, f"the free stage keeps half the width: {got}")
+                # Variant 3: the decision panel is wider (640 px at 1920, 480 px at 1280, poster-size option cards);
+                # the stage left free of it keeps well over a third of the screen.
+                self.assertGreaterEqual((free_right - stage_left) / width, 0.38, f"the free stage keeps over a third of the width: {got}")
                 points = self.js(f"""const st = {APP}.ctx.stage;
                   return ['worker-11', 'worker-12', 'worker-13'].map((n) => st.screenOf('{NS}:' + n));""")
                 for point in points:
@@ -510,9 +528,17 @@ class CompositionTest(Stage3dCase):
                 left, top, right, bottom = info["model"]
                 w, h = info["stage"]
                 self.assertTrue(left >= 0 and top >= 0 and right <= w and bottom <= h, f"{info['model']} in {info['stage']}")
-                # About four fifths in one direction: the rest is the room of the horizon labels, the exits and the HUD.
-                self.assertTrue((bottom - top) / h >= 0.75 or (right - left) / w >= 0.75,
-                                f"the model fills the stage in one direction: {info['model']} of {info['stage']}")
+                # Variant 3: the situation headline (top left) and the horizon rail (right edge) lie over the stage and the
+                # camera keeps clear of them; the model fills the part they leave free.
+                free = self.js("""const stage = document.querySelector('#stage-3d').getBoundingClientRect();
+                  const rail = document.querySelector('[data-testid="horizon-rail"]');
+                  const head = document.querySelector('[data-testid="situation-headline"]');
+                  const r = rail && !rail.hidden ? rail.getBoundingClientRect() : null;
+                  const hd = head ? head.getBoundingClientRect() : null;
+                  return [(r && r.width ? r.left : stage.right) - stage.left, stage.bottom - (hd && hd.height ? hd.bottom : stage.top)];""")
+                # About three quarters of the free part in one direction: the rest is the room of the horizon labels and the exits.
+                self.assertTrue((bottom - top) / free[1] >= 0.72 or (right - left) / free[0] >= 0.72,
+                                f"the model fills the free stage in one direction: {info['model']} of {free}")
 
 
 # Samples `ctx.stage.info().motion` every `step` ms for `ms` ms, after running `act` (a statement), in the page;
@@ -663,7 +689,8 @@ class FramingTest(Stage3dStoryCase):
           return [...document.querySelectorAll('#stage-3d .s3-label:not([data-culled])')].map((n) => n.getBoundingClientRect())
             .filter((r) => r.right > panel.left + 1).length; })()""")
         self.assertEqual(under, 0, "the labels keep clear of the panel")
-        # The HUD keeps clear of the panel and folds to icons; the scale box goes.
+        # The HUD keeps clear of the panel; it folds to icons (and the scale box goes) only when its row would not fit
+        # (variant 3: the gizmo stands at the bottom and the HUD holds 3D/Схема, the overview and the settings).
         hud = self.page.evaluate("""(() => ({
           words: [...document.querySelectorAll('#stage-hud .hud__text')].map((n) => getComputedStyle(n).display),
           icons: [...document.querySelectorAll('#stage-hud .hud__btn > .hud__icon')].map((n) => getComputedStyle(n).display),
@@ -673,9 +700,11 @@ class FramingTest(Stage3dStoryCase):
           names: [...document.querySelectorAll('#stage-hud button, #stage-hud summary')].filter((n) => n.offsetWidth > 0)
             .map((n) => n.getAttribute('aria-label') || n.textContent.trim()),
         }))()""")
-        self.assertEqual(set(hud["words"]), {"none"}, hud)
-        self.assertNotIn("none", hud["icons"], hud)
-        self.assertEqual(hud["scale"], "none")
+        if set(hud["words"]) == {"none"}:
+            self.assertNotIn("none", hud["icons"], hud)
+            self.assertEqual(hud["scale"], "none")
+        else:
+            self.assertEqual(set(hud["icons"]), {"none"}, hud)
         self.assertLessEqual(hud["right"], hud["panel"], "the HUD is not under the panel")
         self.assertTrue(all(hud["names"]), f"every folded control keeps its name: {hud['names']}")
 
@@ -706,7 +735,9 @@ class FramingTest(Stage3dStoryCase):
         self.wait_idle()
         self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.autoFramed || null"))
         self.assertEqual(self.camera()[:2], [float(v) for v in moved.split()][:2], "the user's azimuth and elevation stay")
-        self.assertIsNone(self.info()["focus"])
+        # Variant 3: the decision panel lies over the right of the stage at 1920 too; when it would hide the incident it
+        # refits the picture at once (not a choreography: no autoFramed, the user's azimuth and elevation kept).
+        self.assertIn(self.info()["focus"], (None, thing("zone-d")))
 
     def test_an_incident_already_open_on_load_is_not_flown_to(self):
         """No camera move on load (motion rule). The panel of the decision may refit the picture at once when it
@@ -1189,7 +1220,8 @@ class LoaderTest(Stage3dStoryCase):
                 self.assertLessEqual(info["triangles"], 60000, f"{info['triangles']} triangles with four loaders")
                 self.assertLessEqual(info["calls"], 90, f"{info['calls']} draw calls")
                 self.assertLessEqual(info["loader"]["calls"], 7, "instanced: the draw calls of the loaders do not grow with the zones")
-                self.assertLessEqual(info["loader"]["triangles"], 8000, "one machine is the 7 960 triangles of lhd.glb")
+                # Variant 3: lhd_v2.glb (at most 15 000 triangles; its light copy is drawn at the overview).
+                self.assertLessEqual(info["loader"]["triangles"], 15000, "one machine is at most the 15 000 triangles of lhd_v2.glb")
 
 
 class LoaderLightTest(Stage3dStoryCase):
@@ -1583,6 +1615,9 @@ class EquipmentTest(EquipmentCase):
             for name, published in first["p"].items():
                 self.assertEqual(first["d"][name][:2], [published[0], published[1]], f"{name} at its last published position")
             self.page.wait_for("document.querySelector('#stage-3d .s3').hasAttribute('data-old')", timeout=10.0)
+            # The notice of the lost link may arrive a moment later and push the stage down: a new size of the
+            # canvas is drawn once (that is not motion). The probe starts once the stage has kept its size.
+            self.wait_stage_size_settled()
             self.wait_idle(timeout=3.0)
             self.page.evaluate("window.__probe.raf = 0")
             time.sleep(2.0)
@@ -1634,7 +1669,7 @@ class EquipmentTest(EquipmentCase):
         self.click_at(p["x"], p["y"])
         self.wait_selected(thing(machine))
         card = self.page.evaluate("document.querySelector('.card').innerText")
-        self.assertIn("техника", card)
+        self.assertIn("техника", card.lower())  # the kicker is set in capitals (text-transform)
         self.assertIn(label, card)
         self.assertIn("Участок Г", card)
         self.wait_idle()
@@ -1718,7 +1753,8 @@ class MinerFigureTest(EquipmentCase):
                 figures = self.figures()
                 self.assertIn("worker-11", figures["at"], f"close up the person is a figure: {figures}")
                 self.assertGreaterEqual(figures["px"], figures["threshold"])
-                self.assertLessEqual(figures["triangles"], 400, "a low-poly figure")
+                # miner.glb (variant 3, assets/README.md) is a low-poly figure of at most 1 500 triangles.
+                self.assertLessEqual(figures["triangles"], 1500, "a low-poly figure")
                 close = self.js(f"return {APP}.ctx.stage.screenOf({json.dumps(worker)}).world;")
                 self.assertAlmostEqual(close[1] - at_overview[1], 1.8 * 2.5 + 3.5 - 6, places=1,
                                        msg="the marker stands over the helmet of its figure")
@@ -1864,7 +1900,8 @@ class BeautyTest(Stage3dStoryCase):
         rock = self.clip_stats({"x": box[0] + 40, "y": box[1] + box[2] * 0.5}, size=12)
         # Danger: red with its dark cross-hatch (found by the red); normal: the pale sawn floor (found by its paleness).
         danger = self.floor_window("danger", lambda r, g, b: 1 if r > 140 and r > g + 60 else 0)
-        normal = self.floor_window("normal", lambda r, g, b: 1 if min(r, g, b) > 170 and max(r, g, b) - min(r, g, b) < 40 else 0)
+        # Variant 3 dims the scene a little behind the headline and the decision panel: the pale floor reads above 140.
+        normal = self.floor_window("normal", lambda r, g, b: 1 if min(r, g, b) > 140 and max(r, g, b) - min(r, g, b) < 40 else 0)
         stats = {"rock": rock, "danger": danger, "normal": normal}
         self.assertGreater(danger[1], 14, f"the cross-hatch of danger survives without colour: {stats}")
         self.assertGreater(danger[1], rock[1] + 6, f"the hatch of danger is busier than the rock: {stats}")

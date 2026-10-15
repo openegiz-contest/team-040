@@ -10,9 +10,9 @@ import {thingByName, thingsOfKind} from '../model.js';
 
 /** Sizes of the model in scene metres. Not to scale, and the scale note says so. */
 export const DIMS = {
-  depth: 1.6,        // a channel is carved this deep into the top face of its slab
+  depth: 2.6,        // a channel is carved this deep into the top face of its slab
   thickness: 12,     // a slab, from its top face down
-  half: 5,           // half the width of a channel
+  half: 7,           // half the width of a channel
   margin: 26,        // stone around the outermost workings of a level
   zoneReach: 8,      // the frame of a zone stands this far outside its channels
   kCompact: 1,       // vertical factor of the compact stack: elevations to the scale of the plan
@@ -23,7 +23,7 @@ export const DIMS = {
 
 /** How many times the channels are drawn wider than a real drift. */
 export const WIDTH_FACTOR = (2 * DIMS.half) / DIMS.drift;
-/** The loader of lhd.glb (10 m) is drawn this many times larger: about as the channels, and readable at the overview. */
+/** The loader (10 m) is drawn this many times larger: about as the channels are widened (WIDTH_FACTOR), readable at the overview; a longer machine would leave no free stretch for some zones of the fixtures. */
 export const LOADER_SCALE = 2.5;
 
 /** The vertical factor for an explode value in [0, 1]. */

@@ -1,17 +1,23 @@
-/* The right panel of «Пульт смены» (agent V2-D): «Решение», «Выполнение», «Итог»
-   inside #panel (the column itself is layout.css's). One question per state, one
-   sentence per answer, details on demand. Calm and large: the answer of a step
-   in 20 px, key figures 40 px tabular, cards of 8 px radius told apart by tone,
-   one 44 px primary button. Colour roles of the clarity pass: selection =
-   chalk-white double outline, primary action = light steel, copper only for the
-   focus ring, red and amber only for hazard, white crossed square for "no
-   computed route", fog grey with dashes and «?» for unknown.
-   Tokens: base.css. Values and people bars: compare.css (.val, .pb). */
+/* The right panel of «Пульт смены» (view/decide.js, view/progress.js), variant 3
+   «Глубина»: «Решение», «Выполнение», «Итог» lie over the right part of the
+   stage as a takeover. The scene fades into a solid scrim under them (no blur,
+   no glass); the options are the only boxes of the screen — large, sharp,
+   cascading in — each with its outcome as a giant headline; the chosen card
+   expands; one huge primary button in the accent. Colour roles: selection =
+   white double outline; primary action = the accent; red and amber only for
+   hazard; white crossed square for "no computed route"; fog grey with dashes and
+   «?» for unknown. Tokens: base.css. Values and people bars: compare.css. */
 
 .dp {
+  --dp-fade: 120px;
+  --dp-pad: var(--sp-6);
   flex: 1 1 auto;
   display: flex; flex-direction: column;
   min-height: 0;
+  padding-left: var(--dp-fade);
+  /* The scrim: the scene fades out under the panel, then a solid ground. */
+  background: linear-gradient(to right, rgba(10, 11, 13, 0) 0, var(--scrim-soft) calc(var(--dp-fade) * .45),
+    var(--scrim) var(--dp-fade), var(--ink-0) calc(var(--dp-fade) + 48px));
   color: var(--dust-1);
   font-size: var(--fs-body);
   line-height: var(--lh);
@@ -19,56 +25,73 @@
 
 /* ---- head, body, foot ------------------------------------------------------------- */
 
-.dp__head { flex: none; padding: var(--sp-4) var(--sp-5) var(--sp-2); }
-.dp__head-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
-.dp__title { margin: 0; font-size: var(--fs-emphasis); font-weight: 600; line-height: 1.3; }
-.dp[data-mode="decision"] .dp__title { color: var(--dust-2); font-size: var(--fs-caption); letter-spacing: .1em; text-transform: uppercase; }
-.dp__pause { flex: none; display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--dust-2); font-size: var(--fs-caption); }
+.dp__head { flex: none; padding: var(--sp-5) var(--dp-pad) var(--sp-2) 0; }
+.dp__head-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.dp__title { display: flex; align-items: center; gap: var(--sp-2); margin: 0;
+  font-size: 30px; font-weight: 600; line-height: 1.05; letter-spacing: var(--track-tight); text-transform: uppercase; }
+.dp[data-mode="decision"] .dp__title { color: var(--dust-2); font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: var(--track-caps); line-height: 16px; }
+.dp[data-mode="decision"] .dp__title::before { content: ""; width: 14px; height: 2px; background: var(--accent); }
+.dp__pause { flex: none; display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--accent);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
 .dp__pause-glyph { display: inline-flex; }
-.dp__pause .glyph { width: 14px; height: 14px; stroke: currentColor; stroke-width: 1.4; }
-.dp__subtitle { margin: 2px 0 0; color: var(--dust-2); font-size: var(--fs-secondary); }
+.dp__pause .glyph { width: 13px; height: 13px; stroke: currentColor; stroke-width: 1.4; }
+.dp__subtitle { margin: 6px 0 0; color: var(--dust-2); font-family: var(--font-mono); font-size: 12px; letter-spacing: .02em; }
 
-.dp__body { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--sp-5) var(--sp-4); }
-.dp__foot { flex: none; padding: var(--sp-3) var(--sp-5) var(--sp-4); background: var(--ink-1); border-top: 1px solid var(--line); }
+.dp__body { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  padding: 0 var(--dp-pad) var(--sp-4) 0; }
+.dp__foot { flex: none; padding: var(--sp-3) var(--dp-pad) var(--sp-5) 0; }
 .dp-foot { display: grid; gap: var(--sp-2); }
 .dp-foot--executing { display: none; }
 .dp__foot:has(.dp-foot--executing) { display: none; }
 
-.dp-launch { min-height: var(--primary-h); justify-content: center; padding: 0 var(--sp-4); font-size: var(--fs-body); font-weight: 600; text-align: center; line-height: 1.25; }
-.dp-why { margin: 0; color: var(--dust-2); font-size: var(--fs-secondary); text-align: center; }
+/* The one primary button: huge, in the accent, the verb of the chosen option on it. */
+.dp-launch {
+  position: relative;
+  min-height: 76px; justify-content: space-between; gap: var(--sp-4);
+  padding: 0 var(--sp-5);
+  font-family: var(--font-sans); font-size: 20px; font-weight: 600; letter-spacing: .01em; line-height: 1.15;
+  text-align: left; text-transform: uppercase;
+}
+.dp-launch::after { content: "→"; flex: none; font-family: var(--font-mono); font-size: 26px; font-weight: 400; line-height: 1; }
+.dp-launch[aria-disabled="true"] { border-width: 1px; font-weight: 500; }
+.dp-launch[aria-disabled="true"]::after { opacity: .4; }
+.dp-why { margin: 0; color: var(--dust-2); font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .dp-why:empty { display: none; }
 .dp-foot .block-note { margin: 0; color: var(--dust-1); font-size: var(--fs-secondary); }
-.dp-close { min-height: var(--primary-h); justify-content: center; border: 1px solid var(--stone-1); }
+.dp-close { min-height: 56px; justify-content: center; border: 1px solid var(--dust-2); }
 
 /* ---- the three steps of «Решение» ------------------------------------------------------- */
 
 .dp-step { padding: var(--sp-4) 0 var(--sp-2); }
-.dp-step + .dp-step { border-top: 1px solid var(--ink-3); }
-.dp-step__head { display: flex; align-items: center; gap: var(--sp-2); min-height: 32px; margin-bottom: var(--sp-1); }
+.dp-step + .dp-step { border-top: 1px solid var(--line); }
+.dp-step__head { display: flex; align-items: center; gap: var(--sp-2); min-height: 28px; margin-bottom: var(--sp-1); }
 .dp-step__num {
-  flex: none; display: inline-grid; place-items: center;
-  width: 22px; height: 22px; border: 1px solid var(--stone-2); border-radius: 50%;
-  color: var(--dust-2); font-size: var(--fs-caption); font-weight: 600; font-variant-numeric: tabular-nums;
+  flex: none; font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; color: var(--accent);
 }
-.dp-step__title { flex: 1 1 auto; margin: 0; color: var(--dust-2); font-size: var(--fs-secondary); font-weight: 600; letter-spacing: .02em; }
-.dp-step__show { flex: none; min-height: 32px; padding: 0 var(--sp-2); font-size: var(--fs-secondary); }
+.dp-step__num::before { content: "0"; }
+.dp-step__num::after { content: " /"; color: var(--dust-3); }
+.dp-step__title { flex: 1 1 auto; margin: 0; color: var(--dust-2); font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: var(--track-caps); text-transform: uppercase; }
+.dp-step__show { flex: none; min-height: 28px; padding: 0 var(--sp-1); font-size: 11px; }
 
-/* 1. What happened: one sentence in 20 px with the sign of the zone's hazard. */
-.dp-what { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; font-size: var(--fs-lead); font-weight: 600; line-height: 1.3; }
-.dp-what__glyph { flex: none; display: inline-flex; padding-top: 3px; }
-.dp-what__glyph .glyph { width: 20px; height: 20px; stroke: currentColor; stroke-width: 1.5; }
+/* 1. What happened: one sentence with the sign of the zone's hazard. */
+.dp-what { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; font-size: 28px; font-weight: 600; line-height: 1.1;
+  letter-spacing: var(--track-tight); }
+.dp-what__glyph { flex: none; display: inline-flex; padding-top: 4px; }
+.dp-what__glyph .glyph { width: 24px; height: 24px; stroke: currentColor; stroke-width: 1.6; }
 .dp-what[data-hazard="danger"] .dp-what__glyph { color: var(--danger); }
 .dp-what[data-hazard="attention"] .dp-what__glyph { color: var(--attention); }
 .dp-what[data-hazard="unknown"] .dp-what__glyph { color: var(--unknown); }
 .dp-what[data-sign="blocked"] .dp-what__glyph { color: var(--dust-1); }
-.dp-what-more { margin: 2px 0 0 28px; color: var(--dust-2); font-size: var(--fs-secondary); }
+.dp-what-more { margin: 4px 0 0 32px; color: var(--dust-2); font-family: var(--font-mono); font-size: 12px; }
 .dp-what-more:empty { display: none; }
 
 /* 2. Who is threatened: a sentence, then the workers as buttons with the legend's figures. */
 .dp-people { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
 .dp-people__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); }
 .dp-people__words { font-size: var(--fs-body); }
-.dp-people__row[data-row="danger"] .dp-people__words { font-weight: 600; }
+.dp-people__row[data-row="danger"] .dp-people__words { font-weight: 600; color: var(--danger-ink); }
 .dp-people__row[data-row="unknown"] .dp-people__words { color: var(--dust-1); font-style: italic; }
 .dp-people__row[data-row="noroute"] .dp-people__words {
   padding-left: var(--sp-2); border-left: 3px solid var(--noroute); font-weight: 600;
@@ -79,73 +102,92 @@
 .dp-who {
   display: inline-flex; align-items: center; gap: 6px;
   min-height: 32px; padding: 0 var(--sp-2) 0 6px;
-  border: 1px solid var(--line); border-radius: var(--radius);
-  background: var(--ink-2); color: var(--dust-1);
-  font-family: var(--font-mono); font-size: var(--fs-secondary); font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line);
+  background: transparent; color: var(--dust-1);
+  font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
-.dp-who:hover { background: var(--ink-3); border-color: var(--stone-2); }
+.dp-who:hover { background: var(--ink-2); border-color: var(--dust-2); }
 .dp-who__mark { display: inline-flex; }
 .dp-who[data-figure="unknown"] { border-style: dashed; border-color: var(--unknown); }
 .dp-who[data-figure="none"] { border-color: var(--noroute); }
 .dp-who[data-figure="inDanger"] { border-color: var(--danger); }
 
 /* 3. What can be done: the caption of the numbers, the alerts, the cards. */
-.dp-caption { margin: 0 0 var(--sp-3); color: var(--dust-2); font-size: var(--fs-secondary); line-height: 1.45; }
-.dp-caption__what { color: var(--dust-1); font-weight: 600; }
+.dp-caption { margin: 0 0 var(--sp-3); color: var(--dust-2); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; letter-spacing: .02em; }
+.dp-caption__what { color: var(--dust-1); font-weight: 500; text-transform: uppercase; letter-spacing: .06em; }
 .dp-caption__quality { margin-left: 2px; }
 .dp-alert {
-  margin: 0 0 var(--sp-3); padding: 6px var(--sp-3);
-  border-left: 3px solid var(--noroute); border-radius: 0 var(--radius) var(--radius) 0;
+  margin: 0 0 var(--sp-3); padding: 8px var(--sp-3);
+  border-left: 3px solid var(--noroute);
   background: var(--ink-2); color: var(--dust-1); font-size: var(--fs-secondary); font-weight: 500;
 }
 .dp-alert--unknown { border-left: 3px dashed var(--unknown); font-style: italic; }
 .dp-alerts { display: grid; gap: var(--sp-2); margin: var(--sp-3) 0 0; padding: 0; list-style: none; }
 .dp-alerts .dp-alert { margin: 0; }
 
-.dp-cards { display: grid; gap: var(--sp-2); }
+/* The options: the only boxes of the screen. */
+/* The cards cascade in from the right (decide.js): what is still on its way is clipped, never scrolled to. */
+.dp-cards { display: grid; gap: var(--sp-3); overflow: clip; overflow-clip-margin: 8px; }
 .dp-card {
-  display: grid; gap: 6px;
-  padding: 10px var(--sp-3) var(--sp-3);
-  border: 3px double transparent; border-radius: var(--radius-panel);
-  background: var(--ink-2);
+  position: relative;
+  display: grid; gap: 10px;
+  padding: var(--sp-4) var(--sp-5) var(--sp-4) var(--sp-5);
+  border: 1px solid var(--line);
+  background: var(--ink-1);
   cursor: pointer;
+  transition: opacity 200ms var(--ease), border-color 120ms var(--ease), background-color 120ms var(--ease);
 }
-.dp-card:hover { background: var(--ink-3); }
+.dp-card::before {
+  content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 4px;
+  background: transparent; transition: background-color 120ms var(--ease);
+}
+.dp-card:hover { border-color: var(--dust-2); background: var(--ink-2); }
+.dp-card:hover::before { background: var(--dust-2); }
 .dp-card:focus-visible { outline: var(--ring); outline-offset: 2px; }
-/* The chosen card: the chalk-white double outline of the selection. */
-.dp-card.is-chosen { border-color: var(--selection); background: var(--ink-3); }
-.dp-card.is-unavailable { cursor: not-allowed; opacity: .6; }
-.dp-card.is-unavailable:hover { background: var(--ink-2); }
+/* The chosen card: the white double outline of the selection, an accent edge, and it expands (facts shown). */
+.dp-card.is-chosen { border: 3px double var(--selection); padding: calc(var(--sp-4) - 2px) calc(var(--sp-5) - 2px); background: var(--ink-2); }
+.dp-card.is-chosen::before { left: -3px; top: -3px; bottom: -3px; width: 6px; background: var(--accent); }
+/* Once a card is chosen, the others step back (they stay readable and can still be chosen). */
+.dp-cards:has(.is-chosen) .dp-card:not(.is-chosen):not(:hover):not(:focus-visible) { opacity: .62; }
+.dp-card.is-unavailable { cursor: not-allowed; opacity: .55; }
+.dp-card.is-unavailable:hover { background: var(--ink-1); border-color: var(--line); }
 
 .dp-card__top { display: flex; align-items: center; gap: var(--sp-2); }
 .dp-card__radio {
   flex: none; position: relative;
-  width: 18px; height: 18px; border: 1.5px solid var(--dust-2); border-radius: 50%;
+  width: 16px; height: 16px; border: 1.5px solid var(--dust-2); border-radius: 50%;
 }
-.dp-card.is-chosen .dp-card__radio { border-color: var(--selection); }
+.dp-card.is-chosen .dp-card__radio { border-color: var(--accent); }
 .dp-card.is-chosen .dp-card__radio::after {
-  content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--selection);
+  content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent);
 }
 .dp-card.is-unavailable .dp-card__radio { border-style: dashed; }
-.dp-card__verb { flex: 1 1 auto; min-width: 0; font-size: var(--fs-emphasis); font-weight: 600; line-height: 1.3; }
-.dp-card__state { flex: none; color: var(--dust-2); font-size: var(--fs-caption); font-style: italic; }
+.dp-card__verb { flex: 1 1 auto; min-width: 0; color: var(--dust-2); font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+  letter-spacing: .07em; line-height: 1.35; text-transform: uppercase; }
+.dp-card.is-chosen .dp-card__verb { color: var(--dust-1); }
+.dp-card__state { flex: none; color: var(--dust-2); font-family: var(--font-mono); font-size: 11px; font-style: italic; }
 
-/* The headline of the forecast: one sentence by the fixed rules of decision.js headline(). */
-.dp-card__headline { margin: 0 0 0 26px; font-size: var(--fs-lead); font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; }
+/* The outcome of the forecast: a giant headline by the fixed rules of decision.js headline(). */
+.dp-card__headline { margin: 0; font-size: 34px; font-weight: 600; line-height: 1.02; letter-spacing: -.015em; text-transform: uppercase;
+  font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
+.dp-card__headline[data-long] { font-size: 26px; line-height: 1.06; }
 .dp-card__headline[data-rule="in_danger"] { color: var(--danger-ink); }
-.dp-card__headline[data-rule="not_published"], .dp-card__headline[data-rule="none"] { color: var(--unknown); font-size: var(--fs-emphasis); font-style: italic; font-weight: 500; }
-.dp-card__bar { margin-left: 26px; }
-.dp-card__bar .pb { max-width: 220px; }
-.dp-card__facts { display: grid; margin: 0 0 0 26px; color: var(--dust-2); font-size: var(--fs-secondary); line-height: 1.4; }
-.dp-card__quality { justify-self: start; margin: 0 0 0 26px; }
+.dp-card__headline[data-rule="no_route"] { box-shadow: inset 3px 0 0 var(--noroute); padding-left: var(--sp-3); }
+.dp-card__headline[data-rule="not_published"], .dp-card__headline[data-rule="none"] { color: var(--unknown); font-size: 22px;
+  font-style: italic; font-weight: 500; text-transform: none; }
+.dp-card__bar .pb { max-width: none; width: 100%; height: 18px; }
+.dp-card__facts { display: none; gap: 2px; margin: 0; color: var(--dust-2); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
+.dp-card.is-chosen .dp-card__facts { display: grid; }
+.dp-card__quality { justify-self: start; margin: 0; }
 
 /* «Подробнее»: the full table of the forecast, as in the archive of runs. */
 .dp-details { margin-top: var(--sp-3); }
 .dp-details__title {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 8px;
   min-height: 32px;
-  color: var(--action); font-size: var(--fs-secondary); cursor: pointer; list-style: none;
+  color: var(--accent); font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  cursor: pointer; list-style: none;
 }
 .dp-details__title::-webkit-details-marker { display: none; }
 .dp-details__title::before {
@@ -154,16 +196,16 @@
   transform: rotate(-45deg);
 }
 .dp-details[open] > .dp-details__title::before { transform: rotate(45deg); }
-.dp-details__title:hover { color: var(--action-strong); }
+.dp-details__title:hover { color: var(--accent-strong); }
 .dp-details__title:focus-visible { outline: var(--ring); outline-offset: 2px; }
 .dp-details__lead { margin: 0 0 var(--sp-2); color: var(--dust-2); font-size: var(--fs-caption); }
 
 .dp-table { font-size: var(--fs-caption); }
-.dp-table th, .dp-table td { padding: 4px 3px; line-height: 1.3; }
+.dp-table th, .dp-table td { padding: 5px 4px; line-height: 1.3; }
 .dp-table th { overflow-wrap: break-word; hyphens: auto; }
 /* Narrow columns: the values in the text face (tabular figures); a number keeps its unit (no-break space). */
-.dp-table .val { font-family: var(--font-sans); font-size: 11.5px; letter-spacing: -.01em; white-space: normal; }
-.dp-table thead th { font-size: 11.5px; }
+.dp-table .val { font-family: var(--font-sans); font-size: 12px; letter-spacing: -.01em; white-space: normal; }
+.dp-table thead th { font-size: 11px; }
 .dp-table .metrics__corner, .dp-table thead th:first-child { width: 27%; }
 .dp-table .metrics__corner { font-size: 10.5px; letter-spacing: .04em; overflow-wrap: normal; hyphens: none; }
 .dp-table .th-box { display: grid; gap: 1px; }
@@ -175,35 +217,39 @@
 
 /* ---- «Выполнение» ------------------------------------------------------------------- */
 
-.dp-block { padding: var(--sp-4) 0; }
-.dp-block + .dp-block { border-top: 1px solid var(--ink-3); }
-.dp-sub { margin: 0 0 var(--sp-2); color: var(--dust-2); font-size: var(--fs-secondary); font-weight: 600; }
+.dp-block { padding: var(--sp-5) 0; }
+.dp-block + .dp-block { border-top: 1px solid var(--line); }
+.dp-sub { margin: 0 0 var(--sp-3); color: var(--dust-2); font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: var(--track-caps); text-transform: uppercase; }
 .dp-note { margin: var(--sp-2) 0 0; color: var(--dust-2); font-size: var(--fs-caption); }
 
-.dp-figs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2) var(--sp-5); }
+.dp-figs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-3) var(--sp-6); }
 .dp-fig { display: grid; margin: 0; }
-.dp-fig__num { font-size: var(--fs-figure-l); font-weight: 600; line-height: 1.05; font-variant-numeric: tabular-nums; }
-.dp-fig + .dp-fig .dp-fig__num { font-size: var(--fs-figure); }
-.dp-fig__label { color: var(--dust-2); font-size: var(--fs-secondary); }
+.dp-fig__num { position: relative; overflow: hidden; padding-bottom: .04em; display: inline-block; font-size: 112px; font-weight: 600; line-height: .95; letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
+.dp-fig__v { display: inline-block; }
+.dp-fig__num .k-ghost { font: inherit; letter-spacing: inherit; }
+.dp-fig + .dp-fig .dp-fig__num { font-size: 56px; letter-spacing: -.03em; }
+.dp-fig__label { color: var(--dust-2); font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--track-caps); text-transform: uppercase; }
+.dp-fig[data-figure="out"] .dp-fig__num { color: var(--accent); }
 .dp-fig[data-tone="danger"] .dp-fig__num { color: var(--danger-ink); }
 .dp-fig[data-tone="unknown"] .dp-fig__num { color: var(--unknown); font-style: italic; text-decoration: underline dashed var(--unknown) 1px; text-underline-offset: 6px; }
 
 /* What the model forecast: a dashed rule, as every forecast. */
-.dp-expect { display: flex; align-items: baseline; gap: var(--sp-2); margin: var(--sp-2) 0 0; color: var(--dust-1); font-size: var(--fs-body); }
-.dp-expect::before { content: ""; flex: none; width: 16px; border-bottom: 1px dashed var(--dust-2); transform: translateY(-4px); }
+.dp-expect { display: flex; align-items: baseline; gap: var(--sp-2); margin: var(--sp-3) 0 0; color: var(--dust-1); font-size: var(--fs-emphasis); }
+.dp-expect::before { content: ""; flex: none; width: 24px; border-bottom: 1px dashed var(--dust-2); transform: translateY(-5px); }
 
-/* One cell per listed worker, by its published status: out filled, on the way verdigris with an arrow,
-   waiting or working outlined (dashed where the hazard of the place is unknown), no computed route a white crossed square, in a danger zone a red double ring,
-   unknown a dashed «?». */
-.dp-cells { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--sp-3); }
+/* One cell per listed worker, by its published status: out filled, on the way accent with an arrow,
+   waiting or working outlined (dashed where the hazard of the place is unknown), no computed route a white crossed
+   square, in a danger zone a red double ring, unknown a dashed «?». */
+.dp-cells { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--sp-4); }
 .dp-cell {
   position: relative; display: inline-grid; place-items: center;
-  width: 20px; height: 20px; border: 1.5px solid var(--dust-2); border-radius: 3px;
-  color: var(--ink-0); font-size: 12px; font-weight: 700; line-height: 1;
+  width: 30px; height: 30px; border: 1.5px solid var(--dust-2);
+  color: var(--ink-0); font-size: 14px; font-weight: 700; line-height: 1;
 }
 .dp-cell[data-cell="out"] { border-color: var(--dust-1); background: var(--dust-1); }
-.dp-cell[data-cell="moving"] { border-color: var(--verdigris); color: var(--verdigris); }
-.dp-cell[data-cell="moving"]::after { content: "›"; font-size: 15px; }
+.dp-cell[data-cell="moving"] { border-color: var(--accent); color: var(--accent); }
+.dp-cell[data-cell="moving"]::after { content: "›"; font-size: 20px; }
 .dp-cell[data-cell="danger"] { border: 3px double var(--danger); }
 .dp-cell[data-cell="noroute"] {
   border-color: var(--noroute); background: var(--noroute);
@@ -224,52 +270,71 @@
 .dp-list__row[data-cell="noroute"] .dp-list__words { font-weight: 600; }
 .dp-list__row[data-cell="danger"] .dp-list__words { color: var(--danger-ink); font-weight: 600; }
 
-.dp-zones { display: grid; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
-.dp-zone { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-2); }
-.dp-zone__name { min-height: 32px; padding: 0; font-weight: 600; }
-.dp-zone__words { flex: 1 0 100%; color: var(--dust-1); font-size: var(--fs-secondary); }
+.dp-zones { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.dp-zone { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-3); }
+.dp-zone__name { min-height: 32px; padding: 0; font-family: var(--font-sans); font-size: 22px; font-weight: 600; letter-spacing: var(--track-tight);
+  text-transform: none; text-decoration: none; color: var(--dust-1); }
+.dp-zone__name:hover { color: var(--accent); }
+.dp-zone__words { flex: 1 0 100%; color: var(--dust-2); font-family: var(--font-mono); font-size: 12px; }
 
-.dp-ack { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--ink-3); color: var(--dust-2); font-size: var(--fs-caption); }
+.dp-ack { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--line);
+  color: var(--dust-2); font-family: var(--font-mono); font-size: 11.5px; }
 .dp-ack__glyph { flex: none; display: inline-flex; }
 .dp-ack .glyph { width: 14px; height: 14px; stroke: currentColor; stroke-width: 1.4; }
 
 /* ---- «Итог» ------------------------------------------------------------------------- */
 
-.dp-result { display: grid; gap: 2px; margin: 0 0 var(--sp-3); padding-left: var(--sp-3); border-left: 4px solid var(--dust-1); }
-.dp-result__label { color: var(--dust-2); font-size: var(--fs-caption); letter-spacing: .06em; text-transform: uppercase; }
-.dp-result__line { font-size: var(--fs-lead); font-weight: 600; line-height: 1.25; }
+.dp-result { display: grid; gap: 4px; margin: 0 0 var(--sp-4); padding-left: var(--sp-4); border-left: 6px solid var(--dust-1); }
+.dp-result__label { color: var(--dust-2); font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--track-caps); text-transform: uppercase; }
+.dp-result__line { font-size: 40px; font-weight: 600; line-height: 1.02; letter-spacing: -.02em; text-transform: uppercase; }
+.dp-result[data-rule="all_out"], .dp-result[data-rule="clear"] { border-left-color: var(--accent); }
+.dp-result[data-rule="in_danger"] { border-left-color: var(--danger); }
 .dp-result[data-rule="in_danger"] .dp-result__line { color: var(--danger-ink); }
 .dp-result[data-rule="no_route"] { border-left-color: var(--noroute); }
 .dp-result--forecast { border-left: 2px dashed var(--dust-2); }
-.dp-result--forecast .dp-result__line { color: var(--dust-2); font-size: var(--fs-body); font-weight: 500; }
+.dp-result--forecast[data-rule] { border-left-color: var(--dust-2); }
+.dp-result--forecast .dp-result__line { color: var(--dust-2); font-size: var(--fs-emphasis); font-weight: 500; text-transform: none; letter-spacing: 0; }
 .dp-table--fact .metrics__corner, .dp-table--fact thead th:first-child { width: 40%; }
 
-/* ---- 1280×720: the panel is 360 px wide and lies over the stage; the three cards stay in sight ---- */
+/* ---- 1280×720: the panel is 480 px wide; the three cards and the launch stay in sight ---- */
 
 @media (max-width: 1599px), (max-height: 899px) {
-  .dp__head { padding: var(--sp-2) var(--sp-4) 0; }
-  .dp__body { padding: 0 var(--sp-4) var(--sp-3); }
-  .dp__foot { padding: var(--sp-2) var(--sp-4) var(--sp-2); }
-  .dp-foot { gap: 2px; }
+  .dp { --dp-fade: 72px; --dp-pad: var(--sp-4); }
+  .dp__head { padding: var(--sp-3) var(--dp-pad) 0 0; }
+  .dp__foot { padding: var(--sp-2) var(--dp-pad) var(--sp-3) 0; }
+  .dp__title { font-size: 22px; }
+  .dp-foot { gap: 4px; }
+  .dp-launch { min-height: 56px; font-size: 16px; }
   .dp-step { padding: var(--sp-2) 0 var(--sp-1); }
-  .dp-step__head { margin-bottom: 0; }
-  .dp-what { font-size: 17px; }
+  .dp-step__head { min-height: 22px; margin-bottom: 0; }
+  .dp-what { font-size: 19px; }
   .dp-what__glyph { padding-top: 1px; }
-  .dp-people { gap: var(--sp-1); }
+  .dp-what__glyph .glyph { width: 18px; height: 18px; }
+  .dp-what-more { margin-left: 26px; font-size: 11px; }
+  .dp-people { gap: 4px; }
   .dp-people__words { font-size: var(--fs-secondary); }
-  .dp-caption { margin-bottom: 6px; font-size: var(--fs-caption); line-height: 1.35; }
-  .dp-cards { gap: 4px; }
-  .dp-card { gap: 2px; padding: 5px 10px 7px; }
-  .dp-card__verb { font-size: 14px; }
-  .dp-card__headline { font-size: 16px; }
+  .dp-who { min-height: 28px; font-size: 12px; }
+  .dp-caption { margin-bottom: 6px; font-size: 10.5px; line-height: 1.35; }
+  .dp-cards { gap: 6px; }
+  .dp-card { gap: 4px; padding: 8px var(--sp-3) 10px; }
+  .dp-card.is-chosen { padding: 6px calc(var(--sp-3) - 2px) 8px; }
+  .dp-card__verb { font-size: 10.5px; }
+  .dp-card__headline { font-size: 21px; }
+  .dp-card__headline[data-long] { font-size: 17px; }
+  .dp-card__bar .pb { height: 12px; }
   .dp-details { margin-top: var(--sp-1); }
   .dp-block { padding: var(--sp-3) 0; }
-  .dp-fig__num { font-size: 36px; }
-  .dp-fig + .dp-fig .dp-fig__num { font-size: 28px; }
-  .dp-result__line { font-size: 18px; }
+  .dp-fig__num { font-size: 72px; }
+  .dp-fig__v { display: inline-block; }
+.dp-fig__num .k-ghost { font: inherit; letter-spacing: inherit; }
+.dp-fig + .dp-fig .dp-fig__num { font-size: 40px; }
+  .dp-cells { margin-top: var(--sp-3); }
+  .dp-cell { width: 24px; height: 24px; }
+  .dp-result__line { font-size: 26px; }
+  .dp-zone__name { font-size: 18px; }
 }
 
-/* A low screen: the secondary facts of the cards give way to the cards themselves (they stay in «Подробнее»). */
+/* A low screen: the secondary facts give way to the cards themselves (they stay in «Подробнее»). */
 @media (max-height: 899px) {
-  .dp-card__facts { display: none; }
+  .dp-card.is-chosen .dp-card__facts { display: none; }
 }

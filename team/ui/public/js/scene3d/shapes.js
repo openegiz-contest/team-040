@@ -507,3 +507,93 @@ export function plane(minX, maxX, minZ, maxZ, y) {
   mesher.quad([minX, y, maxZ], [maxX, y, maxZ], [maxX, y, minZ], [minX, y, minZ], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
   return mesher.build();
 }
+
+// ---- stylised edges (variant 3) ------------------------------------------------------------
+
+/** '#RRGGBB' as sRGB components 0…1 (the edge shader writes them as they are). */
+function srgb(hex) {
+  const value = parseInt(hex.slice(1), 16);
+  return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255];
+}
+
+/**
+ * The crisp edges of one slab as line segments in its local frame: the lips of every cut on the top face (the
+ * channels), the sawn outline of the top face, the vertical corners and the bottom outline of the cut faces.
+ * Attributes: position, aColor (sRGB and alpha per vertex) and aT, the fraction 0…1 along its own loop, so that
+ * every loop can be drawn in from its start at once (the intro of scene.js). One draw call per slab.
+ * @param {{minX: number, maxX: number, minZ: number, maxZ: number}} box
+ * @param {{loops: number[][][]}} carved shapes.carveSlab
+ * @param {{lip: [string, number], rim: [string, number], cut: [string, number]}} tones colour and alpha of each kind
+ */
+export function edgeLines(box, carved, tones) {
+  const d = DIMS.depth;
+  const bottomY = d - DIMS.thickness;
+  const {minX, maxX, minZ, maxZ} = box;
+  const position = [];
+  const t = [];
+  const colour = [];
+  const tone = Object.fromEntries(Object.entries(tones).map(([name, [hex, alpha]]) => [name, [...srgb(hex), alpha]]));
+  const push = (a, b, ta, tb, c) => {
+    position.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+    t.push(ta, tb);
+    colour.push(...c, ...c);
+  };
+  const onEdge = (p) => Math.min(Math.abs(p[0] - minX), Math.abs(p[0] - maxX), Math.abs(p[1] - minZ), Math.abs(p[1] - maxZ)) < 0.3;
+  // A hair above the face it lies on: never in the depth of the stone.
+  const lift = d + 0.14;
+  for (const loop of carved.loops) {
+    if (loop.length < 2) continue;
+    const outer = loop.every(onEdge);
+    const lengths = loop.map((a, i) => len2d(sub(loop[(i + 1) % loop.length], a)));
+    const total = lengths.reduce((sum, value) => sum + value, 0) || 1;
+    let run = 0;
+    loop.forEach((a, i) => {
+      const b = loop[(i + 1) % loop.length];
+      push([a[0], lift, a[1]], [b[0], lift, b[1]], run / total, (run + lengths[i]) / total, outer ? tone.rim : tone.lip);
+      run += lengths[i];
+    });
+  }
+  // The cut faces: four vertical corners (drawn in from the top down) and the bottom outline, pushed a hair outwards.
+  const out = 0.16;
+  const corners = [[minX - out, minZ - out], [maxX + out, minZ - out], [maxX + out, maxZ + out], [minX - out, maxZ + out]];
+  for (const c of corners) push([c[0], d, c[1]], [c[0], bottomY, c[1]], 0, 1, tone.cut);
+  corners.forEach((a, i) => {
+    const b = corners[(i + 1) % 4];
+    push([a[0], bottomY, a[1]], [b[0], bottomY, b[1]], i / 4, (i + 1) / 4, tone.cut);
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  geometry.setAttribute('aT', new THREE.Float32BufferAttribute(t, 1));
+  geometry.setAttribute('aColor', new THREE.Float32BufferAttribute(colour, 4));
+  return geometry;
+}
+
+/** The material of edgeLines: per-vertex colour, drawn in up to uProgress, washed towards uGlowColor by uGlow. */
+export function edgeMaterial(glowHex) {
+  return new THREE.ShaderMaterial({
+    uniforms: {uProgress: {value: 1}, uGlow: {value: 0}, uDim: {value: 1}, uGlowColor: {value: new THREE.Vector3(...srgb(glowHex))}},
+    vertexShader: `
+attribute float aT;
+attribute vec4 aColor;
+varying float vT;
+varying vec4 vColor;
+void main() {
+  vT = aT;
+  vColor = aColor;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`,
+    fragmentShader: `
+uniform float uProgress;
+uniform float uGlow;
+uniform float uDim;
+uniform vec3 uGlowColor;
+varying float vT;
+varying vec4 vColor;
+void main() {
+  if (vT > uProgress) discard;
+  gl_FragColor = vec4(mix(vColor.rgb * uDim, uGlowColor, uGlow), mix(vColor.a, 1.0, uGlow));
+}`,
+    transparent: true,
+    depthWrite: false,
+  });
+}

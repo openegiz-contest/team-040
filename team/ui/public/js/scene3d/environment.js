@@ -41,6 +41,8 @@ import {backdrop, MASSIF_TILE} from './textures.js';
 const MASSIF = {margin: 22, wall: 6, floorDepth: 16, above: 3, dip: 0.07};
 /** Baked shading of the massif (vertex colours multiply the rock texture). */
 const SHADE = {foot: 0.36, top: 0.86, corner: 0.7, cutTop: 1.75, cutEnd: 1.2, floor: 0.7, edge: 1.45, plinthTop: 1, plinthFoot: 0.55};
+/** The massif is kept darker than the slabs (variant 3: a near-black ground), as a multiplier of its texture. */
+const ROCK_TONE = 0.62;
 /** Lamps along the horizontal workings: spacing, and how far from ends, junctions, the middle and sensors they keep. */
 const LAMP_EVERY = 34;
 const LAMP_CLEAR = {end: 9, node: 9, middle: 9, sensor: 6};
@@ -83,6 +85,7 @@ export function createEnvironment(scene, {low, textures}) {
   let lampSpots = [];               // {level, x, z, side: [x, z]} local plan points of the lamps
   let lampMeshes = [];
   const camera = new THREE.Vector3();
+  let reveal = 1;                   // the intro of scene.js fades the massif in from the dark (0…1)
 
   // ---- the massif -------------------------------------------------------------------------
 
@@ -461,7 +464,11 @@ export function createEnvironment(scene, {low, textures}) {
         const l = Math.hypot(dx, dz) || 1;
         fill.position.set((-dx / l) * 700, 320, (-dz / l) * 700);
       }
-      rock.color.setScalar(Math.min(hemi.intensity / baseHemi, 1));
+      rock.color.setScalar(Math.min(hemi.intensity / baseHemi, 1) * reveal * ROCK_TONE);
+    },
+    /** The intro: the massif comes out of the dark (0 black … 1 as lit). Applied at the next update(). */
+    setReveal(value) {
+      reveal = value;
     },
     /** For tests: which walls are drawn, the box they stand on, the camera they were picked for, the lamps. */
     info() {

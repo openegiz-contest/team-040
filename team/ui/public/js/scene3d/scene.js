@@ -20,11 +20,17 @@
 // free floor. The camera follows the situation of the shift (situation.js) once per change: the decision frames the
 // incident, the execution the walk, the result and the norm the overview (choreograph).
 //
+// Variant 3 («Глубина»): poster scale — thicker workings, markers and labels about twice the size (stepping down on
+// a short stage), a dark graphite stone with crisp edge lines (the lips of the cuts, the accent-tinted outline of each
+// horizon: one line draw call per slab), the detailed loader lhd_v2.glb with its light copy at the overview and the
+// miner of miner.glb (each falls back to the earlier file or the primitives), and the intro «вскрытие массива» once
+// per page load (INTRO_MS). info().levels gives the horizon rail of the stage each horizon's screen y.
+//
 // Read-only mirrors on the scene root (.s3) for tests: data-fx (the changes now explained), data-fx-count,
 // data-auto-framed (the incident framed by itself), data-refits (refits after a panel or a size change),
 // data-framing (how the last zone framing was chosen), data-scope (zones of the hovered option), data-loaders
 // (loaders placed), data-loader-fx-count (fades of their lights), data-choreo and data-choreo-count (the camera
-// moves that followed the situation).
+// moves that followed the situation), data-intro (waiting | running | done | cut), data-compact (a short stage).
 
 import * as THREE from 'three';
 import {showsOldData} from '../link.js';
@@ -47,12 +53,13 @@ import {createLoaders} from './loaders.js';
 import {drawAtlas, spriteGeometry, spriteMaterials, writeSprites} from './markers.js';
 import {TOKEN, TONE} from './palette.js';
 import {
-  arrowHead, barricade, carveSlab, casing, dashes, disc, frameLoops, merge, plane, portal, rampBand, ribbon, slabGeometry, tube,
+  arrowHead, barricade, carveSlab, casing, dashes, disc, edgeLines, edgeMaterial, frameLoops, merge, plane, portal, rampBand, ribbon,
+  slabGeometry, tube,
 } from './shapes.js';
 import {makeTextures} from './textures.js';
 
 const DEG = Math.PI / 180;
-export const DEFAULT_VIEW = {az: 26 * DEG, el: 25 * DEG};
+export const DEFAULT_VIEW = {az: 30 * DEG, el: 23 * DEG};
 const TWEEN_MS = 900;
 const DRAW_IN_MS = 550;
 const EXPLODE_MS = 600;
@@ -61,9 +68,12 @@ const MAX_STEP_M = 80;
 const LOADER = 'loader:';
 /** The loader of lhd.glb is 10 m long; it is drawn LOADER_SCALE times larger. */
 const LOADER_LENGTH = 10 * LOADER_SCALE;
-/** The most pixels the light quality renders (about a 1280×860 buffer). */
-const LOW_PIXELS = 1.1e6;
-const SPRITE_PX = {worker: 30, ring: 40, sensor: 22, exit: 30, sign: 24};
+/** A loader shorter than this on the screen is drawn from its light copy (lhd_v2_lod.glb). */
+const LOD_PX = 150;
+/** The most pixels the light quality renders (about a 1500×1000 buffer; the textures of the light quality are cheap). */
+const LOW_PIXELS = 1.5e6;
+/** Markers in CSS pixels: poster scale (variant 3), about twice the size of variant 2. */
+const SPRITE_PX = {worker: 54, ring: 72, sensor: 38, exit: 52, sign: 42};
 /** Opacity of the warm work light on a selected floor, and of the steel wash of an option's scope. */
 const GLOW = 0.34;
 const SCOPE_WASH = 0.2;
@@ -71,11 +81,29 @@ const SCOPE_WASH = 0.2;
 const MOTION = {hazard: 450, knowledge: 400, closed: 200, routeOut: 300, select: 200, scope: 150};
 /** The light of the rest of the model while something is selected (the work light dims it slightly). */
 const DIM = 0.78;
+/** The stylised edges: the lips of the cuts (bone white), the sawn outline of a horizon (accent-tinted), the cut faces. */
+const EDGE_TONES = {lip: [TOKEN.edge, 0.95], rim: [TOKEN.edgeAccent, 0.95], cut: [TOKEN.edge, 0.4]};
 /** An incident is framed by itself only when the user left the camera alone this long. */
 const HANDS_OFF_MS = 10000;
 /** A size or a panel of the stage settles this long before the picture is refitted (after the strip has grown). */
 const SETTLE_MS = 200;
+/** What lies over the stage and the camera keeps clear of, as of a panel (variant 3): the headline and the horizon rail. */
+const COVERS = ['[data-testid="situation-headline"]', '[data-testid="horizon-rail"]'];
 const easeOut = (t) => 1 - (1 - t) ** 3;
+/**
+ * The intro «вскрытие массива» (variant 3): once per page load, at the first picture of a mine, never under reduced
+ * motion, in the scheme or over old data. The massif fades in, the slabs rise into place one after another, the
+ * workings draw in as light lines, the markers of people drop onto their published places and the labels come in;
+ * it ends exactly in the published state, and jumps to its end on any change of what is published (positions of
+ * people excepted: they are drawn where published all along) or on a touch of the user.
+ */
+const INTRO_MS = 1800;
+const INTRO_HOLD_MS = 1500;
+/** How far below its place a slab starts to rise, and how high above its place a person's marker starts to drop (scene m). */
+const INTRO_RISE = 70;
+const INTRO_DROP = 46;
+let introSpent = false;
+const phase = (t, from, to) => Math.min(Math.max((t - from) / (to - from), 0), 1);
 const median = (values) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted.length === 0 ? 0 : sorted[Math.floor(sorted.length / 2)];
@@ -133,6 +161,14 @@ export function createScene(host, options) {
   const camera = new THREE.PerspectiveCamera(30, 1, 1, 10000);
   const orbit = createOrbit(camera, {reducedMotion: reduced});
   const textures = makeTextures();
+  // A software renderer pays for every texel fetch: the light quality samples one mip level, without anisotropy
+  // (about a third of the frame at 1920×1080 on SwiftShader).
+  if (low) {
+    for (const map of Object.values(textures)) {
+      map.anisotropy = 1;
+      map.minFilter = THREE.LinearMipmapNearestFilter;
+    }
+  }
   const materials = makeMaterials(textures, low);
   // The massif around the slabs, the light (warm key, cool sky, rim), background and lamps: environment.js.
   const environment = createEnvironment(scene, {low, textures});
@@ -215,6 +251,12 @@ export function createScene(host, options) {
   let settleTimer = 0;
   let settleWhy = null;            // 'size' | 'panel'
   let lastPanelCover = '';
+  // The intro (INTRO_MS): null when not running; its light (0…1) multiplies the lights, its pins (0…1) the markers.
+  let intro = null;
+  let introLight = 1;
+  let introPins = 1;
+  let spriteScale = 1;
+  const introWanted = Boolean(options.intro) && !introSpent;
 
   const atlasTexture = new THREE.Texture();
   atlasTexture.flipY = false;
@@ -256,8 +298,10 @@ export function createScene(host, options) {
       polygonOffsetUnits: -4, ...extra,
     });
     return {
-      top: lit({map: tex.top}),
-      strata: lit({map: tex.strata, side: THREE.DoubleSide}),
+      // Variant 3: the sawn stone is a dark graphite, so the pale floors of the workings, their bone-white lips and
+      // the markers carry the picture (a multiplier of the stone textures: no shader of its own).
+      top: lit({map: tex.top, color: new THREE.Color().setScalar(0.5)}),
+      strata: lit({map: tex.strata, side: THREE.DoubleSide, color: new THREE.Color().setScalar(0.62)}),
       wall: lit({map: tex.wall, side: THREE.DoubleSide}),
       floor: lit({map: tex.floor}),
       bottom: lit({color: TONE.bottom}),
@@ -272,7 +316,7 @@ export function createScene(host, options) {
       barricade: lit({map: tex.barricade}),
       collar: flat(TONE.collar),
       route: new THREE.MeshBasicMaterial({color: TOKEN.verdigris}),
-      routeCore: new THREE.MeshBasicMaterial({color: '#BFE3DC'}),
+      routeCore: new THREE.MeshBasicMaterial({color: TOKEN.verdigrisCore}),
       frame: {
         normal: flat(TOKEN.dust2, 0.75),
         attention: flat(TOKEN.attention),
@@ -291,6 +335,8 @@ export function createScene(host, options) {
       hover: flat('#ffffff', 0.16, {blending: THREE.AdditiveBlending}),
       shadow: new THREE.MeshBasicMaterial({map: tex.shadow, transparent: true, depthWrite: false}),
       pin: new THREE.LineBasicMaterial({color: TOKEN.dust2, transparent: true, opacity: 0.75}),
+      // The crisp edges of the stone (shapes.edgeLines): the lips of the cuts, the outline of the horizons.
+      edge: edgeMaterial(TOKEN.verdigrisCore),
     };
   }
 
@@ -365,6 +411,11 @@ export function createScene(host, options) {
         group.add(part);
       }
       for (const part of environment.levelDetail(layout, level, carved)) group.add(part);
+      const edges = new THREE.LineSegments(edgeLines(level.box, carved, EDGE_TONES), materials.edge);
+      edges.name = 'edges';
+      edges.renderOrder = 4;
+      edges.matrixAutoUpdate = false;
+      group.add(edges);
       // Mouths of workings that leave the level through its floor, downwards.
       const mouths = [];
       for (const line of layout.workings.values()) {
@@ -822,9 +873,10 @@ export function createScene(host, options) {
     materials.glow.opacity = GLOW * selectLevel;
     materials.frame.select.opacity = selectLevel;
     const dim = view && view.selected ? 1 - (1 - DIM) * selectLevel : 1;
-    hemi.intensity = baseLight.hemi * dim;
-    key.intensity = baseLight.key * dim;
-    fill.intensity = baseLight.fill * dim;
+    hemi.intensity = baseLight.hemi * dim * introLight;
+    key.intensity = baseLight.key * dim * introLight;
+    fill.intensity = baseLight.fill * dim * introLight;
+    materials.edge.uniforms.uDim.value = dim;
     if (actors.equipment) loaders.setSelected(view ? actors.selectedOf(view) : null, selectLevel);
   }
 
@@ -889,6 +941,126 @@ export function createScene(host, options) {
     applyScopeLevel();
   }
 
+  // ---- the intro «вскрытие массива» ---------------------------------------------------------
+
+  /**
+   * The mine is built but its first state has not come: the stage waits dark, the slabs below their places, so the
+   * intro starts from nothing when it comes (at most INTRO_HOLD_MS, then the picture is shown as it is).
+   */
+  function holdIntro() {
+    intro = {hold: true, start: null, routes: false, timer: setTimeout(() => finishIntro(), INTRO_HOLD_MS)};
+    root.setAttribute('data-intro', 'waiting');
+    applyIntro(0);
+  }
+
+  /** Start the intro at the first picture of a mine (the camera is at the overview): see INTRO_MS. */
+  function startIntro() {
+    introSpent = true;
+    if (intro) clearTimeout(intro.timer);
+    const goal = {target: orbit.state.target.clone(), az: orbit.state.az, el: orbit.state.el, dist: orbit.state.dist};
+    intro = {start: null, goal, routes: false};
+    // The camera comes in from a little farther and higher, turning a few degrees onto the overview.
+    orbit.set({target: goal.target, dist: goal.dist * 1.28, az: goal.az - 9 * DEG, el: goal.el + 7 * DEG});
+    orbit.glideTo(goal, INTRO_MS);
+    root.setAttribute('data-intro', 'running');
+    applyIntro(0);
+  }
+
+  /** The picture of the intro at `t` ms: every value here ends at its published or built value at INTRO_MS. */
+  function applyIntro(t) {
+    environment.setReveal(easeOut(phase(t, 0, 700)));
+    introLight = 0.12 + 0.88 * easeOut(phase(t, 120, 1100));
+    applySelectLevel();
+    levelGroups.forEach((group, index) => {
+      const p = easeOut(phase(t, 150 + index * 150, 850 + index * 150));
+      group.position.y = levelY(layout, group.userData.level, k) - (1 - p) * INTRO_RISE * k;
+      group.updateMatrixWorld(true);
+    });
+    // The ways between the horizons are drilled down from the upper one.
+    const drill = Math.max(easeOut(phase(t, 750, 1300)), 0.001);
+    for (const group of [interGroup, interOverlay]) {
+      group.scale.y = drill;
+      group.updateMatrixWorld(true);
+    }
+    materials.edge.uniforms.uProgress.value = easeOut(phase(t, 800, 1450));
+    materials.edge.uniforms.uGlow.value = 1 - phase(t, 1250, INTRO_MS);
+    const landed = t >= 1050;
+    loaders.group.visible = landed;
+    actors.group.visible = landed;
+    routeGroup.visible = t >= 1250;
+    if (routeGroup.visible && !intro.routes) {
+      intro.routes = true;
+      for (const mesh of routeMeshes) drawIn.set(mesh.userData.key, {start: null});
+    }
+    introPins = easeOut(phase(t, 1150, 1700));
+    materials.pin.opacity = 0.75 * introPins;
+    // What lies over the stage has settled by now (the headline, the rail): the overview the camera comes to is fitted
+    // again, so the intro ends exactly where «Общий вид» would put it.
+    if (t >= 900 && !intro.refit && overviewMode && orbit.gliding) {
+      intro.refit = true;
+      const fitted = fitAll();
+      orbit.retarget({target: fitted.target, dist: fitted.dist});
+    }
+    labelLayer.style.opacity = String(phase(t, 1350, INTRO_MS));
+    spritesDirty = true;
+  }
+
+  function stepIntro(now) {
+    if (!intro) return false;
+    if (intro.hold) {
+      applyIntro(0);
+      return false;
+    }
+    if (intro.start === null) intro.start = now;
+    const t = now - intro.start;
+    if (reduced() || t >= INTRO_MS || !layout) {
+      finishIntro(false);
+      return false;
+    }
+    applyIntro(t);
+    return true;
+  }
+
+  /** End the intro: the picture as without it. `jump`: also the camera ends its glide at once. */
+  function finishIntro(jump = true) {
+    if (!intro) return;
+    const done = intro;
+    intro = null;
+    introSpent = true;
+    clearTimeout(done.timer);
+    environment.setReveal(1);
+    introLight = 1;
+    introPins = 1;
+    materials.pin.opacity = 0.75;
+    applySelectLevel();
+    if (layout) {
+      for (const group of levelGroups) {
+        group.position.y = levelY(layout, group.userData.level, k);
+        group.updateMatrixWorld(true);
+      }
+    }
+    for (const group of [interGroup, interOverlay]) {
+      group.scale.y = 1;
+      group.updateMatrixWorld(true);
+    }
+    materials.edge.uniforms.uProgress.value = 1;
+    materials.edge.uniforms.uGlow.value = 0;
+    loaders.group.visible = true;
+    actors.group.visible = true;
+    routeGroup.visible = true;
+    if (jump || !done.routes) for (const mesh of routeMeshes) drawIn.set(mesh.userData.key, {start: -1});
+    stepDrawIn(performance.now());
+    labelLayer.style.opacity = '';
+    if (jump && orbit.gliding) orbit.set(orbit.goal);
+    if (!done.hold && overviewMode && layout && width && !orbit.gliding) {
+      const fitted = fitAll();
+      orbit.set({target: fitted.target, dist: fitted.dist, az: nearestAngle(orbit.state.az, DEFAULT_VIEW.az), el: DEFAULT_VIEW.el});
+    }
+    spritesDirty = true;
+    root.setAttribute('data-intro', jump ? 'cut' : 'done');
+    invalidate();
+  }
+
   // ---- routes -------------------------------------------------------------------------
 
   function routeKey(route) {
@@ -948,15 +1120,15 @@ export function createScene(host, options) {
       }
       const parts = [];
       for (const points of runs) {
-        parts.push(tube(points, 1.9, low ? 5 : 7));
+        parts.push(tube(points, 2.3, low ? 5 : 7));
         const cum = geo.cumulative(points);
         const total = cum[cum.length - 1];
         for (let at = 40; at < total - 10; at += 55) {
           const {point, dir} = geo.pointAt(points, cum, at);
-          arrows.push(arrowHead(point.map((v, i) => v + dir[i] * 4), dir, 3.6));
+          arrows.push(arrowHead(point.map((v, i) => v + dir[i] * 5), dir, 4.8));
         }
         const end = geo.pointAt(points, cum, total);
-        arrows.push(arrowHead(end.point, end.dir, 4.4));
+        arrows.push(arrowHead(end.point, end.dir, 5.8));
       }
       const geometry = merge([...parts, ...arrows]);
       if (!geometry) continue;
@@ -1139,7 +1311,7 @@ export function createScene(host, options) {
     for (const [name, exit] of Object.entries(view.exits)) {
       const cell = ['available', 'unavailable'].includes(exit.state) ? `exit:${exit.state}` : 'exit:unknown';
       const p = exitPoint(name);
-      if (exit.thingId === view.selected) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 12, key: exit.thingId, alpha: selectLevel});
+      if (exit.thingId === view.selected) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 22, key: exit.thingId, alpha: selectLevel});
       list.push({position: p, cell, size: SPRITE_PX.exit, key: exit.thingId});
     }
     for (const [name, sensor] of Object.entries(view.sensors)) {
@@ -1148,9 +1320,9 @@ export function createScene(host, options) {
       const p = [base[0], base[1] + 7.5, base[2]];
       signPosts.push([base, [base[0], base[1] + 6, base[2]]]);
       const cell = ['fresh', 'stale', 'lost'].includes(sensor.quality) ? `sensor:${sensor.quality}` : 'sensor:unknown';
-      if (sensor.thingId === view.selected) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.sensor + 22, key: sensor.thingId, alpha: selectLevel});
-      if (sensor.pending) list.push({position: p, cell: 'ring:pending', size: SPRITE_PX.sensor + 14, key: sensor.thingId});
-      if (sensor.thingId === hovered) list.push({position: p, cell: 'ring:hover', size: SPRITE_PX.sensor + 12, key: sensor.thingId});
+      if (sensor.thingId === view.selected) list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.sensor + 38, key: sensor.thingId, alpha: selectLevel});
+      if (sensor.pending) list.push({position: p, cell: 'ring:pending', size: SPRITE_PX.sensor + 24, key: sensor.thingId});
+      if (sensor.thingId === hovered) list.push({position: p, cell: 'ring:hover', size: SPRITE_PX.sensor + 20, key: sensor.thingId});
       // Data that stopped being fresh: the mark of the old state gives way to the new one (M9).
       const turned = fx && fx.sensors.has(name) ? fxAt(MOTION.knowledge, now) : 1;
       if (turned < 1) list.push({position: p, cell: `sensor:${fx.sensors.get(name)}`, size: SPRITE_PX.sensor, key: sensor.thingId, alpha: 1 - turned});
@@ -1169,7 +1341,7 @@ export function createScene(host, options) {
       const thing = thingByName(state.model, name);
       const hazard = thing.hazard.state;
       const cell = hazard === 'unknown' && zone.lastKnown === 'danger' ? 'sign:lastDanger' : (hazard === 'normal' ? null : `sign:${hazard}`);
-      if (cell && view.hasSnapshot) list.push({position: zonePoint(name, 3), cell, size: SPRITE_PX.sign + 4, key: zone.thingId});
+      if (cell && view.hasSnapshot) list.push({position: zonePoint(name, 3), cell, size: SPRITE_PX.sign + 8, key: zone.thingId});
     }
     for (const [name, working] of Object.entries(view.workings)) {
       const zone = working.zone ? view.zones[working.zone] : null;
@@ -1186,23 +1358,28 @@ export function createScene(host, options) {
     const scopeWorkers = new Set(scopeDrawn.workers);
     const rank = (group) => ({ok: 0, none: 2}[view.workers[group.front].egress] ?? 1);
     for (const group of [...groups].sort((a, b) => rank(a) - rank(b))) {
-      const p = groupPoint(group, now);
-      if (!p) continue;
+      const at = groupPoint(group, now);
+      if (!at) continue;
+      // The intro drops the marker onto its published place from above (only its height moves).
+      const p = introPins < 1 ? [at[0], at[1] + (1 - introPins) * INTRO_DROP, at[2]] : at;
       const front = view.workers[group.front];
       const thingId = front.thingId;
       const members = group.members.map((member) => view.workers[member]);
-      pinPoints.push([p[0], p[1] - actors.liftOf(group) + actors.pinFrom(group), p[2]], [p[0], p[1] - 1.8, p[2]]);
+      pinPoints.push([at[0], at[1] - actors.liftOf(group) + actors.pinFrom(group), at[2]], [p[0], p[1] - 1.8, p[2]]);
       if (members.some((member) => member.thingId === view.selected)) {
-        list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 14, key: thingId, alpha: selectLevel});
+        list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 24, key: thingId, alpha: selectLevel});
       }
       if (group.members.some((member) => scopeWorkers.has(member))) {
-        list.push({position: p, cell: 'ring:scope', size: SPRITE_PX.ring + 10, key: thingId, alpha: scopeLevel});
+        list.push({position: p, cell: 'ring:scope', size: SPRITE_PX.ring + 18, key: thingId, alpha: scopeLevel});
       }
-      if (members.some((member) => member.thingId === hovered)) list.push({position: p, cell: 'ring:hover', size: SPRITE_PX.ring + 4, key: thingId});
+      if (members.some((member) => member.thingId === hovered)) list.push({position: p, cell: 'ring:hover', size: SPRITE_PX.ring + 8, key: thingId});
       if (members.some((member) => member.locationHazard === 'danger')) list.push({position: p, cell: 'ring:danger', size: SPRITE_PX.ring, key: thingId});
       const cell = front.egress === 'ok' ? 'worker:ok' : (front.egress === 'none' ? 'worker:none' : 'worker:unknown');
       list.push({position: p, cell, size: SPRITE_PX.worker, key: thingId, group});
     }
+    if (introPins < 1) for (const item of list) item.alpha = (item.alpha ?? 1) * introPins;
+    // Poster scale on a tall stage, smaller on a short one (the 1280×720 desk): the markers follow the stage height.
+    if (spriteScale !== 1) for (const item of list) item.size *= spriteScale;
     spriteList = list;
     spriteGeo = writeSprites(spriteGeo, spriteList);
     spritesFront.geometry = spriteGeo;
@@ -1296,14 +1473,24 @@ export function createScene(host, options) {
     }
   }
 
+  /** 'full' while some loader is at least LOD_PX long on the screen (with a margin both ways), else 'lod'. */
+  function loaderDetail() {
+    let largest = 0;
+    for (const zone of loaderPlaces.keys()) {
+      const p = project(loaderPoint(zone, 0));
+      if (p && p.visible) largest = Math.max(largest, LOADER_LENGTH * p.scale);
+    }
+    return largest >= (loaders.detail === 'full' ? LOD_PX * 0.85 : LOD_PX) ? 'full' : 'lod';
+  }
+
   /** Scene point of a loader's middle, a little above its roof (its label and its leader end there). */
   function loaderPoint(zone, lift = 1.2) {
     const pose = loaderPlaces.has(zone) && layout ? pointOnWorking(layout, loaderPlaces.get(zone).working, loaderPlaces.get(zone).offsetM, k) : null;
     return pose ? [pose.point[0], pose.point[1] + lift * LOADER_SCALE, pose.point[2]] : null;
   }
 
-  /** The zone whose loader lies under a screen point, if any. */
-  function overLoader(x, y) {
+  /** The zone whose loader lies under a screen point, if any (`withDistance`: {zone, d}). */
+  function overLoader(x, y, withDistance = false) {
     if (!loaders.loaded) return null;
     let best = null;
     for (const zone of loaderPlaces.keys()) {
@@ -1312,6 +1499,7 @@ export function createScene(host, options) {
       const d = Math.hypot(p.x - x, p.y - y);
       if (d < Math.max((LOADER_LENGTH / 2) * p.scale, 10) && (!best || d < best.d)) best = {d, zone};
     }
+    if (withDistance) return best;
     return best ? best.zone : null;
   }
 
@@ -1330,7 +1518,17 @@ export function createScene(host, options) {
 
   async function loadLoaders() {
     try {
-      await loaders.load(new URL('../../models/lhd.glb', import.meta.url).href);
+      const model = (name) => new URL(`../../models/${name}`, import.meta.url).href;
+      try {
+        // The detailed machine of variant 3 and its light copy for the overview (assets/README.md).
+        await loaders.load(model('lhd_v2.glb'), model('lhd_v2_lod.glb'));
+      } catch (error) {
+        if (disposed) return;
+        await loaders.load(model('lhd.glb'));
+      }
+      if (disposed) return;
+      // The figure of a person close up: miner.glb, or the primitives of actors.js when it cannot be read.
+      if (await actors.loadFigure(model('miner.glb'))) spritesDirty = true;
       if (disposed) return;
       root.setAttribute('data-decor', 'loaded');
       gizmo.setDecor(true, actors.equipment);
@@ -1414,8 +1612,9 @@ export function createScene(host, options) {
     for (const element of [...others, gizmo.element, ...(old.hidden ? [] : [oldText]), ...(chip ? [chip] : [])]) {
       const rect = element.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
+        // The situation headline and the horizon rail (variant 3) are covers of the camera (coverRects), not chips.
         fixedObstacles.push({x: rect.left - origin.left - 4, y: rect.top - origin.top - 4, w: rect.width + 8, h: rect.height + 8, key: 'fixed',
-          camera: element.id !== 'legend' || !chip});
+          camera: (element.id !== 'legend' || !chip) && !COVERS.some((selector) => element.matches(selector))});
       }
     }
   }
@@ -1546,7 +1745,7 @@ export function createScene(host, options) {
         const north = project([target.x, target.y, target.z - 100]);
         if (a && north) {
           const angle = Math.round((Math.atan2(north.x - a.x, a.y - north.y) * 180) / Math.PI);
-          if (angle !== lastAngle) {
+          if (Number.isFinite(angle) && angle !== lastAngle) {
             needle.setAttribute('transform', `rotate(${angle})`);
             lastAngle = angle;
           }
@@ -1583,6 +1782,7 @@ export function createScene(host, options) {
     rafId = 0;
     if (disposed || lost) return;
     let active = false;
+    active = stepIntro(now) || active;
     active = orbit.step(now) || active;
     active = stepExplode(now) || active;
     active = stepTweens(now) || active;
@@ -1598,6 +1798,8 @@ export function createScene(host, options) {
       loaderFade = loaders.step(now, reduced());
       active = loaderFade || active;
     }
+    // The light copies of the loaders while every one is small on the screen.
+    if (loaders.loaded) loaders.setDetail(loaderDetail());
     // The figures of people close up first: a marker over a figure stands over its helmet.
     if (actors.drawFigures(now)) spritesDirty = true;
     if (spritesDirty) buildSprites();
@@ -1634,6 +1836,7 @@ export function createScene(host, options) {
   // ---- explode ----------------------------------------------------------------------------
 
   function setExplode(value, animate = true) {
+    finishIntro();
     const target = Math.min(Math.max(value, 0), 1);
     if (Math.abs(target - explode) < 1e-4 && !explodeTween) return;
     if (!layout || !animate || reduced()) {
@@ -1676,8 +1879,8 @@ export function createScene(host, options) {
 
   /** Pixels kept free around the model in the overview: room for the labels of the exits (top) and the ramps (right). */
   const PAD = {left: 14, right: 48, top: 44, bottom: 14};
-  /** The label of a level stands to the left of its slab: this much room, in pixels, is part of the silhouette. */
-  const LEVEL_LABEL_PX = 100;
+  /** The label of a level stands to the left of its slab: this much room, in pixels, is part of the silhouette (poster type). */
+  const levelLabelPx = () => (height < 820 ? 110 : 160);
   /** Around a focused object: it stays well inside the free part of the stage. */
   const PAD_FOCUS = {left: 120, right: 120, top: 90, bottom: 80};
   const probe = camera.clone();
@@ -1699,6 +1902,15 @@ export function createScene(host, options) {
     };
     const drawer = document.getElementById('stand-drawer');
     if (drawer && document.body.dataset.stand === 'open') add(drawer, 12);
+    // Variant 3: the situation headline (top left) and the horizon rail (right edge) lie over the stage; the picture
+    // keeps clear of them as of a panel.
+    for (const selector of COVERS) {
+      const element = document.querySelector(selector);
+      if (element && !element.hidden && overStage(element)) {
+        add(element, 6);
+        rects[rects.length - 1].soft = true;
+      }
+    }
     // The shift desk: the right panel where it lies over the stage (the compact layout: positioned absolutely; in the
     // wide layout it is in flow and the stage itself is narrower), and the rail if it ever does.
     for (const id of ['panel', 'rail-region']) {
@@ -1805,7 +2017,7 @@ export function createScene(host, options) {
   function frameWith(points, az, el, pad, rects, leftLabels) {
     const vectors = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     const labelVectors = leftLabels.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
-    const silhouettePx = () => hull([...probePixels(vectors), ...probePixels(labelVectors).map(([x, y]) => [x - LEVEL_LABEL_PX, y])]);
+    const silhouettePx = () => hull([...probePixels(vectors), ...probePixels(labelVectors).map(([x, y]) => [x - levelLabelPx(), y])]);
     const aspect = width / Math.max(height, 1);
     const ndc = (px, total) => (2 * px) / Math.max(total, 1);
     const base = orbit.fit([...vectors, ...labelVectors], aspect, {x: ndc((pad.left + pad.right) / 2, width), top: ndc(pad.top, height),
@@ -1845,6 +2057,7 @@ export function createScene(host, options) {
 
   function overview(animate = true) {
     if (!layout || !width) return false;
+    if (animate) finishIntro();
     overviewMode = true;
     focusId = null;
     const fitted = fitAll();
@@ -1871,14 +2084,19 @@ export function createScene(host, options) {
   function freeRect(rects) {
     let left = 0;
     let right = width;
+    let top = 0;
     let bottom = height;
-    for (const r of rects) {
-      if (!r.cover) continue;
+    // The largest first: the panel, then the horizon rail beside it, then the headline over what is left.
+    for (const r of rects.filter((entry) => entry.cover).sort((p, q) => q.w * q.h - p.w * p.h)) {
       if (r.w >= width * 0.6 && r.y > height * 0.2) bottom = Math.min(bottom, Math.max(r.y, 0));
-      else if (r.h >= height * 0.6 && r.x < width * 0.25) left = Math.max(left, r.x + r.w);
-      else if (r.h >= height * 0.6 && r.x + r.w > width * 0.75) right = Math.min(right, Math.max(r.x, 0));
+      else if (r.h >= height * 0.6) {
+        if (r.x + r.w / 2 > (left + right) / 2) right = Math.min(right, Math.max(r.x, 0));
+        else left = Math.max(left, r.x + r.w);
+      } else if (r.y < height * 0.2 && r.y + r.h < height * 0.5 && r.w >= (right - left) * 0.4) {
+        top = Math.max(top, r.y + r.h);
+      }
     }
-    return {x: left, y: 0, w: Math.max(right - left, 1), h: Math.max(bottom, 1)};
+    return {x: left, y: top, w: Math.max(right - left, 1), h: Math.max(bottom - top, 1)};
   }
 
   /** Margins of a framed object: inside the free part of the stage, smaller when that part is small. */
@@ -1982,7 +2200,7 @@ export function createScene(host, options) {
   }
 
   /** Centre `points` at the distance `dist` in the free part of the stage, as `fitted` placed them. */
-  function centred(points, fitted, dist) {
+  function centred(points, fitted, dist, rects = []) {
     const vectors = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     placeProbe(fitted.target, fitted.dist, orbit.state.az, orbit.state.el);
     const centre = probePixels(vectors).reduce((sum, p) => [sum[0] + p[0] / vectors.length, sum[1] + p[1] / vectors.length], [0, 0]);
@@ -1990,14 +2208,17 @@ export function createScene(host, options) {
     const up = new THREE.Vector3().setFromMatrixColumn(probe.matrixWorld, 1);
     const mid = vectors.reduce((sum, v) => sum.add(v), new THREE.Vector3()).multiplyScalar(1 / vectors.length);
     const perPixel = (2 * dist * Math.tan((camera.fov * DEG) / 2)) / Math.max(height, 1);
-    const target = mid.addScaledVector(right, -(centre[0] - width / 2) * perPixel).addScaledVector(up, (centre[1] - height / 2) * perPixel);
+    // The middle of the part of the stage left free (the panel, the horizon rail and the headline excepted).
+    const free = freeRect(rects);
+    const target = mid.addScaledVector(right, -(centre[0] - (free.x + free.w / 2)) * perPixel)
+      .addScaledVector(up, (centre[1] - (free.y + free.h / 2)) * perPixel);
     return {target, dist};
   }
 
   function fitPoints(points, minDist, rects = coverRects(), leftLabels = []) {
     const fitted = frameView(points, orbit.state.az, orbit.state.el, focusPad(rects), rects, leftLabels);
     // Not closer than minDist: the object is then centred in the free part of the stage, as framed above.
-    return fitted.dist >= minDist ? fitted : {...centred(points, fitted, minDist), ok: fitted.ok};
+    return fitted.dist >= minDist ? fitted : {...centred(points, fitted, minDist, rects), ok: fitted.ok};
   }
 
   /**
@@ -2091,6 +2312,7 @@ export function createScene(host, options) {
       pendingFocus = id;
       return true;
     }
+    finishIntro();
     const goal = goalOf(id);
     if (!goal) return false;
     overviewMode = false;
@@ -2197,10 +2419,12 @@ export function createScene(host, options) {
   }
 
   /** True when the zone of the open incident or a person in it would be out of the free stage or under a panel. */
-  function incidentHidden(rects) {
+  function incidentHidden(all) {
     const zone = incidentZone();
     const area = zone ? zoneArea(zone) : null;
     if (!area) return false;
+    // The panels only: the headline and the rail (soft covers) shape a framing, they never cause one.
+    const rects = all.filter((r) => !r.soft);
     const free = freeRect(rects);
     const covers = rects.filter((r) => r.cover);
     return projectGoal(area.core).some((p) => !p.front || p.x < free.x || p.x > free.x + free.w || p.y < free.y || p.y > free.y + free.h
@@ -2277,7 +2501,10 @@ export function createScene(host, options) {
         best = {d, thingId};
       }
     }
-    if (best) return best.thingId;
+    // Poster-scale markers may lie over a loader: the mark whose centre is nearer the pointer wins.
+    const near = overLoader(x, y, true);
+    if (best && !(near && near.d < best.d)) return best.thingId;
+    if (near) return `${LOADER}${near.zone}`;
     const machine = overLoader(x, y);
     if (machine) return `${LOADER}${machine}`;
     const hit = stoneDistance(x, y);
@@ -2348,6 +2575,7 @@ export function createScene(host, options) {
 
   canvas.addEventListener('contextmenu', (event) => event.preventDefault());
   canvas.addEventListener('pointerdown', (event) => {
+    finishIntro();
     canvas.focus({preventScroll: true});
     const at = local(event);
     dragging = {
@@ -2409,12 +2637,14 @@ export function createScene(host, options) {
   });
   canvas.addEventListener('wheel', (event) => {
     event.preventDefault();
+    finishIntro();
     const factor = Math.exp(Math.max(Math.min(event.deltaY, 200), -200) * 0.0015);
     orbit.zoom(factor, false);
     userMoved();
     invalidate();
   }, {passive: false});
   canvas.addEventListener('keydown', (event) => {
+    finishIntro();
     const step = 15 * DEG;
     const panBy = orbit.state.dist * 0.12;
     let handled = true;
@@ -2506,6 +2736,9 @@ export function createScene(host, options) {
       spriteMat.behind.uniforms.uPixelRatio.value = ratio;
     }
     renderer.setSize(width, height, false);
+    spriteScale = Math.min(Math.max(height / 1000, 0.66), 1);
+    root.toggleAttribute('data-compact', height < 820);
+    spritesDirty = true;
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     camera.aspect = width / height;
@@ -2526,7 +2759,7 @@ export function createScene(host, options) {
   });
   resizeObserver.observe(host);
   // Not the legend: opening it never moves the mine.
-  for (const id of ['stage-hud', 'panel', 'rail-region', 'pending']) {
+  for (const id of ['stage-hud', 'panel', 'rail-region', 'pending', 'headline', 'horizons']) {
     const element = document.getElementById(id);
     if (element) resizeObserver.observe(element);
   }
@@ -2576,6 +2809,8 @@ export function createScene(host, options) {
     }
     let rebuilt = false;
     if (next.attributes !== attributesRef) {
+      // Another mine (or the first one) under a running intro: it ends first.
+      finishIntro();
       attributesRef = next.attributes;
       layout = buildLayout(next.model, next.attributes.mine);
       drawn.clear();
@@ -2624,7 +2859,10 @@ export function createScene(host, options) {
       clearGhosts();
     }
     const changes = animate ? changesBetween(before, view) : null;
-    if (changes && (changes.zones.size || changes.workings.size || changes.closed.size || changes.sensors.size)) startFx(changes);
+    const changed = Boolean(changes && (changes.zones.size || changes.workings.size || changes.closed.size || changes.sensors.size));
+    // A change of what is published under the intro (positions of people excepted): the intro jumps to its end first.
+    if (intro && !intro.hold && (changed || !animate || view.selected !== before.selected || situationNow().key !== situationKey)) finishIntro();
+    if (changed) startFx(changes);
     // The work light fades in on a new selection; it goes at once.
     const selectedNow = view.selected;
     if (selectedNow !== (before ? before.selected : null)) {
@@ -2657,6 +2895,14 @@ export function createScene(host, options) {
       focus(id);
     }
     choreograph(Boolean(before) && before.hasSnapshot && !rebuilt);
+    // The first picture of the mine on this page: the intro, unless motion is reduced or the data are old.
+    if (introWanted && !introSpent) {
+      if (!intro && rebuilt && width && !reduced()) holdIntro();
+      if (intro && intro.hold && (view.hasSnapshot || !calm(view))) {
+        if (view.hasSnapshot && calm(view) && !reduced() && !view.selected) startIntro();
+        else finishIntro();
+      }
+    }
     spritesDirty = true;
     invalidate();
   }
@@ -2699,6 +2945,13 @@ export function createScene(host, options) {
     };
     if (view.old || !view.linkOk) return log('skipped-old');
     if (performance.now() - lastTouch < HANDS_OFF_MS) return log('skipped-touched');
+    // The headline over the stage changes with the situation in the same update, after this view may have heard of
+    // it: the framing waits for the end of the update (a microtask, still before the frame) and so keeps clear of
+    // the new headline, not of the old one.
+    queueMicrotask(() => frameSituation(now, log));
+  }
+
+  function frameSituation(now, log) {
     if (now.situation === 'decision') {
       const zone = incidentZone() ? thingByName(state.model, incidentZone()) : null;
       if (zone && focus(zone.thingId)) {
@@ -2789,6 +3042,24 @@ export function createScene(host, options) {
     return median(times.slice(1));
   }
 
+  /** The horizons for info(): see there. */
+  function levelsInView() {
+    let near = null;
+    if (!overviewMode) {
+      const y = orbit.state.target.y;
+      near = layout.levels.reduce((best, level) => (Math.abs(levelY(layout, level, k) - y) < Math.abs(levelY(layout, best, k) - y) ? level : best));
+    }
+    const onLevel = layout.levels.some((level) => focusId !== null && (focusId === level.name || focusId === level.thingId));
+    return layout.levels.map((level) => {
+      const b = level.box;
+      const p = project([(b.minX + b.maxX) / 2, levelY(layout, level, k) + DIMS.depth, (b.minZ + b.maxZ) / 2]);
+      const focused = focusId !== null && (focusId === level.name || focusId === level.thingId);
+      return {name: level.name, label: level.label, elevation_m: level.elevation,
+        screenY: p && width ? Math.round(p.y) : null, current: focused || (!onLevel && near === level),
+        width: Math.round(Math.max(b.maxX - b.minX, b.maxZ - b.minZ))};
+    });
+  }
+
   function silhouetteBox() {
     const points = silhouette(layout, k).map((p) => project(p)).filter(Boolean);
     const xs = points.map((p) => p.x);
@@ -2811,8 +3082,9 @@ export function createScene(host, options) {
       stage: [width, height],
       // The width of the world seen across the stage at the camera's target, and the widths of the horizons.
       viewWidth: Math.round((2 * orbit.state.dist * Math.tan((camera.fov * DEG) / 2) * width) / Math.max(height, 1)),
-      levels: layout ? layout.levels.map((level) => ({name: level.name,
-        width: Math.round(Math.max(level.box.maxX - level.box.minX, level.box.maxZ - level.box.minZ))})) : [],
+      // The horizons as drawn now, upper first (the rail of the stage reads them): the local name, label, published
+      // elevation, the stage-pixel y of the middle of the slab's top face, and whether the camera is on it now.
+      levels: layout ? levelsInView() : [],
       focus: focusId,
       overview: overviewMode,
       target: ['x', 'y', 'z'].map((axis) => Math.round(orbit.state.target[axis] * 10) / 10),
@@ -2846,7 +3118,7 @@ export function createScene(host, options) {
           world: p ? p.map((v) => Math.round(v * 100) / 100) : null,
           px: ends && ends[0] && ends[1] ? Math.round(Math.hypot(ends[0].x - ends[1].x, ends[0].y - ends[1].y)) : null};
       }) : null,
-      loader: {lengthM: LOADER_LENGTH, scale: LOADER_SCALE, triangles: loaders.triangles(), calls: loaders.calls,
+      loader: {lengthM: LOADER_LENGTH, scale: LOADER_SCALE, triangles: loaders.triangles(), calls: loaders.calls, detail: loaders.detail,
         // The places each zone's loader may take (attributes only), best first: [working, offset, span].
         candidates: Object.fromEntries([...loaderCandidates].map(([zone, list]) => [zone,
           list.map((place) => [place.working, Math.round(place.offsetM * 10) / 10, place.span.map((v) => Math.round(v * 10) / 10)])]))},
@@ -2859,6 +3131,8 @@ export function createScene(host, options) {
 
   function dispose() {
     disposed = true;
+    if (intro) clearTimeout(intro.timer);
+    intro = null;
     loaders.dispose();
     actors.dispose();
     environment.dispose();

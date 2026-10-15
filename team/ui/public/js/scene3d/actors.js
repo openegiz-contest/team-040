@@ -152,6 +152,52 @@ function figureGeometry() {
 }
 
 /**
+ * The miner of miner.glb (assets/README.md: 1.8 m, feet at the origin, facing +X): every mesh painted with its
+ * material's colour into one body, the cap lamp (`miner_lamp`) apart as the lens. Throws when it cannot be read.
+ */
+async function loadFigure(url) {
+  const {GLTFLoader} = await import('three/addons/loaders/GLTFLoader.js');
+  const gltf = await new GLTFLoader().loadAsync(url);
+  gltf.scene.updateMatrixWorld(true);
+  const body = [];
+  const lens = [];
+  gltf.scene.traverse((object) => {
+    if (!object.isMesh) return;
+    const source = Array.isArray(object.material) ? object.material[0] : object.material;
+    let geometry = object.geometry.clone();
+    geometry.applyMatrix4(object.matrixWorld);
+    if (geometry.index) geometry = geometry.toNonIndexed();
+    for (const name of Object.keys(geometry.attributes)) if (name !== 'position' && name !== 'normal') geometry.deleteAttribute(name);
+    if (!geometry.attributes.normal) geometry.computeVertexNormals();
+    const lamp = /lamp/.test(object.name) || /lamp/.test(source && source.name ? source.name : '');
+    if (lamp) {
+      lens.push(geometry);
+      return;
+    }
+    // The colour of the material (linear, as the loader gives it) into the vertices.
+    const c = source && source.color ? source.color : new THREE.Color(1, 1, 1);
+    const colours = new Float32Array(geometry.attributes.position.count * 3);
+    for (let i = 0; i < colours.length; i += 3) {
+      colours[i] = c.r;
+      colours[i + 1] = c.g;
+      colours[i + 2] = c.b;
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+    body.push(geometry);
+  });
+  gltf.scene.traverse((object) => {
+    if (object.geometry) object.geometry.dispose();
+    if (object.material) [].concat(object.material).forEach((material) => material.dispose());
+  });
+  if (body.length === 0 || lens.length === 0) throw new Error('miner.glb: no body or no lamp');
+  const merged = {body: mergeGeometries(body, false), lens: mergeGeometries(lens, false)};
+  [...body, ...lens].forEach((geometry) => geometry.dispose());
+  return merged;
+}
+
+const triangleCount = (geometry) => (geometry.index ? geometry.index.count : geometry.attributes.position.count) / 3;
+
+/**
  * @param {Object} options
  * @param {boolean} options.low                    the light quality: Lambert materials
  * @param {Object} options.source                  read when drawing: {layout, k, view, groups, camera, height,
@@ -178,7 +224,8 @@ export function createActors({low, source}) {
   }
 
   // ---- figures of people ----------------------------------------------------------------------
-  const shapes = figureGeometry();
+  let shapes = figureGeometry();
+  let figureSource = 'primitives';
   const lit = low ? THREE.MeshLambertMaterial : THREE.MeshStandardMaterial;
   const bodyMaterial = new lit(low ? {color: '#ffffff', vertexColors: true}
     : {color: '#ffffff', vertexColors: true, roughness: 0.85, metalness: 0});
@@ -243,6 +290,27 @@ export function createActors({low, source}) {
       drawn.clear();
       glides.clear();
       return names.length > 0;
+    },
+    /** The figure of miner.glb instead of the primitives (kept when it cannot be read); true when it was taken. */
+    async loadFigure(url) {
+      try {
+        const next = await loadFigure(url);
+        for (const mesh of [bodies, lenses]) {
+          if (!mesh) continue;
+          group.remove(mesh);
+          mesh.dispose();
+        }
+        bodies = null;
+        lenses = null;
+        capacity = 0;
+        shapes.body.dispose();
+        shapes.lens.dispose();
+        shapes = next;
+        figureSource = 'miner.glb';
+        return true;
+      } catch (error) {
+        return false;
+      }
     },
     /** True when the loaders are the machines of the model (equipment twins), not the symbols of the zones. */
     get equipment() {
@@ -411,7 +479,7 @@ export function createActors({low, source}) {
         }),
         glides: glides.size,
         figures: {...figureInfo, threshold: FIGURE_PX, scale: FIGURE_SCALE,
-          triangles: shapes.body.attributes.position.count / 3 + shapes.lens.index.count / 3},
+          triangles: triangleCount(shapes.body) + triangleCount(shapes.lens), source: figureSource},
       };
     },
 

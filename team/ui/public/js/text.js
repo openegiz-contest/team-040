@@ -1185,3 +1185,56 @@ export const PANEL = {
   close: 'Закрыть итог',
   closeTitle: 'Скрыть панель итога до следующего инцидента (данные не меняются)',
 };
+
+// --------------------------------------------------------------------------
+// Variant 3 «Глубина»: the situation headline over the stage (view/headline.js)
+// and the horizon rail at its right edge (view/horizons.js). The headline is
+// set in capitals by the stylesheet; the words here are ordinary sentences.
+// Every number is a published value; nothing is counted for the headline.
+// --------------------------------------------------------------------------
+
+export const HEADLINE = {
+  region: 'Ситуация смены',
+  kicker: {
+    none: 'Нет данных модели',
+    norm: 'Ситуация смены',
+    decision: 'Нужно решение диспетчера',
+    executing: 'Решение выполняется',
+    done: 'Итог инцидента',
+  },
+  old: 'Последние полученные данные — текущее состояние неизвестно',
+  // Titles: arrays of words, so that each word can be revealed on its own.
+  waiting: ['Ждём', 'данные'],
+  working: ['Шахта', 'работает'],
+  stopped: ['Работы', 'остановлены'],
+  noState: ['Состояние', 'не', 'получено'],
+  withdrawal: ['Вывод', 'персонала'],
+  outWord: 'вышли',
+  observe: ['Наблюдение'],
+  inDangerWord: 'в опасной зоне',
+  result: 'Итог:',
+  allOut: ['все', 'вышли'],
+  notAll: 'не все',
+  resultInDanger: 'в опасной зоне',
+  resultUnknown: ['Итог', 'не', 'опубликован'],
+  // Lines under the title.
+  zoneState: (zone, words) => `${zone} — ${words}`,
+  allNormal: 'Все участки — норма',
+  inDanger: (count) => `${panelPeople(count)} в опасной зоне`,
+  noRoute: (count) => `без расчётного маршрута: ${num(count)}`,
+  unknown: (count) => `состояние неизвестно: ${num(count)}`,
+  paused: 'Модель на паузе — ждёт выбора',
+  chooseRight: 'Варианты модели — справа',
+};
+
+export const HORIZON = {
+  region: 'Горизонты: глубина и переход к горизонту',
+  title: 'Глубина',
+  unit: 'м',
+  all: 'Все',
+  allTitle: 'Общий вид: все горизонты',
+  go: (label) => `Показать ${label}`,
+  plan: (label) => `План: ${label}`,
+  hazard: (words) => `на горизонте: ${words}`,
+  elevation: (value) => `${value < 0 ? '−' : ''}${num(Math.abs(value))}`,
+};

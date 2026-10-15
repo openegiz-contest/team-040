@@ -12,7 +12,9 @@
 import * as THREE from 'three';
 import {TOKEN} from './palette.js';
 
-const CELL = 64;
+/** Cells of the atlas are drawn at twice the 64 px design box: the markers stand ~2× (variant 3) and stay crisp. */
+const CELL = 128;
+const DRAW = CELL / 64;
 const COLUMNS = 8;
 const ROWS = 4;
 
@@ -40,8 +42,8 @@ const PATH = {
 };
 
 function plate(g, radius) {
-  g.fillStyle = 'rgba(17, 19, 22, 0.9)';
-  g.strokeStyle = 'rgba(232, 227, 218, 0.6)';
+  g.fillStyle = 'rgba(10, 11, 13, 0.92)';
+  g.strokeStyle = 'rgba(242, 238, 230, 0.7)';
   g.lineWidth = 1.5;
   g.beginPath();
   g.arc(0, 0, radius, 0, Math.PI * 2);
@@ -155,8 +157,8 @@ function drawCell(g, name) {
   if (kind === 'exit') {
     plate(g, 21);
     const available = state === 'available';
-    outline(g, PATH.portal, 1.75, {stroke: available ? TOKEN.verdigris : TOKEN.dust2, fill: available ? '#1F3A36' : TOKEN.ink2, width: 2.8});
-    if (state !== 'unknown') outline(g, PATH.chevron, 1.75, {stroke: available ? '#CDEDE7' : TOKEN.dust3, width: 2.8});
+    outline(g, PATH.portal, 1.75, {stroke: available ? TOKEN.verdigris : TOKEN.dust2, fill: available ? TOKEN.verdigrisTint : TOKEN.ink2, width: 2.8});
+    if (state !== 'unknown') outline(g, PATH.chevron, 1.75, {stroke: available ? TOKEN.verdigrisCore : TOKEN.dust3, width: 2.8});
     if (state === 'unavailable') line(g, -16, 16, 16, -16, TOKEN.dust1, 3);
     if (state === 'unknown') outline(g, PATH.question, 1.9, {stroke: TOKEN.dust1, width: 2.6});
     return;
@@ -202,6 +204,7 @@ export function drawAtlas() {
   CELLS.forEach((name, index) => {
     g.save();
     g.translate((index % COLUMNS) * CELL + CELL / 2, Math.floor(index / COLUMNS) * CELL + CELL / 2);
+    g.scale(DRAW, DRAW);
     drawCell(g, name);
     g.restore();
   });

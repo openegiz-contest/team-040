@@ -1,9 +1,9 @@
 /* The 3D stage (view/stage.js, js/scene3d/): the canvas, its labels, the
    orientation gizmo, the stage HUD and the notices of the automatic fallback.
-   Flat graphite planes with hairlines; selection is a chalk-white double
-   outline, the scope of a decision option the light steel of the primary
-   action; copper only for the keyboard focus ring and the current view;
-   hazard colours only for hazard, always with a sign and words. */
+   Variant 3 «Глубина»: poster-scale type on solid dark scrims, sharp corners;
+   selection is a white double outline; the accent (electric verdigris) is
+   interaction, keyboard focus and the current view; hazard colours only for
+   hazard, always with a sign and words. */
 
 /* ---- which picture the stage shows ---- */
 .stage { position: relative; }
@@ -15,20 +15,22 @@ body:has(.stage[data-stage-mode="3d"]) #scheme-controls { display: none; }
 .s3 { position: absolute; inset: 0; }
 .s3__canvas { position: absolute; inset: 0; display: block; outline: none; touch-action: none; cursor: grab; }
 .s3__canvas:active { cursor: grabbing; }
-.s3__canvas:focus-visible { outline: 2px solid var(--copper, #C8834F); outline-offset: -4px; }
+.s3__canvas:focus-visible { outline: 2px solid var(--accent, #2EF2C2); outline-offset: -4px; }
 
 /* ---- labels: buttons over the canvas ---- */
 .s3__labels { position: absolute; inset: 0; pointer-events: none; }
+/* Variant 3 «Глубина»: poster scale — about twice the type of variant 2, sharp corners, solid dark scrims. */
 .s3-label {
   position: absolute; left: 0; top: 0;
-  display: flex; align-items: flex-start; gap: 4px;
-  max-width: 360px;
-  padding: 2px 6px 3px;
-  border: 1px solid var(--line, #323840);
-  border-radius: 3px;
-  background: rgba(23, 26, 30, 0.9);
-  color: var(--dust-1, #E8E3DA);
-  font: 500 12px/1.3 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  display: flex; align-items: flex-start; gap: 6px;
+  max-width: 420px;
+  padding: 4px 9px 5px;
+  border: 1px solid var(--line, #2A2D33);
+  border-radius: 0;
+  background: rgba(10, 11, 13, 0.9);
+  color: var(--dust-1, #F2EEE6);
+  font: 600 16px/1.3 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  letter-spacing: -0.005em;
   font-variant-numeric: tabular-nums;
   text-align: left;
   white-space: nowrap;
@@ -39,25 +41,30 @@ body:has(.stage[data-stage-mode="3d"]) #scheme-controls { display: none; }
 .s3-label[data-culled] { visibility: hidden; }
 /* An always-shown label without room for all its lines keeps the first (the state); the rest is in its tooltip. */
 .s3-label.is-brief .s3-label__line:not(:first-child) { display: none; }
-.s3-label:hover { border-color: var(--dust-3, #847D72); }
-.s3-label:focus-visible { outline: 2px solid var(--copper, #C8834F); outline-offset: 2px; }
-.s3-label__signs { display: inline-flex; gap: 2px; padding-top: 1px; }
+.s3-label:hover { border-color: var(--dust-2, #A8A39A); }
+.s3-label:focus-visible { outline: 2px solid var(--accent, #2EF2C2); outline-offset: 2px; }
+.s3-label__signs { display: inline-flex; gap: 3px; padding-top: 2px; }
 .s3-label__signs:empty { display: none; }
-.s3-label__lines { display: flex; flex-direction: column; }
-.s3-label__line { color: var(--dust-2, #B8B1A5); }
+.s3-label__lines { display: flex; flex-direction: column; gap: 1px; }
+.s3-label__line { color: var(--dust-2, #A8A39A); font-size: 14px; font-weight: 500; }
 /* The first line (code and state) stays on one line; the details wrap inside the label instead of running out of it. */
 .s3-label__line + .s3-label__line { white-space: normal; }
-.s3-label__line.is-bold { color: var(--dust-1, #E8E3DA); font-weight: 600; }
-.s3-label__line.is-muted { color: var(--dust-3, #847D72); font-size: 11px; }
-
-.s3-label--level {
-  padding: 3px 8px;
-  border-color: transparent;
-  border-left: 2px solid var(--dust-2, #B8B1A5);
-  background: rgba(17, 19, 22, 0.82);
-  font-size: 13px; letter-spacing: 0.02em;
+.s3-label__line.is-bold { color: var(--dust-1, #F2EEE6); font-size: inherit; font-weight: 600; }
+.s3-label__line.is-muted {
+  color: var(--dust-3, #85807A); font: 400 12px/1.35 var(--font-mono, "IBM Plex Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em; text-transform: uppercase;
 }
-.s3-label--zone { border-left-width: 3px; }
+
+/* A horizon: its depth in large mono type on a thin bar, like the marks of a borehole log. */
+.s3-label--level {
+  padding: 4px 12px 5px 10px;
+  border-color: transparent;
+  border-left: 3px solid var(--dust-1, #F2EEE6);
+  background: rgba(10, 11, 13, 0.84);
+  font: 500 17px/1.2 var(--font-mono, "IBM Plex Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.s3-label--zone { border-left-width: 4px; font-size: 18px; }
 .s3-label--zone.s3-label--normal { border-left-color: var(--dust-3, #847D72); }
 .s3-label--zone.s3-label--attention { border-color: var(--attention, #E2A43B); border-left-width: 3px; }
 .s3-label--zone.s3-label--danger { border-color: var(--danger, #E0483A); border-width: 2px 2px 2px 4px; }
@@ -70,16 +77,17 @@ body:has(.stage[data-stage-mode="3d"]) #scheme-controls { display: none; }
 .s3-label--unknown { border: 1px dashed var(--unknown, #A3A7AD); }
 .s3-label--indanger { border-color: var(--danger, #E0483A); }
 .s3-label--pending { outline: 1px dashed var(--chalk, #D7D1C3); outline-offset: 2px; }
-.s3-label--worker, .s3-label--sensor, .s3-label--working { font-size: 12px; }
+.s3-label--worker, .s3-label--sensor, .s3-label--working { font-size: 15px; }
 /* Codes shown by zoom are quieter than the labels of states. */
 .s3-label--working:not(.s3-label--problem):not(.is-selected),
 .s3-label--sensor:not(.s3-label--problem):not(.is-selected) {
-  padding: 1px 4px; border-color: transparent; background: rgba(17, 19, 22, 0.66); font-size: 11px;
+  padding: 2px 6px; border-color: transparent; background: rgba(10, 11, 13, 0.7);
+  font: 500 13px/1.25 var(--font-mono, "IBM Plex Mono", ui-monospace, monospace); letter-spacing: 0.04em;
 }
 .s3-label--working:not(.s3-label--problem) .s3-label__line.is-bold { font-weight: 500; }
-.s3-label--decor { font-size: 11px; }
-/* Selection: the chalk-white double outline (the scene draws the double ring and the warm work light). */
-.s3-label.is-selected { border: 3px double var(--selection, #F2EFE9); background: rgba(17, 19, 22, 0.96); }
+.s3-label--decor { font-size: 13px; }
+/* Selection: the white double outline (the scene draws the double ring and the warm work light). */
+.s3-label.is-selected { border: 4px double var(--selection, #FFFFFF); background: rgba(10, 11, 13, 0.97); }
 /* In the scope of the decision option under the pointer: the light steel of the primary action.
    The keyboard focus ring keeps priority over it. */
 .s3-label.is-scope:not(:focus-visible) { outline: 2px solid var(--action, #AEBBC7); outline-offset: 0; }
@@ -106,13 +114,13 @@ body:has(.stage[data-stage-mode="3d"]) #scheme-controls { display: none; }
 .s3__tip {
   position: absolute; left: 0; top: 0; z-index: 4;
   display: flex; flex-direction: column;
-  max-width: 320px;
-  padding: 6px 8px;
-  border: 1px solid var(--dust-3, #847D72);
-  border-radius: 3px;
-  background: var(--ink-2, #1F2328);
-  color: var(--dust-2, #B8B1A5);
-  font: 400 12px/1.35 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  max-width: 380px;
+  padding: 8px 10px;
+  border: 1px solid var(--dust-3, #85807A);
+  border-radius: 0;
+  background: var(--ink-1, #111316);
+  color: var(--dust-2, #A8A39A);
+  font: 400 14px/1.4 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
   pointer-events: none;
 }
 .s3__tip[hidden] { display: none; }
@@ -136,113 +144,122 @@ body:has(.stage[data-stage-mode="3d"]) #scheme-controls { display: none; }
   font: 600 12px/1.35 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
 }
 
-/* ---- orientation gizmo and scale, top left (under the tabs when they lie over the stage) ---- */
+/* ---- orientation gizmo and scale: bottom right of the free stage (the top left is the situation headline) ---- */
 .s3__gizmo {
-  position: absolute; left: calc(var(--cover-left, 0px) + 12px); top: 10px; z-index: 3;
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 10px 6px 6px;
-  border: 1px solid var(--line, #323840);
-  border-radius: 4px;
-  background: rgba(23, 26, 30, 0.9);
-  color: var(--dust-2, #B8B1A5);
-  font: 400 11px/1.3 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  position: absolute; top: auto; left: auto; z-index: 3;
+  right: calc(var(--cover-right, 0px) + var(--gap-stage, 16px)); bottom: var(--gap-stage, 16px);
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px 8px 8px;
+  border: 0; border-left: 1px solid var(--line, #2A2D33);
+  border-radius: 0;
+  background: rgba(10, 11, 13, 0.82);
+  color: var(--dust-2, #A8A39A);
+  font: 400 11px/1.35 var(--font-mono, "IBM Plex Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em; text-transform: uppercase;
   pointer-events: none;
 }
-body[data-view="scheme"]:not([data-old-data]) .s3__gizmo { top: 50px; }
 .s3__compass { width: 40px; height: 40px; flex: none; }
-.s3__dial { fill: none; stroke: var(--dust-3, #847D72); stroke-width: 1.2; }
-.s3__needle { fill: var(--dust-1, #E8E3DA); }
-.s3__north { fill: var(--dust-1, #E8E3DA); font: 600 8px/1 var(--font-sans, sans-serif); }
-.s3__gizmo-text { display: flex; flex-direction: column; gap: 3px; }
-.s3__scale { display: flex; align-items: center; gap: 6px; color: var(--dust-1, #E8E3DA); font-variant-numeric: tabular-nums; }
+.s3__dial { fill: none; stroke: var(--dust-3, #85807A); stroke-width: 1.2; }
+.s3__needle { fill: var(--dust-1, #F2EEE6); }
+.s3__north { fill: var(--dust-1, #F2EEE6); font: 600 8px/1 var(--font-mono, monospace); }
+.s3__gizmo-text { display: flex; flex-direction: column; gap: 4px; }
+.s3__scale { display: flex; align-items: center; gap: 8px; color: var(--dust-1, #F2EEE6); font-weight: 500; font-variant-numeric: tabular-nums; }
 .s3__bar {
   display: inline-block; height: 6px;
-  border: 1.5px solid var(--dust-1, #E8E3DA); border-top: none;
+  border: 1.5px solid var(--dust-1, #F2EEE6); border-top: none;
 }
 .s3__notes { display: flex; flex-direction: column; }
 
-/* ---- the stage HUD, top right ---- */
+/* ---- the stage HUD, top right: 3D / Схема, Общий вид, Настройки; Plex Mono capitals, sharp, the accent for the current ---- */
 .stage__hud {
   /* Clear of what lies over the stage (layout.css sets --cover-left / --cover-right: the stand drawer, the panel). */
   position: absolute; top: 0; left: var(--cover-left, 0px); right: var(--cover-right, 0px); bottom: auto; z-index: 7;
   display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
-  padding: 8px;
+  padding: 12px;
   pointer-events: none;
 }
 .hud__row {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px;
   padding: 4px;
-  border: 1px solid var(--line, #323840);
-  border-radius: 4px;
-  background: rgba(23, 26, 30, 0.94);
+  border: 1px solid var(--line, #2A2D33);
+  border-radius: 0;
+  background: rgba(10, 11, 13, 0.9);
   pointer-events: auto;
 }
 .hud__row[hidden] { display: none; }
-.hud__tools { display: flex; align-items: center; gap: 6px; }
+.hud__tools { display: flex; align-items: center; gap: 2px; }
 .hud__tools[hidden] { display: none; }
-.seg { display: inline-flex; border: 1px solid var(--ink-3, #2A2F36); border-radius: 4px; overflow: hidden; }
-.seg__item {
-  min-width: 52px; height: 28px; padding: 0 10px;
-  border: 0; background: transparent;
-  color: var(--dust-2, #B8B1A5);
-  font: 500 13px/1 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+.stage__hud .seg { display: inline-flex; border: 1px solid var(--line, #2A2D33); border-radius: 0; overflow: hidden; }
+.stage__hud .seg__item {
+  min-width: 56px; height: 32px; padding: 0 12px;
+  border: 0; border-radius: 0; background: transparent;
+  color: var(--dust-2, #A8A39A);
+  font: 500 12px/1 var(--font-mono, "IBM Plex Mono", ui-monospace, monospace);
+  letter-spacing: 0.08em; text-transform: uppercase;
   cursor: pointer;
 }
-.seg__item + .seg__item { border-left: 1px solid var(--ink-3, #2A2F36); }
-.seg__item:hover { background: var(--ink-2, #1F2328); color: var(--dust-1, #E8E3DA); }
-.seg__item.is-current { background: var(--ink-3, #2A2F36); color: var(--dust-1, #E8E3DA); border-bottom: 2px solid var(--copper, #C8834F); }
+.stage__hud .seg__item + .seg__item { border-left: 1px solid var(--line, #2A2D33); }
+.stage__hud .seg__item:hover { background: var(--ink-2, #181A1E); color: var(--dust-1, #F2EEE6); }
+.stage__hud .seg__item.is-current { background: var(--accent-tint, #0C2A24); color: var(--accent, #2EF2C2); box-shadow: inset 0 -2px 0 var(--accent, #2EF2C2); }
 .seg__item:focus-visible, .hud__btn:focus-visible, .hud__select:focus-visible, .hud__range:focus-visible {
-  outline: 2px solid var(--copper, #C8834F); outline-offset: 2px;
+  outline: 2px solid var(--accent, #2EF2C2); outline-offset: 2px;
 }
 .hud__btn {
-  height: 28px; padding: 0 10px;
-  border: 1px solid transparent; border-radius: 4px;
+  height: 32px; padding: 0 12px;
+  border: 1px solid transparent; border-radius: 0;
   background: transparent;
-  color: var(--dust-2, #B8B1A5);
-  font: 500 13px/28px var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  color: var(--dust-2, #A8A39A);
+  font: 500 12px/32px var(--font-mono, "IBM Plex Mono", ui-monospace, monospace);
+  letter-spacing: 0.08em; text-transform: uppercase;
   cursor: pointer; list-style: none;
 }
 .hud__btn::-webkit-details-marker { display: none; }
 .hud__btn { display: inline-flex; align-items: center; gap: 6px; }
-.hud__icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.hud__icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: square; stroke-linejoin: miter; }
 /* Wide: words; the icons and the one-button spread are for the folded row. */
-.hud__btn > .hud__icon, .hud__level > .hud__icon { display: none; }
+.hud__btn > .hud__icon { display: none; }
 .hud__btn--fold { display: none; }
-.hud__level { display: inline-flex; align-items: center; gap: 4px; color: var(--dust-2, #B8B1A5); }
-.hud__btn:hover { background: var(--ink-2, #1F2328); color: var(--dust-1, #E8E3DA); }
+.hud__btn:hover { background: var(--ink-2, #181A1E); color: var(--dust-1, #F2EEE6); }
 .hud__btn[hidden] { display: none; }
 .hud__select {
-  height: 28px; padding: 0 6px;
-  border: 1px solid var(--ink-3, #2A2F36); border-radius: 4px;
-  background: var(--ink-2, #1F2328);
-  color: var(--dust-1, #E8E3DA);
-  font: 400 13px/1 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  height: 32px; padding: 0 8px;
+  border: 1px solid var(--line, #2A2D33); border-radius: 0;
+  background: var(--ink-1, #111316);
+  color: var(--dust-1, #F2EEE6);
+  font: 400 13px/1 var(--font-mono, "IBM Plex Mono", ui-monospace, monospace);
 }
-.hud__field { display: inline-flex; align-items: center; gap: 6px; color: var(--dust-2, #B8B1A5); font: 400 12px/1 var(--font-sans, sans-serif); }
-.hud__caption { color: var(--dust-2, #B8B1A5); }
-.hud__range { width: 84px; accent-color: var(--dust-2, #B8B1A5); }
+.hud__field {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px;
+  color: var(--dust-2, #A8A39A);
+  font: 500 11px/1 var(--font-mono, "IBM Plex Mono", ui-monospace, monospace); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.hud__caption { color: var(--dust-2, #A8A39A); }
+.hud__range { width: 160px; accent-color: var(--accent, #2EF2C2); }
 .hud__keys { position: relative; }
 .hud__keys[hidden] { display: none; }
-.hud__keys[open] > .hud__btn { background: var(--ink-3, #2A2F36); color: var(--dust-1, #E8E3DA); }
+.hud__keys[open] > .hud__btn { background: var(--accent-tint, #0C2A24); color: var(--accent, #2EF2C2); }
 .hud__keys-body {
-  position: absolute; right: 0; top: 34px; z-index: 8;
-  width: 340px;
-  padding: 10px 12px;
-  border: 1px solid var(--line, #323840); border-radius: 4px;
-  background: var(--ink-1, #171A1E);
-  color: var(--dust-2, #B8B1A5);
-  font: 400 12px/1.4 var(--font-sans, sans-serif);
+  position: absolute; right: 0; top: 38px; z-index: 8;
+  width: 380px;
+  padding: 16px;
+  border: 1px solid var(--line, #2A2D33); border-radius: 0;
+  background: var(--ink-0, #0A0B0D);
+  color: var(--dust-2, #A8A39A);
+  font: 400 13px/1.45 var(--font-sans, "IBM Plex Sans", sans-serif);
 }
-.hud__keys-title { margin: 10px 0 6px; color: var(--dust-1, #E8E3DA); font-weight: 600; }
-.hud__keys-body dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
-.hud__keys-body dt { color: var(--dust-1, #E8E3DA); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; white-space: nowrap; }
+.hud__keys-title {
+  margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--line, #2A2D33);
+  color: var(--dust-1, #F2EEE6); font: 500 11px/1 var(--font-mono, "IBM Plex Mono", monospace); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.hud__keys-body dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+.hud__keys-body dt { color: var(--dust-1, #F2EEE6); font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; white-space: nowrap; }
 .hud__keys-body dd { margin: 0; }
 .hud__status {
-  margin: 0; padding: 4px 8px;
-  border: 1px solid var(--line, #323840); border-radius: 4px;
-  background: rgba(23, 26, 30, 0.94);
-  color: var(--dust-2, #B8B1A5);
-  font: 400 12px/1.3 var(--font-sans, sans-serif);
+  margin: 0; padding: 6px 10px;
+  border: 1px solid var(--line, #2A2D33); border-radius: 0;
+  background: rgba(10, 11, 13, 0.9);
+  color: var(--dust-2, #A8A39A);
+  font: 500 11px/1.3 var(--font-mono, "IBM Plex Mono", monospace); letter-spacing: 0.08em; text-transform: uppercase;
   pointer-events: auto;
 }
 .hud__status[hidden] { display: none; }
@@ -255,7 +272,7 @@ body[data-view="scheme"]:not([data-old-data]) .s3__gizmo { top: 50px; }
   display: flex; align-items: center; gap: 10px;
   max-width: min(640px, calc(100% - 360px));
   padding: 6px 8px 6px 12px;
-  border: 1px solid var(--dust-3, #847D72); border-radius: 4px;
+  border: 1px solid var(--dust-3, #847D72); border-radius: 0;
   background: var(--ink-2, #1F2328);
   color: var(--dust-1, #E8E3DA);
   font: 400 13px/1.35 var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
@@ -270,24 +287,27 @@ body[data-view="scheme"]:not([data-old-data]) .s3__gizmo { top: 50px; }
 /* The HUD folds to icons and the scale box goes whenever the full row would run over the gizmo or wrap: the panel or
    the stand drawer over a narrow stage (view/stage.js sets data-hud-fold on the stage after measuring). The incident
    framed beside the panel keeps the room (clarity spec B, camera); the HUD never covers the gizmo. */
-.stage[data-hud-fold] .hud__text, .stage[data-hud-fold] .hud__field--explode { display: none; }
-.stage[data-hud-fold] .hud__btn > .hud__icon, .stage[data-hud-fold] .hud__level > .hud__icon { display: block; }
+.stage[data-hud-fold] .hud__text, .stage[data-hud-fold] .hud__tools > .hud__field--explode { display: none; }
+.stage[data-hud-fold] .hud__btn > .hud__icon { display: block; }
 .stage[data-hud-fold] .hud__btn--fold { display: inline-flex; }
 .stage[data-hud-fold] .hud__btn { padding: 0 6px; }
 .stage[data-hud-fold] .hud__tools { gap: 2px; }
-.stage[data-hud-fold] .seg__item { min-width: 0; padding: 0 8px; }
-/* The level select becomes an icon button: the icon lies over a select without visible words. */
-.stage[data-hud-fold] .hud__level { position: relative; }
-.stage[data-hud-fold] .hud__level > .hud__icon { position: absolute; left: 8px; top: 6px; pointer-events: none; color: var(--dust-2, #B8B1A5); }
-.stage[data-hud-fold] .hud__level .hud__select {
-  width: 32px; padding: 0; appearance: none; border-color: transparent; background: transparent; color: transparent; cursor: pointer;
-}
-.stage[data-hud-fold] .hud__level .hud__select:hover { background: var(--ink-2, #1F2328); }
-.stage[data-hud-fold] .hud__level .hud__select option { color: var(--dust-1, #E8E3DA); background: var(--ink-2, #1F2328); }
+.stage[data-hud-fold] .stage__hud .seg__item, .stage[data-hud-fold] .seg__item { min-width: 0; padding: 0 8px; }
 .stage[data-hud-fold] .s3__gizmo { padding: 4px; }
 .stage[data-hud-fold] .s3__gizmo-text { display: none; }
 
 /* ---- the sign of a zone's loader (its published work state): «остановлен», or «работа: ?» without a published state ---- */
-.s3-label--loader { padding: 1px 5px 2px; border-color: var(--dust-3, #847D72); background: rgba(17, 19, 22, 0.9); font-size: 11px; }
+.s3-label--loader { padding: 2px 7px 3px; border-color: var(--dust-3, #85807A); background: rgba(10, 11, 13, 0.9); font: 500 13px/1.25 var(--font-mono, "IBM Plex Mono", ui-monospace, monospace); letter-spacing: 0.04em; text-transform: uppercase; }
 .s3-label--loader-stopped .s3-label__line.is-bold { color: var(--dust-1, #E8E3DA); }
 .s3-label--loader-unknown { border: 1px dashed var(--unknown, #A3A7AD); }
+
+/* ---- a short stage (the 1280×720 desk): the poster type steps down so the mine keeps its room ---- */
+.s3[data-compact] .s3-label { padding: 3px 7px 4px; font-size: 13px; max-width: 320px; }
+.s3[data-compact] .s3-label__line { font-size: 12px; }
+.s3[data-compact] .s3-label__line.is-bold { font-size: inherit; }
+.s3[data-compact] .s3-label--zone { font-size: 14px; border-left-width: 3px; }
+.s3[data-compact] .s3-label--level { padding: 3px 9px 4px 8px; font-size: 13px; }
+.s3[data-compact] .s3-label--worker, .s3[data-compact] .s3-label--sensor, .s3[data-compact] .s3-label--working { font-size: 13px; }
+.s3[data-compact] .s3-label--working:not(.s3-label--problem):not(.is-selected),
+.s3[data-compact] .s3-label--sensor:not(.s3-label--problem):not(.is-selected) { font-size: 11px; }
+.s3[data-compact] .s3-label--loader, .s3[data-compact] .s3-label--decor { font-size: 11px; }

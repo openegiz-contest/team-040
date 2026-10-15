@@ -1,75 +1,84 @@
-/* The visual system of the dispatcher screen: «Разрез массива», a museum
-   cutaway model of the mine on a graphite desk; «Пульт смены» (variant 2)
-   makes it calmer and larger: body text 15 px, key figures 32–40 px, panel
-   radius 8 px, spacing 16/24/32, fewer borders (planes are told apart by tone
-   and space), primary buttons 44 px high, every click target at least 32 px.
+/* The visual system of «Пульт смены», variant 3 «Глубина»: poster scale.
+   The mine fills the screen; the interface floats over it as typography on
+   dark scrims — giant numerals with tiny uppercase mono captions, thin 1 px
+   rules, generous negative space, sharp corners. Panels only where an
+   interaction needs them (the decision cards).
 
-   Tokens, type, controls and state badges shared by every region and by the
-   3D module (js/scene3d/palette.js mirrors the colour tokens). Flat graphite
-   planes separated by hairlines and spacing; no gradients, glow, blur or
-   shadows. Hazard colours mean hazard only, and a state is never told by
-   colour alone: every badge also has its own outline, pattern or sign, and
-   its words.
+   Palette: near-black ground, bone white type, mid greys; ONE signature accent,
+   electric verdigris (--accent): brand, interaction, keyboard focus, the route
+   to an exit, the primary action. Selection is white. Hazard colours mean
+   hazard only (danger red, attention amber); unknown is a grey hatch with a
+   dashed edge and «?». Copper belongs to the 3D materials only, never to a UI
+   state. A state is never told by colour alone: every badge also has its own
+   outline, pattern or sign, and its words.
 
-   Colour roles (clarity pass, A9): selection = chalk-white double outline
-   (--selection); primary action = solid light steel with dark ink
-   (--action, --action-strong); copper only for the brand mark, the active
-   tab underline and the keyboard focus ring; the reset is a neutral outline
-   (it asks first). Amber and red stay hazard-only. Every pair is WCAG AA:
-   --action on --ink-0 9.5:1, --selection on --ink-1 15.2:1. */
+   Type: IBM Plex Sans 600 for display (tight tracking; headlines in capitals),
+   IBM Plex Mono 400/500 for data and captions (capitals, letter-spacing .08em).
+   Base text 16 px; key numbers 56–96 px; the situation headline 48–80 px.
+   Contrast (WCAG): --dust-1 on --ink-0 17:1, --dust-2 on --ink-0 7.6:1,
+   --accent on --ink-0 13.7:1 (and --ink-0 on --accent), --danger-ink 6.6:1. */
 
 :root {
-  /* ---- colour tokens (redesign spec 1.1) ---- */
-  --ink-0: #111316;
-  --ink-1: #171A1E;
-  --ink-2: #1F2328;
-  --ink-3: #2A2F36;
-  --line: #323840;
-  --dust-1: #E8E3DA;
-  --dust-2: #B8B1A5;
-  /* Muted text: AA (4.5:1) only on --ink-0. On panels captions use --dust-2. */
-  --dust-3: #847D72;
-  /* Copper: brand mark, active tab underline, keyboard focus ring. Nothing else. */
+  /* ---- colour tokens ---- */
+  --ink-0: #0A0B0D;
+  --ink-1: #111316;
+  --ink-2: #181A1E;
+  --ink-3: #22252A;
+  --line: #2A2D33;
+  --dust-1: #F2EEE6;
+  --dust-2: #A8A39A;
+  /* Muted text: AA (4.5:1) on --ink-0 and --ink-1. */
+  --dust-3: #85807A;
+  /* The signature accent: brand, interaction, focus, routes, the primary action. */
+  --accent: #2EF2C2;
+  --accent-strong: #7DF7D9;
+  --accent-tint: #0C2A24;
+  /* Copper: 3D materials only (js/scene3d); kept as a token for the scene's fallbacks. */
   --copper: #C8834F;
   --copper-strong: #E39A62;
-  /* Selection: a chalk-white double outline (the 3D work light uses the same white). */
-  --selection: #F2EFE9;
-  /* Primary action: the dispatcher's decision buttons and «Запустить вариант…», dark ink text. */
-  --action: #AEBBC7;
-  --action-strong: #C9D3DC;
-  --verdigris: #5FA89E;
+  /* Selection: white double outline. */
+  --selection: #FFFFFF;
+  /* Primary action = the accent. */
+  --action: var(--accent);
+  --action-strong: var(--accent-strong);
+  --verdigris: var(--accent);
   --steel: #7E8B97;
-  --stone-1: #57534D;
-  --stone-2: #726D65;
-  --stone-3: #938C80;
-  --attention: #E2A43B;
-  --danger: #E0483A;
-  --unknown: #A3A7AD;
-  --noroute: #F2EFE9;
+  --stone-1: #4A4A4A;
+  --stone-2: #6A6862;
+  --stone-3: #8E8A82;
+  --attention: #FFB020;
+  --danger: #FF4B3E;
+  --unknown: #9AA0A6;
+  --noroute: #F2EEE6;
   --chalk: #D7D1C3;
   --light-warm: #FFD7A1;
 
-  /* Derived: dark tints under a hazard badge, and a lighter red for small red
-     words (--danger itself is 4.3:1 on --ink-1, below AA for body text). */
-  --attention-tint: #33291A;
-  --danger-tint: #3A1D1A;
-  --unknown-tint: #24282D;
-  --danger-ink: #F07A6E;
+  /* Derived: dark tints under a hazard badge; a lighter red for small red words. */
+  --attention-tint: #2E2208;
+  --danger-tint: #33110E;
+  --unknown-tint: #1C1F23;
+  --danger-ink: #FF6B5F;
   --copper-tint: #2E241C;
 
-  /* ---- type (spec 1.2) ---- */
+  /* Scrims: solid darkening (no blur, no glass) under type that lies over the scene. */
+  --scrim: rgba(10, 11, 13, .9);
+  --scrim-soft: rgba(10, 11, 13, .62);
+
+  /* ---- type ---- */
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --fs-caption: 12px;
-  --fs-secondary: 13px;
-  --fs-body: 15px;
-  --fs-emphasis: 16px;
-  /* One clear sentence of a panel (the answer to its question). */
-  --fs-lead: 20px;
-  --fs-section: 20px;
-  --fs-figure: 32px;
-  --fs-figure-l: 40px;
+  --fs-secondary: 14px;
+  --fs-body: 16px;
+  --fs-emphasis: 18px;
+  --fs-lead: 24px;
+  --fs-section: 22px;
+  --fs-figure: 40px;
+  --fs-figure-l: 64px;
+  --fs-giant: 96px;
   --lh: 1.45;
+  --track-tight: -.02em;
+  --track-caps: .08em;
 
   /* ---- spacing ---- */
   --sp-1: 4px;
@@ -78,21 +87,23 @@
   --sp-4: 16px;
   --sp-5: 24px;
   --sp-6: 32px;
+  --sp-7: 48px;
 
-  --radius: 6px;
-  --radius-panel: 8px;
-  --control-h: 36px;
+  --radius: 0px;
+  --radius-panel: 0px;
+  --control-h: 40px;
   --control-h-small: 32px;
-  --primary-h: 44px;
-  --ring: 2px solid var(--copper);
+  --primary-h: 64px;
+  --ring: 2px solid var(--accent);
   --move-ms: 600ms;
   --ease: cubic-bezier(.4, 0, .2, 1);
+  --ease-poster: cubic-bezier(.2, .7, 0, 1);
 
   /* Hatches of the three axes, also used by the legend and the list (L2). */
-  --hatch-attention: repeating-linear-gradient(135deg, transparent 0 5px, rgba(226, 164, 59, .38) 5px 7px);
-  --hatch-danger: repeating-linear-gradient(45deg, transparent 0 3px, rgba(224, 72, 58, .45) 3px 5px),
-    repeating-linear-gradient(135deg, transparent 0 3px, rgba(224, 72, 58, .45) 3px 5px);
-  --hatch-unknown: repeating-linear-gradient(135deg, transparent 0 4px, rgba(163, 167, 173, .26) 4px 5px);
+  --hatch-attention: repeating-linear-gradient(135deg, transparent 0 5px, rgba(255, 176, 32, .36) 5px 7px);
+  --hatch-danger: repeating-linear-gradient(45deg, transparent 0 3px, rgba(255, 75, 62, .45) 3px 5px),
+    repeating-linear-gradient(135deg, transparent 0 3px, rgba(255, 75, 62, .45) 3px 5px);
+  --hatch-unknown: repeating-linear-gradient(135deg, transparent 0 4px, rgba(154, 160, 166, .26) 4px 5px);
   --hatch-chalk: repeating-linear-gradient(135deg, transparent 0 6px, rgba(215, 209, 195, .10) 6px 7px);
 
   color-scheme: dark;
@@ -159,13 +170,17 @@ ul, ol { list-style: none; }
 [hidden] { display: none !important; }
 button, select, input { font: inherit; color: inherit; }
 
-/* Keyboard focus: a copper ring, always visible on keyboard focus, never on a mouse press. */
+/* Keyboard focus: an accent ring, always visible on keyboard focus, never on a mouse press. */
 :focus { outline: none; }
 :focus-visible { outline: var(--ring); outline-offset: 2px; }
 /* SVG shapes take no outline-offset in every engine: scheme objects also draw their own focus frame. */
 svg :focus-visible { outline: var(--ring); }
 
 .mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+/* A caption of the poster language: tiny mono capitals, wide tracking. */
+.cap { font-family: var(--font-mono); font-size: 11px; font-weight: 500; line-height: 16px; letter-spacing: var(--track-caps); text-transform: uppercase; color: var(--dust-2); }
+/* The mask a kinetic word or number moves in (motion.js), and the ghost of an old value leaving it. */
+.k-ghost { position: absolute; left: 0; top: 0; white-space: nowrap; pointer-events: none; }
 .muted { color: var(--dust-2); }
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
@@ -174,6 +189,7 @@ svg :focus-visible { outline: var(--ring); }
 
 /* An overline: tiny uppercase caption with letter-spacing (the only uppercase of the screen). */
 .overline {
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
   line-height: 16px;
@@ -223,19 +239,22 @@ body[data-old-data] .move-transition { transition: none; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
   min-height: var(--control-h);
-  padding: 0 var(--sp-3);
+  padding: 0 var(--sp-4);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--ink-2);
+  background: transparent;
   color: var(--dust-1);
-  font-size: var(--fs-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
   font-weight: 500;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
   line-height: 1.2;
   text-align: center;
   cursor: pointer;
   transition: background-color 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
 }
-.btn:hover { background: var(--ink-3); border-color: var(--stone-1); }
+.btn:hover { background: var(--ink-2); border-color: var(--dust-2); }
 .btn:active { background: var(--ink-3); }
 .btn--small { min-height: var(--control-h-small); padding: 0 var(--sp-3); font-size: var(--fs-caption); }
 .btn--block { display: flex; width: 100%; }
@@ -246,7 +265,7 @@ body[data-old-data] .move-transition { transition: none; }
   border-color: var(--action);
   background: var(--action);
   color: var(--ink-0);
-  font-weight: 600;
+  font-weight: 500;
 }
 .btn--dispatch:hover, .btn--primary:hover { border-color: var(--action-strong); background: var(--action-strong); }
 /* Secondary: the same family, outlined, while the screen asks for another decision. */
@@ -278,6 +297,7 @@ body[data-old-data] .move-transition { transition: none; }
   background: none;
   color: var(--action);
   font-weight: 500;
+  letter-spacing: .04em;
   text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
 }
 .btn--link:hover { background: none; color: var(--action-strong); }
@@ -317,7 +337,7 @@ body[data-old-data] .move-transition { transition: none; }
   padding: 0 28px 0 var(--sp-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--ink-2);
+  background: var(--ink-1);
   color: var(--dust-1);
   font-size: var(--fs-secondary);
 }
@@ -369,10 +389,13 @@ body[data-old-data] .move-transition { transition: none; }
   min-height: var(--control-h-small);
   padding: 0 var(--sp-3);
   border: 0;
-  border-radius: 3px;
+  border-radius: 0;
   background: transparent;
   color: var(--dust-2);
-  font-size: var(--fs-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
   font-weight: 500;
   cursor: pointer;
   transition: background-color 120ms var(--ease), color 120ms var(--ease);
@@ -382,8 +405,8 @@ body[data-old-data] .move-transition { transition: none; }
 .seg__item.is-current, .seg__item[aria-pressed="true"], .seg__item[aria-checked="true"] {
   background: var(--ink-3);
   color: var(--dust-1);
-  /* The current item is also marked by a copper base line: not by tint alone. */
-  text-decoration: underline; text-decoration-color: var(--copper);
+  /* The current item is also marked by an accent base line: not by tint alone. */
+  text-decoration: underline; text-decoration-color: var(--accent);
   text-decoration-thickness: 2px; text-underline-offset: 6px;
 }
 .tab--small { min-height: var(--control-h-small); padding: 0 var(--sp-2); font-size: var(--fs-caption); }
@@ -402,9 +425,12 @@ body[data-old-data] .move-transition { transition: none; }
   max-width: 100%;
   padding: 1px 7px;
   border: 1px solid transparent;
-  border-radius: 4px;
-  font-size: var(--fs-caption);
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
   line-height: 20px;
   vertical-align: baseline;
 }
@@ -416,7 +442,7 @@ body[data-old-data] .move-transition { transition: none; }
 .badge--unknown { border: 1px dashed var(--unknown); background: var(--hatch-unknown), var(--unknown-tint); color: var(--unknown); font-style: italic; }
 .badge--stale { border: 1px dashed var(--dust-2); color: var(--dust-2); }
 .badge--lost { border: 1px dotted var(--unknown); color: var(--unknown); font-style: italic; }
-.badge--route { border-color: var(--verdigris); color: var(--verdigris); }
+.badge--route { border-color: var(--accent); color: var(--accent); }
 .badge--noroute { border: 1px solid var(--noroute); background: var(--ink-0); color: var(--noroute); font-weight: 600; }
 .badge--blocked { border: 1px solid var(--dust-1); background: var(--dust-1); color: var(--ink-0); font-weight: 600; }
 .badge--pending { border: 1px dashed var(--dust-1); color: var(--dust-1); }
@@ -428,7 +454,7 @@ body[data-old-data] .move-transition { transition: none; }
   display: inline-flex; align-items: center; gap: 4px;
   padding: 0 var(--sp-2);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--ink-2);
   color: var(--dust-1);
   font-size: var(--fs-caption);
@@ -440,7 +466,7 @@ body[data-old-data] .move-transition { transition: none; }
 /* ---- banners: link and snapshot states ------------------------------------ */
 
 .banner {
-  display: flex; align-items: center; gap: var(--sp-2);
+  display: flex; align-items: center; gap: var(--sp-3);
   min-width: 0;
   padding: 6px var(--sp-4);
   border-left: 4px solid var(--steel);

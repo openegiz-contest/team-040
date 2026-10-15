@@ -1,4 +1,4 @@
-// The loaders of the mine, drawn from lhd.glb. Two modes, chosen by the scene:
+// The loaders of the mine, drawn from lhd_v2.glb (its light copy lhd_v2_lod.glb far away), else lhd.glb. Two modes, chosen by the scene:
 // - without equipment twins, one copy per zone that has workings, the symbol of
 //   the zone's published work state: it stands still where the scene put it;
 // - with equipment twins (contract question 18), one copy per published loader,
@@ -39,7 +39,11 @@ const PARTS = ['paint', 'steel', 'rubber', 'lens'];
 /** Parts painted by the look of their machine (instance colours). */
 const PAINTED = new Set([...PARTS, 'light', 'load']);
 /** The materials of lhd.glb by part; the two copper pin caps are painted as steel (copper is not a state here). */
-const PART_OF = {lhd_paint_graphite: 'paint', lhd_steel_worn: 'steel', lhd_rubber: 'rubber', lhd_lens: 'lens', lhd_copper: 'steel'};
+const PART_OF = {
+  lhd_paint_graphite: 'paint', lhd_steel_worn: 'steel', lhd_rubber: 'rubber', lhd_lens: 'lens', lhd_copper: 'steel',
+  // lhd_v2.glb and its light copy lhd_v2_lod.glb (assets/README.md): the dark paint and the glass read as rubber.
+  lhd_paint: 'paint', lhd_paint_dark: 'rubber', lhd_steel: 'steel', lhd_glass: 'rubber',
+};
 const easeOut = (t) => 1 - (1 - t) ** 3;
 
 /** The flat light ahead of the machine: warm near the bucket, fading forward and to the sides (black is no light). */
@@ -146,6 +150,8 @@ export function createLoaders({low, shadow, scale}) {
   const group = new THREE.Group();
   group.name = 'loaders';
   let parts = null;                 // part -> merged geometry, in the model's frame
+  let lod = null;                   // the light copy {parts, outline}, or null
+  let detail = 'full';              // which copy is drawn: 'full' | 'lod'
   let extras = null;                // {shadow, light, outline} geometries
   let box = null;
   let meshes = [];
@@ -179,8 +185,8 @@ export function createLoaders({low, shadow, scale}) {
   const rotation = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
 
-  /** The geometry of lhd.glb, merged per part. Throws when the file cannot be read. */
-  async function load(url) {
+  /** One file of the machine, merged per part (in the model's frame), its box, bucket and silhouette source. */
+  async function readModel(url) {
     const {GLTFLoader} = await import('three/addons/loaders/GLTFLoader.js');
     const gltf = await new GLTFLoader().loadAsync(url);
     const byPart = Object.fromEntries(PARTS.map((part) => [part, []]));
@@ -201,6 +207,7 @@ export function createLoaders({low, shadow, scale}) {
       if (object.geometry.attributes.normal) geometry.setAttribute('normal', object.geometry.attributes.normal.clone());
       else geometry.computeVertexNormals();
       if (object.geometry.index) geometry.setIndex(object.geometry.index.clone());
+      else geometry.setIndex([...Array(geometry.attributes.position.count).keys()]);
       geometry.applyMatrix4(object.matrixWorld);
       byPart[part].push(geometry);
       all.push(geometry);
@@ -209,31 +216,51 @@ export function createLoaders({low, shadow, scale}) {
       if (object.geometry) object.geometry.dispose();
       if (object.material) [].concat(object.material).forEach((material) => material.dispose());
     });
-    parts = {};
-    for (const part of PARTS) parts[part] = byPart[part].length > 0 ? mergeGeometries(byPart[part], false) : null;
+    const model = {parts: {}, bucket, outline: null};
+    for (const part of PARTS) model.parts[part] = byPart[part].length > 0 ? mergeGeometries(byPart[part], false) : null;
     const merged = mergeGeometries(all.map((geometry) => geometry.clone()), false);
     merged.computeBoundingBox();
-    box = merged.boundingBox.clone();
-    const halfWidth = Math.max(-box.min.z, box.max.z);
-    let outline = null;
+    model.box = merged.boundingBox.clone();
     if (!low) {
       // An ink outline (the back faces pushed out along the normals): the machine keeps its silhouette on any floor.
-      outline = merged;
-      const position = outline.attributes.position;
-      const normal = outline.attributes.normal;
+      const position = merged.attributes.position;
+      const normal = merged.attributes.normal;
       for (let i = 0; i < position.count; i += 1) {
         position.setXYZ(i, position.getX(i) + normal.getX(i) * 0.07, position.getY(i) + normal.getY(i) * 0.07,
           position.getZ(i) + normal.getZ(i) * 0.07);
       }
+      model.outline = merged;
     } else {
       merged.dispose();
     }
     all.forEach((geometry) => geometry.dispose());
+    return model;
+  }
+
+  /**
+   * The machine of `url` (throws when it cannot be read) and, when given and readable, its light copy `lodUrl`, drawn
+   * instead while every machine is small on the screen (setDetail).
+   */
+  async function load(url, lodUrl = null) {
+    const full = await readModel(url);
+    let light = null;
+    if (lodUrl) {
+      try {
+        light = await readModel(lodUrl);
+      } catch (error) {
+        light = null;
+      }
+    }
+    parts = full.parts;
+    lod = light;
+    box = full.box;
+    const halfWidth = Math.max(-box.min.z, box.max.z);
+    const bucket = full.bucket;
     extras = {
       shadow: quad(box.min.x - 0.7, box.max.x + 0.7, halfWidth + 0.6, halfWidth + 0.6, 0.02),
       // The light on the floor ahead of the bucket, inside the channel (half its width is about 2 m of the model).
       light: quad(box.max.x + 0.1, box.max.x + 7.5, 1.1, 1.9, 0.03),
-      outline,
+      outline: full.outline,
       // The load: in the bucket when the file names it, else in the front fifth of the machine.
       load: heapGeometry(bucket || new THREE.Box3(new THREE.Vector3(box.max.x - (box.max.x - box.min.x) * 0.2, 0, box.min.z * 0.8),
         new THREE.Vector3(box.max.x, (box.max.y - box.min.y) * 0.4, box.max.z * 0.8))),
@@ -296,10 +323,12 @@ export function createLoaders({low, shadow, scale}) {
     meshes = [];
     order = [...poses.keys()].sort();
     if (!parts || order.length === 0) return;
-    const add = (geometry, material, part, renderOrder = 0) => {
+    const add = (geometry, material, part, renderOrder = 0, set = 'any') => {
       if (!geometry) return;
       const mesh = new THREE.InstancedMesh(geometry, material, order.length);
       mesh.userData.part = part;
+      mesh.userData.set = set;
+      mesh.visible = set === 'any' || set === detail;
       mesh.renderOrder = renderOrder;
       mesh.frustumCulled = false;
       mesh.matrixAutoUpdate = false;
@@ -308,8 +337,12 @@ export function createLoaders({low, shadow, scale}) {
     };
     add(extras.shadow, materials.shadow, 'shadow', 8);
     add(extras.light, materials.light, 'light', 8);
-    for (const part of PARTS) add(parts[part], materials[part], part);
-    add(extras.outline, materials.outline, 'outline');
+    for (const part of PARTS) add(parts[part], materials[part], part, 0, lod ? 'full' : 'any');
+    add(extras.outline, materials.outline, 'outline', 0, lod ? 'full' : 'any');
+    if (lod) {
+      for (const part of PARTS) add(lod.parts[part], materials[part], part, 0, 'lod');
+      add(lod.outline, materials.outline, 'outline', 0, 'lod');
+    }
     // The heap and the ring belong to machines of the model only (equipment twins): the symbols of the zones
     // carry no load and are never selected, and keep their draw calls.
     if (machines) {
@@ -415,13 +448,25 @@ export function createLoaders({low, shadow, scale}) {
       });
     },
     get calls() {
-      return meshes.length;
+      return meshes.filter((mesh) => mesh.visible).length;
+    },
+    /** Draw the full machines or their light copies (when there is one); true when it changed. */
+    setDetail(level) {
+      const next = lod && level === 'lod' ? 'lod' : 'full';
+      if (next === detail) return false;
+      detail = next;
+      for (const mesh of meshes) mesh.visible = mesh.userData.set === 'any' || mesh.userData.set === detail;
+      return true;
+    },
+    get detail() {
+      return detail;
     },
     dispose() {
       for (const mesh of meshes) mesh.dispose();
       meshes = [];
       if (parts) for (const geometry of Object.values(parts)) if (geometry) geometry.dispose();
       if (extras) for (const geometry of Object.values(extras)) if (geometry) geometry.dispose();
+      if (lod) for (const geometry of [...Object.values(lod.parts), lod.outline]) if (geometry) geometry.dispose();
       for (const material of Object.values(materials)) {
         if (material.map && material.map !== shadow) material.map.dispose();
         material.dispose();

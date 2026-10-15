@@ -75,6 +75,8 @@ import * as text from './text.js';
 import * as card from './view/card.js';
 import * as conditions from './view/conditions.js';
 import * as decide from './view/decide.js';
+import * as headline from './view/headline.js';
+import * as horizons from './view/horizons.js';
 import * as dialog from './view/dialog.js';
 import * as journal from './view/journal.js';
 import * as legend from './view/legend.js';
@@ -94,7 +96,7 @@ const ROOTS = {
   statusbar: 'statusbar', banners: 'banners', oldData: 'old-data', frame: 'frame', centre: 'centre',
   railRegion: 'rail-region', rail: 'rail', legend: 'legend',
   viewScheme: 'view-scheme', stage: 'stage', stage3d: 'stage-3d', scheme: 'scheme', stageHud: 'stage-hud',
-  schemeControls: 'scheme-controls',
+  schemeControls: 'scheme-controls', headline: 'headline', horizons: 'horizons',
   sheet: 'sheet', pending: 'pending', panel: 'panel',
   stand: 'stand-drawer', standHead: 'stand-head', conditions: 'conditions', reset: 'reset',
   menu: 'menu-view', menuBar: 'menu-bar', list: 'view-list', runs: 'view-runs', journalView: 'view-journal',
@@ -104,7 +106,7 @@ const ROOTS = {
 /** Views in mount order, each with the name of its root. */
 const VIEWS = [
   ['statusbar', statusbar], ['banners', overlay], ['menuBar', tabs], ['list', list],
-  ['scheme', scheme], ['stage', stage], ['legend', legend], ['rail', people], ['stand', stand], ['sheet', card],
+  ['scheme', scheme], ['stage', stage], ['headline', headline], ['horizons', horizons], ['legend', legend], ['rail', people], ['stand', stand], ['sheet', card],
   ['conditions', conditions], ['pending', pending], ['panel', decide], ['journal', journal], ['runs', runs], ['dialog', dialog],
 ];
 
