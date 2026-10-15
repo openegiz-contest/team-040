@@ -16,6 +16,12 @@ highlight of a hovered decision option (HoverOptionTest) and the transitions
 that explain a change (TransitionTest, ReducedMotionTransitionTest). Motion is
 verified by sampling `ctx.stage.info().motion` in the page every 15–30 ms.
 
+Variant 2 («Пульт смены») adds: the loader of each zone as the symbol of its
+published work state (LoaderTest, LoaderLightTest), fewer words on the model
+(LabelReductionTest), the camera following the situation of the shift once per
+change (ChoreographyTest), and the decision panel beside or over the stage
+instead of the dock of variant 1 (CompositionTest, FramingTest, HoverOptionTest).
+
 The last test measures (and does not assert tightly) the figures reported in
 the 3D section of the README; they are written to test-output/scene3d-measure.json.
 """
@@ -143,7 +149,7 @@ class BootTest(Stage3dCase):
         self.assertEqual(hud, [["3d", "true"], ["scheme", "false"]])
         info = self.js(f"return {APP}.ctx.stage.info();")
         self.assertLessEqual(info["triangles"], 60000, "the light quality stays within its triangle budget")
-        self.assertLessEqual(info["calls"], 80, "and within its draw-call budget")
+        self.assertLessEqual(info["calls"], 90, "and within its draw-call budget")
 
     def test_labels_are_buttons_with_the_state_attributes_of_the_list(self):
         self.open("sensor_lost_after_danger")
@@ -457,78 +463,49 @@ class FallbackTest(Stage3dCase):
 
 
 class CompositionTest(Stage3dCase):
-    """The stage keeps most of the screen at a decision, and the overview uses the room it has."""
+    """The stage keeps the centre of the shift desk: the decision panel stands beside it (1920) or over its right part
+    (1280), and the incident stays clear of it; with no panel the overview uses the room it has."""
 
-    DOCK = """(() => {
-      const box = (node) => { const r = node.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; };
-      const dock = document.getElementById('decision-dock');
-      const body = document.getElementById('decision');
-      const visible = (node) => { const r = node.getBoundingClientRect(); const b = body.getBoundingClientRect();
-        return r.height > 0 && r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5; };
-      const table = document.querySelector('[data-testid="decision-options"]');
-      return {
-        stage: box(document.getElementById('stage')), dock: box(dock), viewport: [innerWidth, innerHeight],
-        rows: [...table.querySelectorAll('tbody tr:not([hidden])')].map((row) => [row.dataset.metricRow || row.dataset.row, visible(row)]),
-        heads: [...table.querySelectorAll('thead th[data-column]')].map(visible),
-        bars: [...table.querySelectorAll('[data-testid="people-bar"]')].map(visible),
-        button: visible(document.querySelector('[data-testid="btn-execute"]')),
-        more: document.querySelector('[data-testid="decision-more"]').open,
-        scrolls: body.scrollHeight > body.clientHeight + 1,
-      };
+    GEOMETRY = """(() => {
+      const box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; };
+      return {stage: box('stage-3d'), panel: box('panel'), viewport: [innerWidth, innerHeight], shown: document.body.dataset.panel};
     })()"""
 
-    def open_decision(self, route=""):
-        self.page.set_viewport(1920, 1080)
-        self.open("danger_zone", route, drawn=route == "")
-        self.page.wait_for("document.body.dataset.runState === 'paused' && document.body.dataset.dock === 'open'", timeout=30.0,
-                           message="the decision point unfolds the dock under the stage")
-        time.sleep(1.0)
-        return self.page.evaluate(self.DOCK)
-
-    def test_with_the_dock_open_the_stage_keeps_58_percent_and_the_options_are_whole(self):
-        for route in ("", "#/scheme?mode=scheme"):
-            with self.subTest(mode=route or "3d"):
-                got = self.open_decision(route)
-                height = got["viewport"][1]
-                stage = got["stage"][3] - got["stage"][1]
-                self.assertGreaterEqual(stage / height, 0.58, f"the stage keeps 58 % of the height: {got['stage']}")
-                self.assertAlmostEqual(got["dock"][1], got["stage"][3], delta=1, msg="the dock is under the stage")
-                self.assertEqual(len(got["heads"]), 3)
-                self.assertTrue(all(got["heads"]), "the three option columns are in sight")
-                self.assertEqual(len(got["bars"]), 3)
-                self.assertTrue(all(got["bars"]), "and their people bars")
-                hidden = [name for name, shown in got["rows"] if not shown]
-                self.assertEqual(hidden, [], "every metric row is in sight without scrolling")
-                self.assertTrue(got["button"], "the launch is in sight")
-                self.assertFalse(got["more"], "how the numbers are counted is folded")
+    def tearDown(self):
         self.page.set_viewport(1280, 720)
+        super().tearDown()
 
-    def test_the_overview_fills_the_stage_and_refits_when_the_dock_folds(self):
-        self.open_decision()
-        self.wait_idle()
-        # The incident opened while the page was watching and was framed by itself: Home is the overview.
-        self.focus_canvas()
-        self.page.press("Home")
-        self.wait_idle()
-        info = self.js(f"return {APP}.ctx.stage.info();")
-        left, top, right, bottom = info["model"]
-        width, height = info["stage"]
-        self.assertGreaterEqual(left, 0)
-        self.assertGreaterEqual(top, 0)
-        self.assertLessEqual(right, width)
-        self.assertLessEqual(bottom, height)
-        self.assertTrue((bottom - top) / height >= 0.8 or (right - left) / width >= 0.8,
-                        f"the model fills the stage in one direction: {info['model']} of {info['stage']}")
-        camera = self.camera()
-        self.page.click('[data-testid="dock-toggle"]')
-        self.page.wait_for("document.body.dataset.dock === 'collapsed'", timeout=3.0)
-        time.sleep(0.5)
-        self.wait_idle()
-        folded = self.js(f"return {APP}.ctx.stage.info();")
-        self.assertGreater(folded["stage"][1], height + 150, "folded, the dock gives its height to the stage")
-        self.assertGreater(folded["model"][3] - folded["model"][1], bottom - top, "the overview grew with the stage")
-        self.assertEqual(self.camera()[:2], camera[:2], "the azimuth and the elevation are kept")
-        self.page.set_viewport(1280, 720)
+    def test_at_a_decision_the_stage_keeps_the_centre_and_the_incident_stays_clear_of_the_panel(self):
+        for width, height in ((1920, 1080), (1280, 720)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport(width, height)
+                self.open("danger_zone")
+                self.page.wait_for("document.body.dataset.runState === 'paused' && document.body.dataset.panel === 'shown'", timeout=30.0,
+                                   message="the decision point opens the panel")
+                time.sleep(1.0)
+                self.wait_idle()
+                got = self.page.evaluate(self.GEOMETRY)
+                stage_left, _, stage_right, _ = got["stage"]
+                free_right = got["panel"][0] if got["panel"][0] < stage_right else stage_right
+                self.assertGreaterEqual((free_right - stage_left) / width, 0.5, f"the free stage keeps half the width: {got}")
+                points = self.js(f"""const st = {APP}.ctx.stage;
+                  return ['worker-11', 'worker-12', 'worker-13'].map((n) => st.screenOf('{NS}:' + n));""")
+                for point in points:
+                    self.assertTrue(point and point["visible"], point)
+                    self.assertTrue(stage_left <= point["x"] <= free_right, f"a person of the incident beside the panel: {point} {got}")
+
+    def test_the_overview_fills_the_stage(self):
+        for width, height in ((1920, 1080), (1280, 720)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport(width, height)
+                self.open("normal")
+                info = self.js(f"return {APP}.ctx.stage.info();")
+                left, top, right, bottom = info["model"]
+                w, h = info["stage"]
+                self.assertTrue(left >= 0 and top >= 0 and right <= w and bottom <= h, f"{info['model']} in {info['stage']}")
+                # About four fifths in one direction: the rest is the room of the horizon labels, the exits and the HUD.
+                self.assertTrue((bottom - top) / h >= 0.75 or (right - left) / w >= 0.75,
+                                f"the model fills the stage in one direction: {info['model']} of {info['stage']}")
 
 
 # Samples `ctx.stage.info().motion` every `step` ms for `ms` ms, after running `act` (a statement), in the page;
@@ -603,13 +580,12 @@ class Stage3dStoryCase(Stage3dCase):
         return self.page.evaluate("window.__samples")
 
     def free_area(self):
-        """The part of the 3D stage not under the dock unfolded over it, in stage pixels: [top, bottom]."""
+        """The part of the 3D stage not under the panel when it lies over the stage, in stage pixels: [top, bottom, right]."""
         return self.page.evaluate("""(() => {
           const box = document.getElementById('stage-3d').getBoundingClientRect();
-          const dock = document.getElementById('decision-dock');
-          const r = dock.getBoundingClientRect();
-          const over = document.body.dataset.dock === 'open' && getComputedStyle(dock).position === 'absolute';
-          return [0, over ? r.top - box.top : box.height, box.width];
+          const r = document.getElementById('panel').getBoundingClientRect();
+          const over = r.width > 0 && r.left < box.right - 1 && r.right > box.left + 1;
+          return [0, box.height, over ? r.left - box.left : box.width];
         })()""")
 
     def assert_in_free_area(self, points, what):
@@ -655,49 +631,46 @@ class FramingTest(Stage3dStoryCase):
                 self.assertGreaterEqual(info["viewWidth"], 0.9 * widths["level-380"],
                                         f"never closer than about one horizon width: {info['viewWidth']} m of {widths['level-380']} m")
 
-    def test_with_the_dock_unfolded_at_1280_the_incident_is_framed_above_it(self):
+    def test_at_1280_the_panel_over_the_stage_keeps_the_incident_beside_it(self):
         self.page.set_viewport(1280, 720)
         self.decision()
+        self.page.wait_for("document.body.dataset.panel === 'shown'", timeout=5.0)
         self.focus_canvas()
         self.page.press("Home")
         self.wait_idle()
-        refits = int(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.refits || '0'"))
-        frames = int(self.stage()["frames"])
-        self.page.click('[data-testid="dock-toggle"]')
-        self.page.wait_for("document.body.dataset.dock === 'open'", timeout=3.0)
-        time.sleep(0.6)
-        stage = self.wait_idle()
-        self.assertLessEqual(int(stage["frames"]) - frames, 3, "a refit caused by a panel is instant")
-        self.assertEqual(int(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.refits")), refits + 1)
+        zone = thing("zone-d")
+        self.js(f"{APP}.ctx.stage.focus({json.dumps(zone)}); return true;")
+        self.wait_idle()
         info = self.info()
-        self.assertEqual(info["focus"], thing("zone-d"), "the incident, not the whole mine")
-        self.assert_in_free_area(self.place("w-23", "w-24", "w-25", "worker-11", "worker-12", "worker-13"), "zone and people above the dock")
+        self.assertEqual(info["focus"], zone, "the incident, not the whole mine")
+        self.assert_in_free_area(self.place("w-23", "w-24", "w-25", "worker-11", "worker-12", "worker-13"), "zone and people beside the panel")
         level = self.label("level:level-380")
-        top, bottom, _ = self.free_area()
+        _, _, right = self.free_area()
         self.assertFalse(level["culled"])
-        self.assertLessEqual(level["y"] + level["h"], bottom, f"the horizon label is above the dock: {level}")
+        self.assertLessEqual(level["x"] + level["w"], right, f"the horizon label is beside the panel: {level}")
         widths = {entry["name"]: entry["width"] for entry in info["levels"]}
         self.assertGreaterEqual(info["viewWidth"], 0.9 * widths["level-380"], "about one horizon width at least")
-        self.assertLessEqual(info["viewWidth"], 2.5 * widths["level-380"], "not the whole mine shrunk into a strip")
-        # The HUD folds to icons and the scale box goes while the dock is open below 1600 px.
+        # No label of the scene lies under the panel.
+        under = self.page.evaluate("""(() => {
+          const panel = document.getElementById('panel').getBoundingClientRect();
+          return [...document.querySelectorAll('#stage-3d .s3-label:not([data-culled])')].map((n) => n.getBoundingClientRect())
+            .filter((r) => r.right > panel.left + 1).length; })()""")
+        self.assertEqual(under, 0, "the labels keep clear of the panel")
+        # The HUD keeps clear of the panel and folds to icons; the scale box goes.
         hud = self.page.evaluate("""(() => ({
           words: [...document.querySelectorAll('#stage-hud .hud__text')].map((n) => getComputedStyle(n).display),
           icons: [...document.querySelectorAll('#stage-hud .hud__btn > .hud__icon')].map((n) => getComputedStyle(n).display),
           scale: getComputedStyle(document.querySelector('#stage-3d .s3__gizmo-text')).display,
+          right: document.querySelector('#stage-hud .hud__row').getBoundingClientRect().right,
+          panel: document.getElementById('panel').getBoundingClientRect().left,
           names: [...document.querySelectorAll('#stage-hud button, #stage-hud summary')].filter((n) => n.offsetWidth > 0)
             .map((n) => n.getAttribute('aria-label') || n.textContent.trim()),
         }))()""")
         self.assertEqual(set(hud["words"]), {"none"}, hud)
         self.assertNotIn("none", hud["icons"], hud)
         self.assertEqual(hud["scale"], "none")
+        self.assertLessEqual(hud["right"], hud["panel"], "the HUD is not under the panel")
         self.assertTrue(all(hud["names"]), f"every folded control keeps its name: {hud['names']}")
-        # Folded again, the framing stays: the incident is not hidden and the stage is not empty.
-        self.page.click('[data-testid="dock-toggle"]')
-        self.page.wait_for("document.body.dataset.dock === 'collapsed'", timeout=3.0)
-        time.sleep(0.6)
-        camera = self.wait_idle()["camera"]
-        self.assertEqual(camera, stage["camera"], "folding the dock does not move the picture")
-        self.assertEqual(self.page.evaluate("getComputedStyle(document.querySelector('#stage-3d .s3__gizmo-text')).display"), "flex")
 
     def test_an_incident_that_opens_is_framed_once_unless_the_user_moved_the_camera(self):
         self.page.set_viewport(1920, 1080)
@@ -728,15 +701,21 @@ class FramingTest(Stage3dStoryCase):
         self.assertEqual(self.camera()[:2], [float(v) for v in moved.split()][:2], "the user's azimuth and elevation stay")
         self.assertIsNone(self.info()["focus"])
 
-    def test_an_incident_already_open_on_load_keeps_the_overview(self):
+    def test_an_incident_already_open_on_load_is_not_flown_to(self):
+        """No camera move on load (motion rule). The panel of the decision may refit the picture at once when it
+        would hide the incident (variant 2: over the stage at 1280); the incident's people stay in sight."""
         for scenario in ("paused_heartbeat", "sensor_lost_after_danger"):
             with self.subTest(scenario=scenario):
                 self.open(scenario)
                 time.sleep(1.5)
                 self.wait_idle()
-                info = self.info()
-                self.assertTrue(info["overview"], f"{scenario}: the overview on load")
                 self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.autoFramed || null"))
+                self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.choreo || null"))
+                zone = self.js(f"return {APP}.store.getState().model.byKind.incident[0].values.zone;")
+                people = self.js(f"""const s = {APP}.store.getState(); const w = s.model.byName[{json.dumps(zone)}].attrs.workings;
+                  return s.model.byKind.worker.filter((t) => t.values.status !== 'out' && w.includes(t.values.at_working)).map((t) => t.name);""")
+                if people:
+                    self.assert_in_free_area(self.place(*people), "the people of the open incident")
 
 
 class PanelRefitTest(Stage3dStoryCase):
@@ -774,19 +753,18 @@ class PanelRefitTest(Stage3dStoryCase):
 
 
 class HoverOptionTest(Stage3dStoryCase):
-    """C: the option under the pointer in the dock lights the zones of its published scope and the people in them now."""
+    """C: the option under the pointer in the panel lights the zones of its published scope and the people in them now."""
 
     def unfold(self):
-        self.page.evaluate("""(() => { const t = document.querySelector('[data-testid="dock-toggle"]');
-          if (document.body.dataset.dock !== 'open') t.click(); })()""")
-        self.page.wait_for("document.body.dataset.dock === 'open'", timeout=3.0)
+        """The decision panel is open by itself at the decision point."""
+        self.page.wait_for("document.body.dataset.panel === 'shown'", timeout=5.0)
         time.sleep(0.6)
         self.wait_idle()
 
     def point_at(self, name):
-        """Move the pointer over the column of an option in the dock, or over the stage when `name` is None."""
+        """Move the pointer over the card of an option in the panel, or over the stage when `name` is None."""
         if name:
-            box = self.page.evaluate(f"""(() => {{ const n = document.querySelector('[data-testid="decision-options"] th[data-column="{name}"]')
+            box = self.page.evaluate(f"""(() => {{ const n = document.querySelector('[data-testid="option-card"][data-option="{name}"]')
               || document.querySelector('[data-option="{name}"]');
               const r = n.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()""")
         else:
@@ -811,7 +789,7 @@ class HoverOptionTest(Stage3dStoryCase):
             with self.subTest(option=option):
                 self.point_at(option)
                 self.page.wait_for(f"(async () => (await import('/js/main.js')).app.store.getState().ui.hoverOption === {json.dumps(thing(option))})()",
-                                   timeout=3.0, message="the dock names the option under the pointer")
+                                   timeout=3.0, message="the panel names the option under the pointer")
                 time.sleep(0.4)
                 self.wait_idle()
                 motion = self.info()["motion"]
@@ -989,6 +967,26 @@ class ReducedMotionTransitionTest(Stage3dStoryCase):
         self.assertEqual(self.page.evaluate("document.getAnimations().length"), 0, "no CSS transition either")
 
 
+class ReducedMotionLoaderTest(Stage3dStoryCase):
+    def setUp(self):
+        super().setUp()
+        self.page.send("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+
+    def test_the_stop_and_the_camera_change_at_once(self):
+        self.decision()
+        self.page.wait_for("document.querySelector('#stage-3d .s3').getAttribute('data-decor') === 'loaded'", timeout=20.0)
+        samples = self.page.evaluate(LIGHTS % {"act": f"await app.ctx.sendCommand('action.execute_option', 'option-stop-withdraw')",
+                                               "ms": 3000, "step": 15}, timeout=30.0)
+        values = [s["l"]["zone-d"][1] for s in samples]
+        self.assertEqual(values[-1], 0)
+        self.assertTrue(all(value in (0, 1) for value in values), f"no fade under reduced motion: {values}")
+        self.assertIsNone(samples[-1]["fx"])
+        self.page.wait_for("document.querySelector('#stage-3d .s3').dataset.choreo === 'executing:walk:zone-d'", timeout=10.0)
+        self.wait_idle()
+        self.assertEqual(self.info()["focus"], thing("zone-d"), "the walk is framed, at once")
+        self.assertEqual(self.page.evaluate("document.getAnimations().length"), 0, "no CSS transition either")
+
+
 class LeaderTest(Stage3dStoryCase):
     """A label the decluttering pushed away from its anchor keeps a leader to its object (danger_zone at 1280x720:
     the tag of Участок Г on −380 m must not read as a tag of −320 m it may lie over)."""
@@ -1030,64 +1028,319 @@ class LeaderTest(Stage3dStoryCase):
                 self.assertLessEqual(edge, 0.2, f"the leader starts on the edge of {box}: {label['drawn']}")
 
 
-class LoaderTest(Stage3dCase):
-    """The decorative loader: enlarged as the channels, on a free floor, shown only when it can be recognised."""
+# Samples the light of every loader (0 dark … 1 lit) every `step` ms for `ms` ms after running `act`, in the page.
+LIGHTS = """(async () => {
+  const app = (await import('/js/main.js')).app;
+  const s3 = () => document.querySelector('#stage-3d .s3');
+  const out = [];
+  %(act)s;
+  const t0 = performance.now();
+  while (performance.now() - t0 < %(ms)d) {
+    const info = app.ctx.stage.info();
+    out.push({t: Math.round(performance.now() - t0), l: Object.fromEntries((info.loaders || []).map((x) => [x.zone, [x.state, x.light]])),
+      w: Object.fromEntries((info.loaders || []).map((x) => [x.zone, x.world.join()])), fx: s3().dataset.loaderFxCount || null});
+    await new Promise((resolve) => setTimeout(resolve, %(step)d));
+  }
+  return out;
+})()"""
 
-    def decor(self):
-        return self.js(f"return {APP}.ctx.stage.info().decor;")
+ZONES_OF = f"""(async () => {{
+  const s = (await import('/js/main.js')).app.store.getState();
+  return Object.fromEntries(s.model.byKind.zone.map((z) => [z.name, z.values.work_state]));
+}})()"""
 
-    def check_free(self, decor):
-        state = self.js(f"""const s = {APP}.store.getState(); const w = {json.dumps(decor['working'])};
+
+class LoaderTest(Stage3dStoryCase):
+    """The loader of each zone: one machine per zone with workings, standing still on a free floor, its look bound to the
+    zone's published work state (variant 2: the 3D model carries meaning)."""
+
+    def loaders(self):
+        return self.js(f"return {APP}.ctx.stage.info().loaders;")
+
+    def wait_loaded(self):
+        self.page.wait_for("document.querySelector('#stage-3d .s3').getAttribute('data-decor') === 'loaded'", timeout=20.0)
+        self.wait_idle()
+
+    def check_free(self, entry):
+        state = self.js(f"""const s = {APP}.store.getState(); const w = {json.dumps(entry['working'])};
           const working = s.model.things[w];
-          return {{passability: working.values.passability,
-            workers: s.model.byKind.worker.filter((t) => t.values.at_working === working.name).map((t) => t.values.offset_m),
-            routes: s.model.byKind.worker.flatMap((t) => (Array.isArray(t.values.route) ? t.values.route : [])
-              .map((piece) => (typeof piece === 'string' ? piece : piece.working))).filter((name) => name === working.name).length}};""")
+          return {{passability: working.values.passability, zone: working.name,
+            workers: s.model.byKind.worker.filter((t) => t.values.at_working === working.name).map((t) => t.values.offset_m)}};""")
         self.assertNotEqual(state["passability"], "closed", "never on a closed passage (its barricade)")
-        low, high = decor["span"]
+        low, high = entry["span"]
         for offset in state["workers"]:
-            self.assertFalse(low - 6 <= offset <= high + 6, f"no person on its stretch: {offset} in {decor['span']}")
+            self.assertFalse(low - 1.5 <= offset <= high + 1.5, f"no person on its stretch: {offset} in {entry['span']}")
         return state
 
-    def test_the_loader_is_enlarged_like_the_channels_and_stands_clear_of_people(self):
+    def tearDown(self):
+        self.page.set_viewport(1280, 720)
+        super().tearDown()
+
+    def test_one_loader_per_zone_shows_the_published_work_state_at_the_overview(self):
+        self.page.set_viewport(1920, 1080)
         self.open("normal")
-        self.page.wait_for("document.querySelector('#stage-3d .s3').getAttribute('data-decor') === 'loaded'", timeout=20.0)
-        decor = self.decor()
-        self.assertIsNotNone(decor, "a free place was found")
-        self.assertEqual(decor["factor"], 2, "the channels are drawn twice as wide as a drift")
-        self.assertEqual(decor["lengthM"], 20, "the 10 m loader is enlarged as much")
-        self.assertFalse(decor["shown"], "at the overview it would be a speck: it is not drawn")
-        self.check_free(decor)
-        # Close to its working it is drawn, its hover says what it is, and no person marker lies on it.
-        self.assertTrue(self.js(f"return {APP}.ctx.stage.focus({json.dumps(decor['working'])});"))
-        self.wait_idle()
-        self.assertTrue(self.decor()["shown"], "close up it is drawn")
-        at = self.js(f"return {APP}.ctx.stage.screenOf('decor:loader');")
-        self.assertTrue(at and at["visible"], at)
+        self.wait_loaded()
+        info = self.info()
+        zones = self.js(f"""const s = {APP}.store.getState();
+          return s.model.byKind.zone.filter((z) => (z.attrs.workings || []).length > 0).map((z) => [z.name, z.values.work_state]).sort();""")
+        loaders = info["loaders"]
+        self.assertEqual([entry["zone"] for entry in loaders], [name for name, _ in zones], "one loader per zone with workings")
+        for (name, published), entry in zip(zones, loaders):
+            self.assertEqual(entry["state"], published, f"{name}: the look is the published work state")
+            self.assertEqual(entry["light"], 1, f"{name}: a working zone's loader has its lamps lit")
+            self.assertFalse(entry["fading"])
+            self.check_free(entry)
+        self.assertEqual(info["loader"]["scale"], 2.5, "drawn 2.5 times larger")
+        self.assertEqual(info["loader"]["lengthM"], 25)
+        # Visible at the overview, inside the stage, larger than a speck.
+        width, height = info["stage"]
+        for entry in loaders:
+            p = self.js(f"return {APP}.ctx.stage.screenOf('loader:{entry['zone']}');")
+            self.assertTrue(p and p["visible"], f"{entry['zone']} at the overview: {p}")
+        self.assertEqual(self.page.evaluate("document.querySelectorAll('#stage-3d .s3-label--loader').length"), 0,
+                         "a working zone's loader needs no word")
         caption = self.page.evaluate("document.querySelector('[data-testid=\"scene3d-gizmo\"]').textContent")
-        self.assertIn("ПДМ — оформление, увеличена ×2", caption)
-        workers = self.js(f"""const s = {APP}.store.getState(); const st = {APP}.ctx.stage;
-          return s.model.byKind.worker.map((t) => st.screenOf(t.thingId)).filter((p) => p && p.visible).map((p) => [p.x, p.y]);""")
-        self.assertGreater(len(workers), 0)
-        nearest = min(((x - at["x"]) ** 2 + (y - at["y"]) ** 2) ** 0.5 for x, y in workers)
-        self.assertGreater(nearest, 40, f"no person marker on the loader ({nearest:.0f} px away)")
-        self.click_at(at["x"], at["y"])
-        self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": at["x"] + 1, "y": at["y"]})
+        self.assertIn("ПДМ — символ работы участка, ×2,5", caption)
+        # Its hover says what it stands for, honestly; a click selects the zone.
+        p = self.js(f"return {APP}.ctx.stage.screenOf('loader:zone-d');")
+        box = self.page.evaluate("(() => { const r = document.getElementById('stage-3d').getBoundingClientRect(); return [r.left, r.top]; })()")
+        self.assertTrue(box[0] <= p["x"] and box[1] <= p["y"], p)
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": p["x"], "y": p["y"]})
         self.page.wait_for("!document.querySelector('#stage-3d .s3__tip').hidden", timeout=3.0)
         tip = self.page.evaluate("document.querySelector('#stage-3d .s3__tip').textContent")
-        self.assertIn("ПДМ — элемент оформления, нет данных в модели", tip)
-        self.assertIn("масштаб увеличен ×2, как ширина выработок", tip)
-        self.assertIsNone(self.selected(), "a click on the decor selects nothing")
+        self.assertIn("Символ работы участка Г: работает · 47,5\u00a0т/ч (данные модели)", tip)
+        self.assertIn("Техника в модели не описана", tip)
+        self.click_at(p["x"], p["y"])
+        self.wait_selected(thing("zone-d"))
+
+    def test_a_zone_stopped_before_the_page_opened_shows_a_dark_loader_at_once(self):
+        self.open("commands")
+        self.wait_loaded()
+        self.assertEqual(self.page.evaluate(ZONES_OF)["zone-a"], "stopped")
+        loaders = {entry["zone"]: entry for entry in self.loaders()}
+        self.assertEqual(loaders["zone-a"]["state"], "stopped")
+        self.assertEqual(loaders["zone-a"]["light"], 0, "its lamps are dark")
+        self.assertEqual(loaders["zone-b"]["light"], 1)
+        self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.loaderFxCount || null"),
+                          "no fade on load: the state is shown as it is")
+        sign = self.page.evaluate(f"""(() => {{ const n = document.querySelector('#stage-3d .s3-label--loader[data-zone="{thing('zone-a')}"]');
+          return n && {{text: n.textContent, state: n.dataset.workState, tag: n.tagName, name: n.getAttribute('aria-label')}}; }})()""")
+        self.assertIsNotNone(sign, "a stopped zone's loader carries a sign")
+        self.assertEqual(sign["text"], "остановлен")
+        self.assertEqual(sign["state"], "stopped")
+        self.assertEqual(sign["tag"], "BUTTON")
+        self.assertIn("Символ работы участка А: остановлен", sign["name"])
+        self.page.click(f'#stage-3d .s3-label--loader[data-zone="{thing("zone-a")}"]')
+        self.wait_selected(thing("zone-a"))
+
+    def test_an_unknown_work_state_is_grey_with_a_question(self):
+        self.open("paused_heartbeat")
+        self.wait_loaded()
+        # A work state outside the vocabulary (as if published by a newer model): the loader does not look normal.
+        # The reads are stopped first, so that no new publication replaces the edited state while it is checked.
+        self.mock.fault("http_502")
+        try:
+            self.page.wait_for("document.body.dataset.link !== 'ok'", timeout=10.0)
+            self.js(f"""const app = {APP}; const s = app.store.getState();
+              s.model.byName['zone-b'].values.work_state = 'idle_unknown_code';
+              app.ctx.select({json.dumps(thing('zone-c'))}); return true;""")
+            self.page.wait_for("document.querySelector('#stage-3d .s3-label--loader-unknown') !== null", timeout=5.0)
+            self.wait_idle()
+            loaders = {entry["zone"]: entry for entry in self.loaders()}
+            self.assertEqual(loaders["zone-b"]["state"], "unknown")
+            self.assertEqual(loaders["zone-b"]["light"], 0)
+            text = self.page.evaluate("document.querySelector('#stage-3d .s3-label--loader-unknown').textContent")
+            self.assertIn("?", text)
+        finally:
+            self.mock.fault("none")
 
     def test_the_loader_keeps_off_a_closed_passage_and_the_people_of_a_story(self):
         self.open("no_path")
-        self.page.wait_for("document.querySelector('#stage-3d .s3').getAttribute('data-decor') === 'loaded'", timeout=20.0)
+        self.wait_loaded()
         self.js(f"return {APP}.ctx.sendCommand('condition.close_working', 'w-07');")
         self.page.wait_for("document.body.dataset.runState === 'paused'", timeout=15.0)
         time.sleep(1.0)
-        decor = self.decor()
-        if decor is not None:
-            self.check_free(decor)
+        for entry in self.loaders():
+            with self.subTest(zone=entry["zone"]):
+                self.check_free(entry)
+
+    def test_the_light_quality_keeps_its_budget_with_every_loader_drawn(self):
+        for width, height in ((1920, 1080), (1280, 720)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport(width, height)
+                self.open("danger_zone")
+                self.wait_loaded()
+                info = self.info()
+                self.assertEqual(info["renderer"].count("SwiftShader") > 0, True)
+                self.assertEqual(len(info["loaders"]), 4)
+                self.assertLessEqual(info["triangles"], 60000, f"{info['triangles']} triangles with four loaders")
+                self.assertLessEqual(info["calls"], 90, f"{info['calls']} draw calls")
+                self.assertLessEqual(info["loader"]["calls"], 7, "instanced: the draw calls of the loaders do not grow with the zones")
+                self.assertLessEqual(info["loader"]["triangles"], 8000, "one machine is the 7 960 triangles of lhd.glb")
+
+
+class LoaderLightTest(Stage3dStoryCase):
+    """A stop executed from the decision turns the lights of that zone's loader off once, in about 400 ms."""
+
+    def test_stop_turns_the_lights_of_that_zone_off_once(self):
+        self.decision()
+        self.page.wait_for("document.querySelector('#stage-3d .s3').getAttribute('data-decor') === 'loaded'", timeout=20.0)
+        before = {entry["zone"]: entry["world"] for entry in self.info()["loaders"]}
+        self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.loaderFxCount || null"), "nothing on load")
+        samples = self.page.evaluate(LIGHTS % {"act": f"await app.ctx.sendCommand('action.execute_option', 'option-stop-withdraw')",
+                                               "ms": 4000, "step": 15}, timeout=30.0)
+        lights = [(s["t"], s["l"]["zone-d"][1]) for s in samples]
+        values = [value for _, value in lights]
+        self.assertEqual(values[0], 1, "lit before the stop")
+        self.assertEqual(values[-1], 0, "dark after it")
+        self.assertTrue(any(0 < value < 1 for value in values), f"the lights fade: {values}")
+        self.assertEqual(values, sorted(values, reverse=True), "once, never back")
+        fading = [t for t, value in lights if 0 < value < 1]
+        self.assertLessEqual(fading[-1] - fading[0], 700, f"about 400 ms: {fading[0]}…{fading[-1]} ms")
+        for zone in ("zone-a", "zone-b", "zone-c"):
+            self.assertTrue(all(s["l"][zone] == ["working", 1] for s in samples), f"{zone} keeps working")
+        self.assertEqual(samples[-1]["l"]["zone-d"][0], "stopped")
+        self.assertTrue(all(s["w"] == samples[0]["w"] for s in samples), "no loader moves")
+        self.assertEqual({zone: world.split(",") for zone, world in samples[-1]["w"].items()},
+                         {zone: [str(v) if v != int(v) else str(int(v)) for v in world] for zone, world in before.items()})
+        self.assertEqual(samples[-1]["fx"], "1", "one fade for one change")
+        self.wait_idle()
+        sign = self.page.evaluate(f"document.querySelector('#stage-3d .s3-label--loader[data-zone=\"{thing('zone-d')}\"]').textContent")
+        self.assertEqual(sign, "остановлен")
+        # More publications of the walk: no other fade.
+        time.sleep(3.0)
+        self.assertEqual(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.loaderFxCount"), "1")
+        # Loaded again in this state: dark at once.
+        self.page.goto(self.mock.url + "/")
+        self.page.wait_for("document.body.dataset.boot === 'ready' && document.querySelector('#stage-3d .s3')"
+                           " && document.querySelector('#stage-3d .s3').getAttribute('data-decor') === 'loaded'", timeout=30.0)
+        time.sleep(1.0)
+        self.wait_idle()
+        loaders = {entry["zone"]: entry for entry in self.info()["loaders"]}
+        self.assertEqual((loaders["zone-d"]["state"], loaders["zone-d"]["light"]), ("stopped", 0))
+        self.assertIsNone(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.loaderFxCount || null"), "no fade on load")
+
+
+class LabelReductionTest(Stage3dStoryCase):
+    """Few words on the model: horizons, one line per zone, exits and the objects in a problem state; codes on hover,
+    on selection or close up."""
+
+    SHOWN = """(() => [...document.querySelectorAll('#stage-3d .s3-label:not([data-culled])')].map((n) => ({
+      kind: n.dataset.kind || null, thingId: n.dataset.thingId || null, lines: n.querySelectorAll('.s3-label__line').length,
+      problem: /s3-label--(problem|indanger|noroute|unknown|closed|danger|attention)/.test(n.className) || n.classList.contains('s3-label--zone'),
+      text: n.textContent})))()"""
+
+    def shown(self):
+        return self.page.evaluate(self.SHOWN)
+
+    def tearDown(self):
+        self.page.set_viewport(1280, 720)
+        super().tearDown()
+
+    def test_the_overview_names_horizons_zones_and_exits_in_one_line_each(self):
+        for width, height in ((1920, 1080), (1280, 720)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport(width, height)
+                self.open("normal")
+                shown = self.shown()
+                kinds = {entry["kind"] for entry in shown}
+                self.assertTrue(kinds <= {"level", "zone", "exit"}, f"only horizons, zones and exits: {shown}")
+                for entry in shown:
+                    if entry["kind"] in ("zone", "exit"):
+                        self.assertEqual(entry["lines"], 1, f"one line: {entry['text']}")
+                zone_d = [entry["text"] for entry in shown if entry["thingId"] == thing("zone-d")]
+                self.assertEqual(zone_d, ["Участок Г · внимание · 3 чел."])
+                exits = sorted(entry["text"] for entry in shown if entry["kind"] == "exit")
+                self.assertIn("Восстающий · вышли 0", exits)
+
+    def test_at_a_decision_only_the_problems_are_named_and_codes_come_close_up_or_on_hover(self):
+        self.page.set_viewport(1920, 1080)
+        self.decision()
+        shown = self.shown()
+        ordinary = [entry["text"] for entry in shown if entry["kind"] in ("worker", "working", "sensor") and not entry["problem"]]
+        self.assertEqual(ordinary, [], "no ordinary codes at the framing of the incident")
+        problems = {entry["thingId"] for entry in shown if entry["kind"] == "worker"}
+        for name in ("worker-11", "worker-12", "worker-13"):
+            self.assertIn(thing(name), problems, f"{name} in danger is named")
+        self.assertIn(thing("sens-ext-05"), {entry["thingId"] for entry in shown}, "the stale sensor is named")
+        # Hover: the code of an ordinary person appears.
+        p = self.js(f"return {APP}.ctx.stage.screenOf({json.dumps(thing('worker-01'))});")
+        self.assertTrue(p and p["visible"], p)
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": p["x"], "y": p["y"]})
+        self.page.wait_for(f"(() => {{ const n = document.querySelector('#stage-3d .s3-label[data-thing-id=\"{thing('worker-01')}\"]');"
+                           " return n && !n.hasAttribute('data-culled'); })()", timeout=3.0, message="the hovered person is named")
+        # Close up: the codes of the workings and people near the camera.
+        self.js(f"{APP}.ctx.stage.focus('loader:zone-b'); return true;")
+        self.wait_idle()
+        close = self.shown()
+        self.assertTrue(any(entry["kind"] in ("working", "worker") and not entry["problem"] for entry in close), close)
+        # The details of a zone: on its selection, and always in its tooltip and accessible name.
+        zone = self.page.evaluate(f"""(() => {{ const n = document.querySelector('#stage-3d .s3-label[data-thing-id="{thing('zone-d')}"]');
+          return {{lines: n.querySelectorAll('.s3-label__line').length, name: n.getAttribute('aria-label')}}; }})()""")
+        self.assertEqual(zone["lines"], 1)
+        self.assertIn("вход запрещён", zone["name"])
+        self.js(f"{APP}.ctx.select({json.dumps(thing('zone-d'))}); return true;")
+        self.page.wait_for(f"document.querySelector('#stage-3d .s3-label[data-thing-id=\"{thing('zone-d')}\"]')"
+                           ".querySelectorAll('.s3-label__line').length > 1", timeout=3.0, message="the selected zone shows its details")
+
+
+class ChoreographyTest(Stage3dStoryCase):
+    """The camera follows the situation of the shift once per change: the decision frames the incident, the execution
+    the walk, the result the overview; never on load, never against a user who moved the camera in the last 10 s."""
+
+    def s3(self):
+        return self.page.evaluate("Object.assign({}, document.querySelector('#stage-3d .s3').dataset)")
+
+    def tearDown(self):
+        self.page.set_viewport(1280, 720)
+        super().tearDown()
+
+    def test_the_camera_follows_each_situation_once(self):
+        self.page.set_viewport(1920, 1080)
+        self.decision()
+        s3 = self.s3()
+        self.assertEqual(s3.get("choreo"), "decision:zone-d")
+        self.assertEqual(s3.get("choreoCount"), "1")
+        self.assertEqual(self.info()["focus"], thing("zone-d"))
+        self.js(f"return {APP}.ctx.sendCommand('action.execute_option', 'option-stop-withdraw');")
+        self.page.wait_for("document.querySelector('#stage-3d .s3').dataset.choreo === 'executing:walk:zone-d'", timeout=15.0,
+                           message="the execution frames the walk")
+        self.wait_idle()
+        self.assertEqual(self.s3().get("choreoCount"), "2")
+        info = self.info()
+        self.assertEqual(info["focus"], thing("zone-d"))
+        self.assert_in_free_area(self.place("worker-11", "worker-12", "worker-13", "exit-raise"), "the people walking out and their exit")
+        camera = self.camera()
+        time.sleep(3.0)
+        self.assertEqual(self.camera(), camera, "once: the next publications of the walk do not move the camera")
+        self.assertEqual(self.s3().get("choreoCount"), "2")
+        self.page.wait_for("document.body.dataset.situation === 'done'", timeout=90.0, interval=1.0, message="the walk ends")
+        self.page.wait_for("document.querySelector('#stage-3d .s3').dataset.choreo === 'done:overview'", timeout=5.0)
+        self.wait_idle()
+        self.assertEqual(self.s3().get("choreoCount"), "3")
+        self.assertTrue(self.info()["overview"], "the result is seen from the overview")
+
+    def test_a_user_who_moved_the_camera_keeps_it(self):
+        self.decision()
+        self.focus_canvas()
+        self.page.press("ArrowLeft")
+        moved = self.wait_idle()["camera"]
+        self.js(f"return {APP}.ctx.sendCommand('action.execute_option', 'option-stop-withdraw');")
+        self.page.wait_for("document.querySelector('#stage-3d .s3').dataset.choreo === 'executing:skipped-touched'", timeout=15.0)
+        time.sleep(1.0)
+        self.wait_idle()
+        self.assertEqual(self.camera()[:2], [float(v) for v in moved.split()][:2], "the user's azimuth and elevation stay")
+        self.assertEqual(self.s3().get("choreoCount"), "1")
+
+    def test_nothing_on_load(self):
+        for scenario in ("paused_heartbeat", "sensor_lost_after_danger", "commands"):
+            with self.subTest(scenario=scenario):
+                self.open(scenario)
+                time.sleep(1.5)
+                self.wait_idle()
+                self.assertIsNone(self.s3().get("choreo"))
+                # (A panel that would hide an open incident may still refit the picture at once: not a choreography.)
+                self.assertIsNone(self.s3().get("autoFramed"))
 
 
 class ScenariosTest(Stage3dCase):

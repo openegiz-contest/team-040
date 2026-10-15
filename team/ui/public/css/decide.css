@@ -1,0 +1,275 @@
+/* The right panel of «Пульт смены» (agent V2-D): «Решение», «Выполнение», «Итог»
+   inside #panel (the column itself is layout.css's). One question per state, one
+   sentence per answer, details on demand. Calm and large: the answer of a step
+   in 20 px, key figures 40 px tabular, cards of 8 px radius told apart by tone,
+   one 44 px primary button. Colour roles of the clarity pass: selection =
+   chalk-white double outline, primary action = light steel, copper only for the
+   focus ring, red and amber only for hazard, white crossed square for "no
+   computed route", fog grey with dashes and «?» for unknown.
+   Tokens: base.css. Values and people bars: compare.css (.val, .pb). */
+
+.dp {
+  flex: 1 1 auto;
+  display: flex; flex-direction: column;
+  min-height: 0;
+  color: var(--dust-1);
+  font-size: var(--fs-body);
+  line-height: var(--lh);
+}
+
+/* ---- head, body, foot ------------------------------------------------------------- */
+
+.dp__head { flex: none; padding: var(--sp-4) var(--sp-5) var(--sp-2); }
+.dp__head-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+.dp__title { margin: 0; font-size: var(--fs-emphasis); font-weight: 600; line-height: 1.3; }
+.dp[data-mode="decision"] .dp__title { color: var(--dust-2); font-size: var(--fs-caption); letter-spacing: .1em; text-transform: uppercase; }
+.dp__pause { flex: none; display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--dust-2); font-size: var(--fs-caption); }
+.dp__pause-glyph { display: inline-flex; }
+.dp__pause .glyph { width: 14px; height: 14px; stroke: currentColor; stroke-width: 1.4; }
+.dp__subtitle { margin: 2px 0 0; color: var(--dust-2); font-size: var(--fs-secondary); }
+
+.dp__body { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--sp-5) var(--sp-4); }
+.dp__foot { flex: none; padding: var(--sp-3) var(--sp-5) var(--sp-4); background: var(--ink-1); border-top: 1px solid var(--line); }
+.dp-foot { display: grid; gap: var(--sp-2); }
+.dp-foot--executing { display: none; }
+.dp__foot:has(.dp-foot--executing) { display: none; }
+
+.dp-launch { min-height: var(--primary-h); justify-content: center; padding: 0 var(--sp-4); font-size: var(--fs-body); font-weight: 600; text-align: center; line-height: 1.25; }
+.dp-why { margin: 0; color: var(--dust-2); font-size: var(--fs-secondary); text-align: center; }
+.dp-why:empty { display: none; }
+.dp-foot .block-note { margin: 0; color: var(--dust-1); font-size: var(--fs-secondary); }
+.dp-close { min-height: var(--primary-h); justify-content: center; border: 1px solid var(--stone-1); }
+
+/* ---- the three steps of «Решение» ------------------------------------------------------- */
+
+.dp-step { padding: var(--sp-4) 0 var(--sp-2); }
+.dp-step + .dp-step { border-top: 1px solid var(--ink-3); }
+.dp-step__head { display: flex; align-items: center; gap: var(--sp-2); min-height: 32px; margin-bottom: var(--sp-1); }
+.dp-step__num {
+  flex: none; display: inline-grid; place-items: center;
+  width: 22px; height: 22px; border: 1px solid var(--stone-2); border-radius: 50%;
+  color: var(--dust-2); font-size: var(--fs-caption); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.dp-step__title { flex: 1 1 auto; margin: 0; color: var(--dust-2); font-size: var(--fs-secondary); font-weight: 600; letter-spacing: .02em; }
+.dp-step__show { flex: none; min-height: 32px; padding: 0 var(--sp-2); font-size: var(--fs-secondary); }
+
+/* 1. What happened: one sentence in 20 px with the sign of the zone's hazard. */
+.dp-what { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; font-size: var(--fs-lead); font-weight: 600; line-height: 1.3; }
+.dp-what__glyph { flex: none; display: inline-flex; padding-top: 3px; }
+.dp-what__glyph .glyph { width: 20px; height: 20px; stroke: currentColor; stroke-width: 1.5; }
+.dp-what[data-hazard="danger"] .dp-what__glyph { color: var(--danger); }
+.dp-what[data-hazard="attention"] .dp-what__glyph { color: var(--attention); }
+.dp-what[data-hazard="unknown"] .dp-what__glyph { color: var(--unknown); }
+.dp-what[data-sign="blocked"] .dp-what__glyph { color: var(--dust-1); }
+.dp-what-more { margin: 2px 0 0 28px; color: var(--dust-2); font-size: var(--fs-secondary); }
+.dp-what-more:empty { display: none; }
+
+/* 2. Who is threatened: a sentence, then the workers as buttons with the legend's figures. */
+.dp-people { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.dp-people__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); }
+.dp-people__words { font-size: var(--fs-body); }
+.dp-people__row[data-row="danger"] .dp-people__words { font-weight: 600; }
+.dp-people__row[data-row="unknown"] .dp-people__words { color: var(--dust-1); font-style: italic; }
+.dp-people__row[data-row="noroute"] .dp-people__words {
+  padding-left: var(--sp-2); border-left: 3px solid var(--noroute); font-weight: 600;
+}
+.dp-people__who { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); }
+.dp-people__who[data-more]::after { content: attr(data-more); align-self: center; color: var(--dust-2); font-size: var(--fs-secondary); }
+
+.dp-who {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px; padding: 0 var(--sp-2) 0 6px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--ink-2); color: var(--dust-1);
+  font-family: var(--font-mono); font-size: var(--fs-secondary); font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.dp-who:hover { background: var(--ink-3); border-color: var(--stone-2); }
+.dp-who__mark { display: inline-flex; }
+.dp-who[data-figure="unknown"] { border-style: dashed; border-color: var(--unknown); }
+.dp-who[data-figure="none"] { border-color: var(--noroute); }
+.dp-who[data-figure="inDanger"] { border-color: var(--danger); }
+
+/* 3. What can be done: the caption of the numbers, the alerts, the cards. */
+.dp-caption { margin: 0 0 var(--sp-3); color: var(--dust-2); font-size: var(--fs-secondary); line-height: 1.45; }
+.dp-caption__what { color: var(--dust-1); font-weight: 600; }
+.dp-caption__quality { margin-left: 2px; }
+.dp-alert {
+  margin: 0 0 var(--sp-3); padding: 6px var(--sp-3);
+  border-left: 3px solid var(--noroute); border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--ink-2); color: var(--dust-1); font-size: var(--fs-secondary); font-weight: 500;
+}
+.dp-alert--unknown { border-left: 3px dashed var(--unknown); font-style: italic; }
+.dp-alerts { display: grid; gap: var(--sp-2); margin: var(--sp-3) 0 0; padding: 0; list-style: none; }
+.dp-alerts .dp-alert { margin: 0; }
+
+.dp-cards { display: grid; gap: var(--sp-2); }
+.dp-card {
+  display: grid; gap: 6px;
+  padding: 10px var(--sp-3) var(--sp-3);
+  border: 3px double transparent; border-radius: var(--radius-panel);
+  background: var(--ink-2);
+  cursor: pointer;
+}
+.dp-card:hover { background: var(--ink-3); }
+.dp-card:focus-visible { outline: var(--ring); outline-offset: 2px; }
+/* The chosen card: the chalk-white double outline of the selection. */
+.dp-card.is-chosen { border-color: var(--selection); background: var(--ink-3); }
+.dp-card.is-unavailable { cursor: not-allowed; opacity: .6; }
+.dp-card.is-unavailable:hover { background: var(--ink-2); }
+
+.dp-card__top { display: flex; align-items: center; gap: var(--sp-2); }
+.dp-card__radio {
+  flex: none; position: relative;
+  width: 18px; height: 18px; border: 1.5px solid var(--dust-2); border-radius: 50%;
+}
+.dp-card.is-chosen .dp-card__radio { border-color: var(--selection); }
+.dp-card.is-chosen .dp-card__radio::after {
+  content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--selection);
+}
+.dp-card.is-unavailable .dp-card__radio { border-style: dashed; }
+.dp-card__verb { flex: 1 1 auto; min-width: 0; font-size: var(--fs-emphasis); font-weight: 600; line-height: 1.3; }
+.dp-card__state { flex: none; color: var(--dust-2); font-size: var(--fs-caption); font-style: italic; }
+
+/* The headline of the forecast: one sentence by the fixed rules of decision.js headline(). */
+.dp-card__headline { margin: 0 0 0 26px; font-size: var(--fs-lead); font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.dp-card__headline[data-rule="in_danger"] { color: var(--danger-ink); }
+.dp-card__headline[data-rule="not_published"], .dp-card__headline[data-rule="none"] { color: var(--unknown); font-size: var(--fs-emphasis); font-style: italic; font-weight: 500; }
+.dp-card__bar { margin-left: 26px; }
+.dp-card__bar .pb { max-width: 220px; }
+.dp-card__facts { display: grid; margin: 0 0 0 26px; color: var(--dust-2); font-size: var(--fs-secondary); line-height: 1.4; }
+.dp-card__quality { justify-self: start; margin: 0 0 0 26px; }
+
+/* «Подробнее»: the full table of the forecast, as in the archive of runs. */
+.dp-details { margin-top: var(--sp-3); }
+.dp-details__title {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px;
+  color: var(--action); font-size: var(--fs-secondary); cursor: pointer; list-style: none;
+}
+.dp-details__title::-webkit-details-marker { display: none; }
+.dp-details__title::before {
+  content: ""; width: 6px; height: 6px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+.dp-details[open] > .dp-details__title::before { transform: rotate(45deg); }
+.dp-details__title:hover { color: var(--action-strong); }
+.dp-details__title:focus-visible { outline: var(--ring); outline-offset: 2px; }
+.dp-details__lead { margin: 0 0 var(--sp-2); color: var(--dust-2); font-size: var(--fs-caption); }
+
+.dp-table { font-size: var(--fs-caption); }
+.dp-table th, .dp-table td { padding: 4px 3px; line-height: 1.3; }
+.dp-table th { overflow-wrap: break-word; hyphens: auto; }
+/* Narrow columns: the values in the text face (tabular figures); a number keeps its unit (no-break space). */
+.dp-table .val { font-family: var(--font-sans); font-size: 11.5px; letter-spacing: -.01em; white-space: normal; }
+.dp-table thead th { font-size: 11.5px; }
+.dp-table .metrics__corner, .dp-table thead th:first-child { width: 27%; }
+.dp-table .metrics__corner { font-size: 10.5px; letter-spacing: .04em; overflow-wrap: normal; hyphens: none; }
+.dp-table .th-box { display: grid; gap: 1px; }
+.dp-table .th-name { color: var(--dust-1); font-weight: 600; }
+.dp-table .th-sub { color: var(--dust-2); font-style: italic; }
+.dp-table .th-sub:empty { display: none; }
+.dp-table .is-chosen { background: var(--ink-3); }
+.dp-table .pb-words { font-size: 11px; }
+
+/* ---- «Выполнение» ------------------------------------------------------------------- */
+
+.dp-block { padding: var(--sp-4) 0; }
+.dp-block + .dp-block { border-top: 1px solid var(--ink-3); }
+.dp-sub { margin: 0 0 var(--sp-2); color: var(--dust-2); font-size: var(--fs-secondary); font-weight: 600; }
+.dp-note { margin: var(--sp-2) 0 0; color: var(--dust-2); font-size: var(--fs-caption); }
+
+.dp-figs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2) var(--sp-5); }
+.dp-fig { display: grid; margin: 0; }
+.dp-fig__num { font-size: var(--fs-figure-l); font-weight: 600; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.dp-fig + .dp-fig .dp-fig__num { font-size: var(--fs-figure); }
+.dp-fig__label { color: var(--dust-2); font-size: var(--fs-secondary); }
+.dp-fig[data-tone="danger"] .dp-fig__num { color: var(--danger-ink); }
+.dp-fig[data-tone="unknown"] .dp-fig__num { color: var(--unknown); font-style: italic; text-decoration: underline dashed var(--unknown) 1px; text-underline-offset: 6px; }
+
+/* What the model forecast: a dashed rule, as every forecast. */
+.dp-expect { display: flex; align-items: baseline; gap: var(--sp-2); margin: var(--sp-2) 0 0; color: var(--dust-1); font-size: var(--fs-body); }
+.dp-expect::before { content: ""; flex: none; width: 16px; border-bottom: 1px dashed var(--dust-2); transform: translateY(-4px); }
+
+/* One cell per listed worker, by its published status: out filled, on the way verdigris with an arrow,
+   waiting or working outlined (dashed where the hazard of the place is unknown), no computed route a white crossed square, in a danger zone a red double ring,
+   unknown a dashed «?». */
+.dp-cells { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--sp-3); }
+.dp-cell {
+  position: relative; display: inline-grid; place-items: center;
+  width: 20px; height: 20px; border: 1.5px solid var(--dust-2); border-radius: 3px;
+  color: var(--ink-0); font-size: 12px; font-weight: 700; line-height: 1;
+}
+.dp-cell[data-cell="out"] { border-color: var(--dust-1); background: var(--dust-1); }
+.dp-cell[data-cell="moving"] { border-color: var(--verdigris); color: var(--verdigris); }
+.dp-cell[data-cell="moving"]::after { content: "›"; font-size: 15px; }
+.dp-cell[data-cell="danger"] { border: 3px double var(--danger); }
+.dp-cell[data-cell="noroute"] {
+  border-color: var(--noroute); background: var(--noroute);
+}
+.dp-cell[data-cell="noroute"]::before, .dp-cell[data-cell="noroute"]::after {
+  content: ""; position: absolute; left: 50%; top: -1px; bottom: -1px; width: 1.5px; background: var(--ink-0);
+}
+.dp-cell[data-cell="noroute"]::before { transform: rotate(45deg); }
+.dp-cell[data-cell="noroute"]::after { transform: rotate(-45deg); }
+.dp-cell[data-place="unknown"] { border-style: dashed; }
+.dp-cell[data-cell="unknown"] { border-style: dashed; border-color: var(--unknown); color: var(--unknown); }
+.dp-cell[data-cell="unknown"]::after { content: "?"; }
+
+.dp-list { display: grid; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
+.dp-list__row { display: flex; align-items: center; gap: var(--sp-3); }
+.dp-list__words { color: var(--dust-1); font-size: var(--fs-secondary); }
+.dp-list__row[data-cell="out"] .dp-list__words { color: var(--dust-2); }
+.dp-list__row[data-cell="noroute"] .dp-list__words { font-weight: 600; }
+.dp-list__row[data-cell="danger"] .dp-list__words { color: var(--danger-ink); font-weight: 600; }
+
+.dp-zones { display: grid; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
+.dp-zone { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-2); }
+.dp-zone__name { min-height: 32px; padding: 0; font-weight: 600; }
+.dp-zone__words { flex: 1 0 100%; color: var(--dust-1); font-size: var(--fs-secondary); }
+
+.dp-ack { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--ink-3); color: var(--dust-2); font-size: var(--fs-caption); }
+.dp-ack__glyph { flex: none; display: inline-flex; }
+.dp-ack .glyph { width: 14px; height: 14px; stroke: currentColor; stroke-width: 1.4; }
+
+/* ---- «Итог» ------------------------------------------------------------------------- */
+
+.dp-result { display: grid; gap: 2px; margin: 0 0 var(--sp-3); padding-left: var(--sp-3); border-left: 4px solid var(--dust-1); }
+.dp-result__label { color: var(--dust-2); font-size: var(--fs-caption); letter-spacing: .06em; text-transform: uppercase; }
+.dp-result__line { font-size: var(--fs-lead); font-weight: 600; line-height: 1.25; }
+.dp-result[data-rule="in_danger"] .dp-result__line { color: var(--danger-ink); }
+.dp-result[data-rule="no_route"] { border-left-color: var(--noroute); }
+.dp-result--forecast { border-left: 2px dashed var(--dust-2); }
+.dp-result--forecast .dp-result__line { color: var(--dust-2); font-size: var(--fs-body); font-weight: 500; }
+.dp-table--fact .metrics__corner, .dp-table--fact thead th:first-child { width: 40%; }
+
+/* ---- 1280×720: the panel is 360 px wide and lies over the stage; the three cards stay in sight ---- */
+
+@media (max-width: 1599px), (max-height: 899px) {
+  .dp__head { padding: var(--sp-2) var(--sp-4) 0; }
+  .dp__body { padding: 0 var(--sp-4) var(--sp-3); }
+  .dp__foot { padding: var(--sp-2) var(--sp-4) var(--sp-2); }
+  .dp-foot { gap: 2px; }
+  .dp-step { padding: var(--sp-2) 0 var(--sp-1); }
+  .dp-step__head { margin-bottom: 0; }
+  .dp-what { font-size: 17px; }
+  .dp-what__glyph { padding-top: 1px; }
+  .dp-people { gap: var(--sp-1); }
+  .dp-people__words { font-size: var(--fs-secondary); }
+  .dp-caption { margin-bottom: 6px; font-size: var(--fs-caption); line-height: 1.35; }
+  .dp-cards { gap: 4px; }
+  .dp-card { gap: 2px; padding: 5px 10px 7px; }
+  .dp-card__verb { font-size: 14px; }
+  .dp-card__headline { font-size: 16px; }
+  .dp-details { margin-top: var(--sp-1); }
+  .dp-block { padding: var(--sp-3) 0; }
+  .dp-fig__num { font-size: 36px; }
+  .dp-fig + .dp-fig .dp-fig__num { font-size: 28px; }
+  .dp-result__line { font-size: 18px; }
+}
+
+/* A low screen: the secondary facts of the cards give way to the cards themselves (they stay in «Подробнее»). */
+@media (max-height: 899px) {
+  .dp-card__facts { display: none; }
+}

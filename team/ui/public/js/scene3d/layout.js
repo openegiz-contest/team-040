@@ -21,8 +21,10 @@ export const DIMS = {
   drift: 5,          // a real drift for a 10-t loader is about this wide, metres; the channels are drawn 2·half wide
 };
 
-/** How many times the channels are drawn wider than a real drift: the decorative loader is enlarged as much. */
+/** How many times the channels are drawn wider than a real drift. */
 export const WIDTH_FACTOR = (2 * DIMS.half) / DIMS.drift;
+/** The loader of lhd.glb (10 m) is drawn this many times larger: about as the channels, and readable at the overview. */
+export const LOADER_SCALE = 2.5;
 
 /** The vertical factor for an explode value in [0, 1]. */
 export function verticalFactor(explode) {
@@ -276,46 +278,59 @@ export function alongStep(pieces, metres) {
 }
 
 /**
- * Places for the decorative loader, best first: the far ends of the workings of
- * zones that end in a dead end, the lowest level first; ties go to the end
- * farthest from every inter-level working. Static: the same attributes always
- * give the same list. The scene takes the first place that nothing published
- * occupies (people, routes, a closed passage), or shows no loader.
+ * Places for the loader of each zone, best first: the ends of the zone's horizontal workings
+ * that end in a dead end (farthest from every inter-level working first), then their other ends,
+ * then their middles. A place whose stretch holds a sensor (attributes) is left out. Static: the
+ * same attributes always give the same lists. The scene takes, once per run, the first place
+ * that nothing published occupies (people, routes, a closed or pending working) and keeps it.
+ * @param {Array<{name: string, workings: string[]}>} zones
  * @param {Object<string, *>} nodesAttr mine.attributes.nodes
- * @param {Set<string>} zoneWorkings workings that belong to a zone
+ * @param {Map<string, number[]>} sensorOffsets offsets (metres of length_m) of the sensors per working
  * @param {number} length the length of the loader in scene metres
- * @returns {Array<{working: string, offsetM: number, towardsEnd: boolean, span: number[]}>} span: offsets it covers
+ * @returns {Map<string, Array<{working: string, offsetM: number, facing: 1|-1, span: number[]}>>} facing: +1 looks
+ *          towards growing offsets; span: the offsets the loader and the light ahead of it cover
  */
-export function loaderPlaces(layout, nodesAttr, zoneWorkings, length) {
+export function loaderPlaces(layout, nodesAttr, zones, sensorOffsets, length) {
   const degree = new Map();
   for (const working of layout.workings.values()) {
     for (const node of [working.from, working.to]) degree.set(node, (degree.get(node) || 0) + 1);
   }
   const shafts = [...layout.workings.values()].filter((working) => working.between)
     .flatMap((working) => [working.from, working.to]).map((node) => layout.nodes.get(node)).filter(Boolean);
-  const candidates = [];
-  for (const working of layout.workings.values()) {
-    if (working.between || !zoneWorkings.has(working.name)) continue;
-    // Offsets are metres of length_m; the loader is measured in scene metres along the drawn line.
-    const perScene = working.lengthM / Math.max(working.total, 1e-6);
-    const reach = (length + 3) * perScene;
-    if (working.lengthM < reach * 1.6) continue;
-    for (const node of [working.from, working.to]) {
-      const attrs = nodesAttr[node] || {};
-      const deadEnd = attrs.node_kind === 'dead_end' || degree.get(node) === 1;
-      const point = layout.nodes.get(node);
-      if (!deadEnd || !point) continue;
-      const level = layout.levels.findIndex((entry) => entry.workings.includes(working.name));
-      const away = Math.min(...shafts.map((shaft) => Math.hypot(shaft[0] - point[0], shaft[1] - point[1])), 1e6);
-      const atEnd = node === working.to;
-      const centre = (length / 2 + 2.5) * perScene;
-      const offsetM = atEnd ? working.lengthM - centre : centre;
-      candidates.push({
-        working: working.name, level, away, towardsEnd: atEnd, offsetM,
-        span: atEnd ? [working.lengthM - reach, working.lengthM] : [0, reach],
-      });
+  const out = new Map();
+  for (const zone of zones) {
+    const candidates = [];
+    for (const name of zone.workings) {
+      const working = layout.workings.get(name);
+      if (!working || working.between) continue;
+      // Offsets are metres of length_m; the loader is measured in scene metres along the drawn line.
+      const perScene = working.lengthM / Math.max(working.total, 1e-6);
+      const reach = (length + 2) * perScene;
+      const centre = (length / 2 + 1.5) * perScene;
+      const sensors = sensorOffsets.get(name) || [];
+      const clear = (span) => !sensors.some((offset) => offset >= span[0] - 4 && offset <= span[1] + 4);
+      for (const node of [working.from, working.to]) {
+        const point = layout.nodes.get(node);
+        if (!point || working.lengthM < reach * 1.4) continue;
+        const attrs = nodesAttr[node] || {};
+        const deadEnd = attrs.node_kind === 'dead_end' || degree.get(node) === 1;
+        const away = Math.min(...shafts.map((shaft) => Math.hypot(shaft[0] - point[0], shaft[1] - point[1])), 1e6);
+        const atEnd = node === working.to;
+        const span = atEnd ? [working.lengthM - reach, working.lengthM] : [0, reach];
+        // The machine stands at the end and looks out of it, along the drift: its light falls on the floor ahead.
+        if (clear(span)) {
+          candidates.push({working: name, offsetM: atEnd ? working.lengthM - centre : centre, facing: atEnd ? -1 : 1, span,
+            rank: deadEnd ? 0 : 1, away});
+        }
+      }
+      if (working.lengthM >= reach * 2) {
+        const mid = working.lengthM / 2;
+        const span = [mid - reach / 2, mid + reach / 2];
+        if (clear(span)) candidates.push({working: name, offsetM: mid, facing: 1, span, rank: 2, away: 0});
+      }
     }
+    candidates.sort((p, q) => (p.rank - q.rank) || (q.away - p.away) || (p.working < q.working ? -1 : (p.working > q.working ? 1 : p.offsetM - q.offsetM)));
+    out.set(zone.name, candidates.map(({working, offsetM, facing, span}) => ({working, offsetM, facing, span})));
   }
-  candidates.sort((p, q) => (q.level - p.level) || (q.away - p.away) || (p.working < q.working ? -1 : 1));
-  return candidates.map(({working, offsetM, towardsEnd, span}) => ({working, offsetM, towardsEnd, span}));
+  return out;
 }

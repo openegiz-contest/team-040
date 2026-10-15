@@ -1,32 +1,32 @@
-/* The composition of the screen (redesign spec 2): a grid that fills the
-   viewport. The page never scrolls; a region scrolls inside.
+/* The frame of «Пульт смены» (design variant 2): the screen follows the
+   situation of the shift and answers one question at a time. The page never
+   scrolls; a region scrolls inside.
 
-   ┌ top bar ─────────────────────────────────────────────────────────────┐
-   ├ situation strip (only with an open incident or a banner) ────────────┤
-   ├ centre: tabs · stage (3D or scheme) · decision dock ─┬ right column ─┤
-   │   the stand drawer opens over the left edge          │ card, actions,│
-   │                                                      │ sent, journal │
-   └──────────────────────────────────────────────────────┴───────────────┘
+   ┌ TOP BAR 48: mark · notice | Смена 00:21:00 · state | link · data age | conditions [Стенд] [Меню] ┐
+   ├ RAIL «Люди» 300 ┬ STAGE (3D or Схема), full height ─────────────────┬ PANEL 420 ─────────────┤
+   │ figures          │ notices: a band over the stage (rare states)     │ only while             │
+   │                  │ HUD top right, gizmo top left (stage module)     │                        │
+   │ zone rows, dots  │ toasts bottom left · object card bottom right    │ body[data-panel=shown] │
+   │ legend chip      │ the stand drawer over the left edge              │ (decision / executing  │
+   └──────────────────┴──────────────────────────────────────────────────┴ / done, view/decide.js)┘
+   Menu overlays (Список, Прогоны, Журнал) cover the whole frame under the top bar.
 
-   Wide (from 1600x900): right column 400, top bar 60, the dock in the flow
-   under the stage. Compact (1280x720): right column 320, top bar 52, the dock
-   folds to its bar and unfolds over the stage, the strip is one line of chips.
-   Never hidden: the notice, link state and data age, the people figures,
-   incident step 1, the legend chip, the separation of the stand controls
-   (drawer, chalk) from the dispatcher actions (right column, light steel).
+   1280×720 (compact): rail 260 (folds to a 56 px strip of figures), the panel
+   360 lies over the right part of the stage; the stage keeps the centre.
 
-   Stage corners (for the stage module and the legend):
-     top-left      the stand drawer when open; nothing else
-     top-right     stage HUD controls (mode, quality, explode, level, overview)
-     bottom-left   the legend chip (#legend)
-     bottom-right  orientation gizmo and scale note */
+   What lies over the stage, for the stage module (V2-S) and the views:
+     --cover-left   on .centre: width of the open stand drawer (0 when closed)
+     --cover-right  on .centre: width of the panel when it lies over the stage (compact layout only)
+   The HUD and the camera framing keep clear of them; the card and the toasts follow them. */
 
 :root {
-  --w-right: 400px;
-  --h-top: 60px;
-  --h-bar: 40px;
+  --h-top: 48px;
+  --w-rail: 300px;
+  --w-strip: 56px;
+  --w-panel: 420px;
   --w-stand: 340px;
-  --h-dock-bar: 30px;
+  --w-sheet: 380px;
+  --gap-stage: var(--sp-4);
 }
 
 html, body { height: 100%; overflow: hidden; }
@@ -35,12 +35,7 @@ html, body { height: 100%; overflow: hidden; }
   display: grid;
   width: 100vw;
   height: 100vh;
-  grid-template-columns: minmax(0, 1fr) var(--w-right);
-  grid-template-rows: var(--h-top) auto minmax(0, 1fr);
-  grid-template-areas:
-    "top       top"
-    "situation situation"
-    "centre    right";
+  grid-template-rows: var(--h-top) minmax(0, 1fr);
   overflow: hidden;
   background: var(--ink-0);
 }
@@ -48,163 +43,50 @@ html, body { height: 100%; overflow: hidden; }
 /* ---- top bar ---------------------------------------------------------------- */
 
 .topbar {
-  grid-area: top;
-  display: flex; align-items: center;
+  display: flex; align-items: center; gap: var(--sp-5);
   min-width: 0;
-  padding: 0 var(--sp-4) 0 var(--sp-3);
+  padding: 0 var(--sp-3) 0 var(--sp-4);
   overflow: hidden;
   background: var(--ink-1);
   border-bottom: 1px solid var(--line);
+  white-space: nowrap;
 }
-.topbar__brand, .topbar__cluster {
-  display: flex; align-items: center; gap: var(--sp-4);
-  min-width: 0;
-  height: 100%;
-  padding: 0 14px;
-}
-.topbar__cluster { border-left: 1px solid var(--line); }
-.topbar__brand { flex: none; gap: var(--sp-3); padding-left: 0; }
-.topbar__time { flex: none; }
-/* «ЛЮДИ» over one row of the five counters of the model. */
-.topbar__people { flex: none; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
-.topbar__people-cap {
-  font-size: 10.5px; font-weight: 600; line-height: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--dust-2);
-}
-.topbar__people-row { display: flex; align-items: center; gap: var(--sp-3); }
-.topbar__link { flex: none; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
-.topbar__stand { flex: 1 1 auto; min-width: 104px; justify-content: flex-end; gap: var(--sp-3); border-left: 0; padding-right: 0; }
-.topbar__rule { align-self: stretch; margin: 12px 0; border-left: 1px solid var(--line); }
-.topbar__line { display: flex; align-items: center; gap: var(--sp-2); max-width: 100%; white-space: nowrap; min-width: 0; overflow: hidden; }
-.topbar__line > .status { min-width: 0; }
-.topbar__line--sub { color: var(--dust-2); font-size: var(--fs-caption); }
-.topbar__dot { color: var(--dust-3); }
+.top__brand { flex: none; display: flex; align-items: center; gap: var(--sp-3); }
+.top__name { font-size: var(--fs-emphasis); font-weight: 600; color: var(--dust-1); }
+.top__cluster { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.top__cluster--time { flex: none; }
+.top__cluster--link { flex: 0 1 auto; color: var(--dust-2); font-size: var(--fs-secondary); }
+.top__cluster--tools { flex: 1 1 auto; justify-content: flex-end; gap: var(--sp-2); }
 
 .mark { flex: none; width: 28px; height: 28px; fill: none; stroke-linejoin: round; }
 .mark__slab { stroke: var(--copper); stroke-width: 1.4; fill: var(--ink-1); }
 .mark__shaft { stroke: var(--dust-2); stroke-width: 1.2; stroke-dasharray: 2 2; }
-.brand { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.brand__name { font-size: var(--fs-body); font-weight: 600; line-height: 16px; color: var(--dust-1); white-space: nowrap; }
 
 /* The synthetic-data notice: quiet, always there, a hairline frame. */
 .notice {
   display: flex; flex-direction: column;
-  width: max-content;
   padding: 2px 6px;
   border: 1px solid var(--stone-1);
-  border-radius: 2px;
+  border-radius: 3px;
   color: var(--dust-2);
   font-size: 12px;
   font-weight: 500;
-  line-height: 12px;
-  font-variant-caps: all-small-caps;
-  letter-spacing: .05em;
-  white-space: nowrap;
-}
-
-/* A figure: caption over a large tabular value; the smaller parts follow the value on its line. */
-.figure {
-  display: flex; flex-wrap: wrap; align-items: baseline;
-  column-gap: 0;
-  min-width: 0;
-}
-.figure__cap {
-  flex: 0 0 100%;
-  color: var(--dust-2);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 14px;
-  letter-spacing: .04em;
-  white-space: nowrap;
-}
-.figure__value {
-  font-family: var(--font-mono);
-  font-size: 24px;
-  font-weight: 500;
-  line-height: 30px;
-  font-variant-numeric: tabular-nums;
-  color: var(--dust-1);
-  white-space: nowrap;
-}
-.figure__sep { margin: 0 5px; color: var(--dust-3); font-size: var(--fs-caption); }
-.figure__sep:empty { display: none; }
-.figure__sep:first-of-type { margin-left: 8px; visibility: hidden; width: 0; margin-right: 0; }
-.figure__sub, .figure__state {
-  color: var(--dust-2);
-  font-size: var(--fs-caption);
-  white-space: nowrap;
-}
-.figure--run {
-  display: grid;
-  grid-template-rows: 14px 15px 15px;
-  align-items: center;
-}
-.figure--run .figure__cap { grid-row: 1; }
-.figure--run .figure__value { grid-row: 2; font-size: var(--fs-secondary); line-height: 15px; }
-.figure--run .figure__sub { grid-row: 3; font-family: var(--font-mono); font-size: 11px; line-height: 15px; }
-.figure--run .figure__sep { display: none; }
-.figure--time {
-  display: grid;
-  grid-template-columns: auto auto;
-  grid-template-rows: 14px 15px 15px;
-  column-gap: 10px;
-  align-items: center;
-}
-.figure--time .figure__cap { grid-column: 1 / -1; grid-row: 1; }
-.figure--time .figure__value { grid-column: 1; grid-row: 2 / 4; align-self: center; }
-.figure--time .figure__sub { grid-column: 2; grid-row: 2; align-self: end; line-height: 14px; }
-.figure--time .figure__state { grid-column: 2; grid-row: 3; align-self: start; line-height: 14px; }
-.figure--time .figure__sep { display: none; }
-.figure--time[data-run-state="paused"] .figure__state,
-.figure--time[data-run-state="resetting"] .figure__state { color: var(--dust-1); }
-
-/* A counter reads «в опасных зонах 3»: its caption, then the value, then the sign of its axis when above zero. */
-.figure--people {
-  display: grid;
-  grid-template-columns: auto auto auto;
-  align-items: center;
-  column-gap: 5px;
-}
-.figure--people .figure__slot { grid-column: 2; grid-row: 1; }
-.figure--people .figure__value { min-width: 1.2ch; text-align: right; }
-.figure--people .figure__cap {
-  grid-column: 1; grid-row: 1;
-  max-width: 90px;
-  white-space: normal;
-  text-align: right;
   line-height: 13px;
-  letter-spacing: .02em;
+  font-variant-caps: all-small-caps;
+  letter-spacing: .04em;
 }
-/* The value and what a change leaves for a moment: the old number fading out over it, and an underline. */
-.figure__slot { position: relative; display: inline-flex; align-items: baseline; }
-.figure__ghost {
-  position: absolute; inset: 0;
-  font-family: var(--font-mono); font-size: inherit; font-weight: 500;
-  pointer-events: none; opacity: 0;
-}
-.figure--people .figure__ghost { font-size: 24px; line-height: 30px; text-align: right; }
-.figure__mark { position: absolute; left: 0; right: 0; bottom: 1px; height: 2px; background: var(--dust-1); opacity: 0; pointer-events: none; }
-.figure__sign {
-  grid-column: 3; grid-row: 1;
-  align-self: center;
-  display: none;
-  width: 16px; height: 16px;
-  fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
-  visibility: hidden;
-}
-/* A counter above zero takes the shape and colour of its axis: octagon, crossed square, dashed «?». */
-.figure--people.is-alert .figure__sign { display: block; }
-.figure--people.is-alert--danger .figure__value, .figure--people.is-alert--danger .figure__sign { color: var(--danger-ink); }
-.figure--people.is-alert--noroute .figure__value, .figure--people.is-alert--noroute .figure__sign { color: var(--noroute); }
-.figure--people.is-alert--noroute .figure__value { font-weight: 600; }
-/* Unknown above zero is never quieter than a zero: full weight, the dashed frame of the unknown and its «?». */
-.figure--people.is-alert--unknown .figure__value { color: var(--dust-1); font-weight: 600; }
-.figure--people.is-alert--unknown .figure__slot { padding: 0 4px; border: 1px dashed var(--unknown); border-radius: 2px; background: var(--hatch-unknown); }
-.figure--people.is-alert--unknown .figure__sign { color: var(--unknown); }
-.figure--people.is-alert .figure__cap { color: var(--dust-1); }
+
+.top__time { display: flex; align-items: baseline; gap: var(--sp-2); }
+.top__cap { color: var(--dust-2); font-size: var(--fs-secondary); }
+.top__clock { font-family: var(--font-mono); font-size: var(--fs-lead); font-weight: 500; color: var(--dust-1); }
+.top__dot { color: var(--dust-3); }
+.top__state { color: var(--dust-2); font-size: var(--fs-secondary); }
+.top__time[data-run-state="paused"] .top__state, .top__time[data-run-state="resetting"] .top__state { color: var(--dust-1); font-weight: 500; }
+.top__run { color: var(--dust-3); font-size: var(--fs-caption); }
 
 .status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .status__glyph { display: inline-flex; }
-.status--link { font-size: var(--fs-secondary); font-weight: 500; line-height: 16px; }
+.status--link { color: var(--dust-1); font-weight: 500; }
 .status--link[data-link="ok"] .status__glyph { color: var(--verdigris); }
 .status--link[data-link="degraded"] { color: var(--attention); }
 .status--link[data-link="stale"], .status--link[data-link="unavailable"] {
@@ -212,34 +94,28 @@ html, body { height: 100%; overflow: hidden; }
   border: 3px double var(--danger);
   color: var(--danger-ink);
 }
+.status__who { color: var(--dust-2); font-weight: 400; }
 .status--age { font-variant-numeric: tabular-nums; }
+/* The publications are named only when something is wrong with them: going on is the normal case. */
+.status--publications[data-publications="alive"] { display: none; }
 .status--publications[data-publications="stopped"] { color: var(--danger-ink); font-weight: 600; text-decoration: underline; }
 .status--publications[data-publications="unknown"] { color: var(--unknown); font-style: italic; }
-/* Commands blocked: a sign in the top bar (its words for a screen reader and in its title); the reason is in the
-   banner of the strip and above every group of buttons. */
+/* Commands blocked: a sign (its words for a screen reader and in its title); the reason is in the banner and
+   above every group of buttons. */
 .status--commands > span:not(.status__glyph) {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
-.status--commands {
-  padding: 1px 4px;
-  line-height: 16px;
-  border: 1px dotted var(--dust-2);
-  border-radius: 2px;
-  color: var(--dust-1);
-  font-size: var(--fs-caption);
-}
-.status--conditions { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 300px; overflow: hidden; }
+.status--commands { padding: 2px 4px; border: 1px dotted var(--dust-2); border-radius: 3px; color: var(--dust-1); }
+.status--conditions { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 360px; overflow: hidden; }
 .status--conditions .chips { flex-wrap: nowrap; min-width: 0; }
 
-.stand-toggle { flex: none; gap: 6px; padding: 0 var(--sp-3) 0 var(--sp-2); }
-.stand-toggle__chevron { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; transition: transform 160ms var(--ease); }
+.stand-toggle { flex: none; gap: 6px; min-height: var(--control-h-small); }
 .stand-toggle[aria-expanded="true"] { border-style: solid; background: var(--hatch-chalk), transparent; color: var(--dust-1); }
-.stand-toggle[aria-expanded="true"] .stand-toggle__chevron { transform: rotate(180deg); }
 .stand-toggle__count {
   min-width: 18px;
   padding: 0 4px;
   border: 1px dashed currentColor;
-  border-radius: 2px;
+  border-radius: 3px;
   font-size: 11px;
   line-height: 16px;
   text-align: center;
@@ -247,145 +123,285 @@ html, body { height: 100%; overflow: hidden; }
 
 .old-tag {
   flex: none;
-  max-width: 11ch;
   padding: 1px 6px;
   border: 1px dashed var(--unknown);
   background: var(--hatch-unknown);
   color: var(--unknown);
   font-size: 11px;
   font-style: italic;
-  line-height: 13px;
+  line-height: 14px;
 }
 
-/* ---- situation strip ---------------------------------------------------------- */
+/* ---- the menu ----------------------------------------------------------------------- */
 
-.situation {
-  grid-area: situation;
-  display: flex; flex-wrap: wrap; align-items: stretch;
-  min-width: 0;
-  background: var(--ink-1);
-  border-bottom: 1px solid var(--line);
+.top__menu { position: relative; flex: none; }
+.menu-button { gap: 6px; min-height: var(--control-h-small); color: var(--dust-1); }
+.menu-button__icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.menu-button[aria-expanded="true"] { background: var(--ink-3); }
+body:not([data-menu="none"]) .menu-button { background: var(--ink-3); }
+.menu-list {
+  position: fixed; top: calc(var(--h-top) - 4px); right: var(--sp-3); z-index: 60;
+  display: grid; gap: 2px;
+  width: 280px;
+  padding: var(--sp-2);
+  border: 1px solid var(--stone-1);
+  border-radius: var(--radius-panel);
+  background: var(--ink-2);
+  white-space: normal;
 }
-/* Shown only with an open incident or a banner. */
-.situation:not(:has(.banner)):not(:has(.incident__strip[data-open])) { display: none; }
-/* The banners are items of the strip: a danger or attention banner takes a line of its own above the
-   incident; the information banner (the pause for a decision) sits after the steps. */
-.banners { display: contents; }
-.banner { flex: 1 1 100%; order: 0; }
-.banner--info {
-  flex: 0 1 auto; order: 2; align-self: center;
-  max-width: 340px;
-  margin: 6px var(--sp-3) 6px 0; padding: 3px var(--sp-3);
-  border-radius: 0 3px 3px 0;
-  font-size: var(--fs-caption);
-  line-height: 1.3;
+.menu-list__item {
+  display: grid; gap: 1px;
+  min-height: 48px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0; border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
-.banner--info .banner__text { display: block; }
-.incident { flex: 1 1 0; order: 1; min-width: 0; }
-.incident:not(:has(.incident__strip[data-open])) { display: none; }
+.menu-list__item:hover { background: var(--ink-3); }
+.menu-list__item[aria-current="page"] { background: var(--ink-3); }
+.menu-list__name { color: var(--dust-1); font-size: var(--fs-body); font-weight: 600; }
+.menu-list__hint { color: var(--dust-2); font-size: var(--fs-caption); }
 
-.incident__strip {
-  display: flex; align-items: stretch;
-  min-width: 0;
-  height: 100%;
-  padding: 0 var(--sp-2);
-}
-/* Step 1 has about twice the room of the others; every step may take two lines. */
-.step {
+/* ---- the frame: rail · stage · panel ------------------------------------------------ */
+
+.frame {
+  --rail: var(--w-rail);
+  --panel: 0px;
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
-  align-content: center;
-  column-gap: var(--sp-2);
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 6px var(--sp-3);
+  grid-template-columns: var(--rail) minmax(0, 1fr) var(--panel);
+  min-width: 0; min-height: 0;
 }
-.step--1 { flex: 1.8 1 0; }
-.step__head { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
-.step__num {
-  flex: none;
-  display: inline-grid; place-items: center;
-  width: 18px; height: 18px;
-  border: 1px solid var(--stone-2);
-  border-radius: 50%;
-  color: var(--dust-1);
-  font-size: 11px;
-  line-height: 1;
-}
-.step__label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dust-2); }
-.step__body {
-  grid-column: 1 / -1; grid-row: 2;
-  min-width: 0;
-  font-size: var(--fs-secondary);
-  line-height: 17px;
-  color: var(--dust-1);
-}
-/* Two lines at most: the first statement may take both, the second follows when there is room; the whole
-   sentence is the title of the step. */
-.step__lines { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-width: 0; overflow: hidden; }
-.step__line { display: block; min-width: 0; }
-.step__line--more { color: var(--dust-2); }
-.step__body--title { display: flex; align-items: flex-start; gap: 6px; }
-.step__body--title .step__lines { flex: 1 1 auto; }
-.step--1 .step__line:first-of-type { font-weight: 600; }
-.incident__glyph { flex: none; display: inline-flex; padding-top: 1px; color: var(--dust-1); }
-.incident__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.step__meta { flex: none; color: var(--dust-2); font-size: var(--fs-caption); white-space: nowrap; }
-/* «показать» on the line of the step's name: the words of the step get the whole width. */
-.step__show { grid-column: 2; grid-row: 1; align-self: center; font-size: var(--fs-caption); white-space: nowrap; }
-.step__arrow { flex: none; align-self: center; width: 14px; height: 1px; background: var(--stone-1); position: relative; }
-.step__arrow::after {
-  content: ""; position: absolute; right: 0; top: -3px;
-  width: 6px; height: 6px;
-  border-top: 1px solid var(--stone-2); border-right: 1px solid var(--stone-2);
-  transform: rotate(45deg);
-}
-/* The open incident is a call for a decision, not a hazard: a light steel base line under step 1. */
-.incident__strip[data-incident-state="active"] .step--1 { border-bottom: 2px solid var(--action); }
-.incident__strip[data-incident-state="active"] .step--4 .step__body { color: var(--dust-1); }
+body[data-rail="collapsed"] .frame { --rail: var(--w-strip); }
+body[data-panel="shown"] .frame { --panel: var(--w-panel); }
 
-/* ---- centre column ------------------------------------------------------------ */
+/* ---- rail «Люди» ---------------------------------------------------------------------- */
 
-.centre {
-  grid-area: centre;
+.rail {
+  grid-column: 1; grid-row: 1;
   position: relative;
   display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
+  background: var(--ink-1);
+}
+.rail__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.rail__inner { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.rail__head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: var(--sp-3) var(--sp-2) 0 var(--sp-4); }
+.rail__title { font-size: var(--fs-caption); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--dust-2); }
+.rail__toggle { width: 32px; padding: 0; }
+.rail__chevron { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+body[data-rail="collapsed"] .rail__chevron { transform: rotate(180deg); }
+
+/* Figures: «всего» and «вышли» large, the three counters of trouble under them. */
+.rail-figs { flex: none; padding: var(--sp-2) var(--sp-4) var(--sp-4); }
+.rail-figs__main { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.rail-figs__alerts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); margin-top: var(--sp-3); }
+.rail-fig { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rail-fig__num { display: flex; align-items: center; gap: 6px; }
+.rail-fig__value {
+  font-family: var(--font-mono); font-size: var(--fs-figure-l); font-weight: 500; line-height: 44px;
+  color: var(--dust-1); white-space: nowrap;
+}
+.rail-figs__alerts .rail-fig__value { font-size: var(--fs-figure); line-height: 36px; color: var(--dust-2); }
+.rail-fig__cap { color: var(--dust-2); font-size: var(--fs-caption); line-height: 15px; white-space: normal; }
+.rail-figs__main .rail-fig__cap { font-size: var(--fs-secondary); }
+.rail-fig__slot { position: relative; display: inline-flex; align-items: baseline; }
+.rail-fig__ghost {
+  position: absolute; inset: 0;
+  font-family: var(--font-mono); font-size: inherit; font-weight: 500; line-height: inherit;
+  pointer-events: none; opacity: 0;
+}
+.rail-fig__mark { position: absolute; left: 0; right: 0; bottom: 2px; height: 2px; background: var(--dust-1); opacity: 0; pointer-events: none; }
+.rail-fig__sign {
+  display: none; flex: none;
+  width: 18px; height: 18px;
+  fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+/* A counter above zero takes the shape and colour of its axis: octagon, crossed square, dashed «?». */
+.rail-fig.is-alert .rail-fig__sign { display: block; }
+.rail-fig.is-alert .rail-fig__cap { color: var(--dust-1); }
+.rail-fig.is-alert--danger .rail-fig__value, .rail-fig.is-alert--danger .rail-fig__sign { color: var(--danger-ink); }
+.rail-fig.is-alert--danger .rail-fig__value { font-weight: 600; }
+.rail-fig.is-alert--noroute .rail-fig__value, .rail-fig.is-alert--noroute .rail-fig__sign { color: var(--noroute); }
+.rail-fig.is-alert--noroute .rail-fig__value { font-weight: 600; }
+/* Unknown above zero is never quieter than a zero: full weight, the dashed frame of the unknown and its «?». */
+.rail-fig.is-alert--unknown .rail-fig__value { color: var(--dust-1); font-weight: 600; }
+.rail-fig.is-alert--unknown .rail-fig__slot { padding: 0 6px; border: 1px dashed var(--unknown); border-radius: 3px; background: var(--hatch-unknown); }
+.rail-fig.is-alert--unknown .rail-fig__sign { color: var(--unknown); }
+
+/* Where the people are: one row per zone, then «Вне участков», «Вышли». */
+.rail__where { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 0 var(--sp-3); border-top: 1px solid var(--line); }
+.rail__sub {
+  position: sticky; top: 0; z-index: 3;
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+  background: var(--ink-1);
+  font-size: var(--fs-caption); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--dust-2);
+}
+.zrows { display: flex; flex-direction: column; gap: 2px; padding: 0 var(--sp-2); }
+.zrow {
+  position: relative;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--sp-2) var(--sp-1) var(--sp-2) var(--sp-3);
+  border-left: 4px solid transparent;
+  border-radius: var(--radius);
+}
+/* The hazard of a zone also marks the edge of its row: double red, dashed amber, dashed fog. */
+.zrow[data-hazard="danger"] { border-left: 4px double var(--danger); background: var(--danger-tint); }
+.zrow[data-hazard="attention"] { border-left: 4px dashed var(--attention); }
+.zrow[data-hazard="unknown"] { border-left: 4px dashed var(--unknown); }
+.zrow.is-selected { outline: 3px double var(--selection); outline-offset: -3px; }
+/* The whole row selects the zone: its button lies under the words; dots and the chevron lie above it. */
+.zrow__main {
+  position: absolute; inset: 0; z-index: 0;
+  width: 100%;
+  padding: 0;
+  border: 0; border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+}
+.zrow__main:hover { background: rgba(232, 227, 218, .05); }
+.zrow__main:focus-visible { outline-offset: -2px; }
+.zrow > :not(.zrow__main) { position: relative; z-index: 1; pointer-events: none; }
+.zrow .dot, .zrow .zrow__more, .zrow > .zrow__actions { pointer-events: auto; }
+.zrow__top { display: flex; align-items: center; gap: var(--sp-2); min-height: 32px; }
+.zrow__gap { flex: 1 1 auto; }
+.zrow__name { flex: none; font-size: var(--fs-body); font-weight: 600; color: var(--dust-1); white-space: nowrap; }
+.zrow__badge { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zrow__sub { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 32px; }
+.zrow__state { color: var(--dust-2); font-size: var(--fs-secondary); white-space: nowrap; }
+.zrow__note {
+  margin: 2px 0 2px; padding-left: var(--sp-2);
+  border-left: 2px dashed var(--stone-2);
+  color: var(--dust-1); font-size: var(--fs-caption);
+}
+.zrow__note[data-last-known="danger"] { border-left-color: var(--danger); }
+.zrow__note[data-last-known="attention"] { border-left-color: var(--attention); }
+.zrow__more { flex: none; width: 32px; min-height: 32px; padding: 0; }
+.zrow__chevron { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; transition: transform 160ms var(--ease); }
+.zrow__more[aria-expanded="true"] { background: var(--ink-3); color: var(--dust-1); }
+.zrow__more[aria-expanded="true"] .zrow__chevron { transform: rotate(180deg); }
+.zrow__dots { display: flex; flex-wrap: wrap; justify-content: flex-end; min-width: 0; margin-left: auto; }
+.zrow__sub { flex-wrap: wrap; }
+.zrow__dots[data-empty]::before { content: attr(data-empty); align-self: center; color: var(--dust-3); font-size: var(--fs-caption); }
+.zrow__actions { margin: var(--sp-2) var(--sp-2) 0 0; }
+.zrow--outside .zrow__top, .zrow--out .zrow__top { justify-content: space-between; }
+.zrow--outside .zrow__state, .zrow--out .zrow__state { color: var(--dust-3); font-size: var(--fs-caption); }
+.zrow--outside .zrow__state:empty, .zrow--out .zrow__state:empty { display: none; }
+.zrow__exits { display: grid; gap: 0; }
+.zrow__exit { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.zrow__exit-name { color: var(--dust-2); font-size: var(--fs-caption); }
+
+/* A worker as a dot: the marker of the stage (scheme.css draws .worker), a 32 px target. */
+.dot {
+  display: inline-grid; place-items: center;
+  width: 32px; height: 32px;
+  padding: 0;
+  border: 0; border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.dot:hover { background: var(--ink-3); }
+.dot.is-selected { outline: 3px double var(--selection); outline-offset: -2px; }
+.dot__pic { overflow: visible; }
+.dot__out circle { fill: none; stroke: var(--verdigris); stroke-width: 1.6; }
+.dot__out path { fill: none; stroke: var(--verdigris); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* The rail rings a worker whose place has no known hazard (location_hazard = unknown): the dashed fog ring. */
+.rail .worker[data-location-hazard="unknown"] .worker__danger { display: inline; stroke: var(--unknown); stroke-width: 1.6; stroke-dasharray: 2.4 2; }
+
+/* The legend chip at the bottom of the rail; the full legend unfolds upward over the rail. */
+.rail { z-index: 14; }
+.rail > .legend { position: relative; z-index: 5; flex: none; border-top: 1px solid var(--line); }
+.rail .legend__chip {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  width: 100%; min-height: 40px; padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4);
+  white-space: nowrap;
+}
+.legend__rows { display: grid; gap: 2px; min-width: 0; }
+.legend__row { display: flex; align-items: center; gap: 6px; }
+.rail .legend__chip .legend__title { width: 84px; margin: 0; color: var(--dust-2); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.legend__row .legend__item { display: inline-flex; align-items: center; }
+.rail .legend__chip .legend__more {
+  order: -1;
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 0;
+  color: var(--dust-1); font-size: var(--fs-secondary); font-weight: 500;
+}
+.rail .legend__panel { left: var(--sp-2); bottom: calc(100% + 4px); width: 320px; border-radius: var(--radius-panel); }
+body[data-rail="collapsed"] .rail .legend__chip { align-items: center; padding: var(--sp-2) 0; }
+body[data-rail="collapsed"] .legend__rows, body[data-rail="collapsed"] .legend__more-words { display: none; }
+
+/* The rail folded to a strip of figures. */
+body[data-rail="collapsed"] .rail__head { justify-content: center; padding: var(--sp-2) 0 0; }
+body[data-rail="collapsed"] .rail__title,
+body[data-rail="collapsed"] .rail__where,
+body[data-rail="collapsed"] .rail-figs__alerts .rail-fig__cap { display: none; }
+/* In the strip the three counters of trouble are told by their signs, always drawn; «всего» and «вышли» keep a
+   small caption. The full words are in the title of every figure. */
+body[data-rail="collapsed"] .rail-figs__main .rail-fig__cap { font-size: 10px; line-height: 12px; }
+body[data-rail="collapsed"] .rail-fig__sign { display: block; color: var(--dust-3); }
+body[data-rail="collapsed"] .rail-figs { padding: var(--sp-2) var(--sp-1); }
+body[data-rail="collapsed"] .rail-figs__main, body[data-rail="collapsed"] .rail-figs__alerts {
+  grid-template-columns: 1fr; gap: var(--sp-3); margin-top: var(--sp-3);
+}
+body[data-rail="collapsed"] .rail-fig,
+body[data-rail="collapsed"] .rail-figs__main .rail-fig { flex-direction: column; align-items: center; gap: 0; }
+body[data-rail="collapsed"] .rail-fig__num { flex-direction: column; gap: 2px; }
+body[data-rail="collapsed"] .rail-fig__value,
+body[data-rail="collapsed"] .rail-figs__alerts .rail-fig__value { font-size: var(--fs-section); line-height: 24px; }
+body[data-rail="collapsed"] .rail-fig.is-alert--unknown .rail-fig__slot { padding: 0 2px; }
+
+/* ---- centre: the stage and what lies over it ------------------------------------------- */
+
+.centre {
+  --cover-left: 0px;
+  --cover-right: 0px;
+  grid-column: 2; grid-row: 1;
+  position: relative;
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  overflow: hidden;
   background: var(--ink-0);
   /* The frame is always there, so that marking old data does not shift the content. */
   outline: 1px solid transparent; outline-offset: -1px;
 }
-.centre__bar {
-  flex: none;
-  display: flex; align-items: center; gap: var(--sp-3);
-  height: var(--h-bar);
-  padding: 0 var(--sp-3);
-  border-bottom: 1px solid var(--line);
-  background: var(--ink-1);
-}
-.centre__controls { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; min-width: 0; }
-/* In the 3D view the bar holds only the tabs: it lies over the top-left corner of the stage, as a chip of the
-   stage HUD, and the stage takes its height. The scheme keeps the bar in the flow (its own controls are there),
-   and so does the view of old data (the line that names the moment of the data stands under the bar). */
-.centre { --bar-flow: var(--h-bar); }
-body[data-view="scheme"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .centre { --bar-flow: 0px; }
-body[data-view="scheme"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .centre__bar {
-  position: absolute; top: 8px; left: var(--sp-3); z-index: 8;
-  height: auto; padding: 0;
-  border: 0; background: none;
-}
-body[data-view="scheme"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .tabs { background: var(--ink-1); }
-/* The open stand drawer covers the left edge of the stage: the tabs move out from under it, as the legend chip does. */
-body[data-view="scheme"][data-stand="open"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .centre__bar {
-  left: calc(var(--w-stand) + var(--sp-3));
-}
+body[data-stand="open"] .centre { --cover-left: var(--w-stand); }
 
-/* Old data: a dashed frame around the centre and a line that names the moment of the data. */
-.old-data {
-  flex: none;
+.view { position: absolute; inset: 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.view--scheme { position: relative; flex: 1 1 auto; inset: auto; background: var(--ink-0); }
+.view--scheme > .stage { position: absolute; inset: 0; overflow: hidden; background: var(--ink-0); }
+.stage__3d, .scheme { position: absolute; inset: 0; min-width: 0; min-height: 0; }
+.stage__3d:empty { display: none; }
+/* The HUD keeps clear of what lies over the stage: the open stand drawer and the panel of the compact layout. */
+.stage__hud { position: absolute; top: 0; bottom: 0; left: var(--cover-left); right: var(--cover-right); pointer-events: none; z-index: 4; }
+.stage__hud > * { pointer-events: auto; }
+/* Projection and level of the scheme mode (view/scheme.js): top left of the stage, beside the notices. */
+.scheme-controls {
+  position: absolute; top: var(--sp-3); left: calc(var(--cover-left) + var(--sp-3)); z-index: 6;
   display: flex; align-items: center; gap: var(--sp-2);
-  padding: 4px var(--sp-4);
+}
+.scheme-controls:empty { display: none; }
+.view--scheme:not(:has(.stage[data-stage-mode="scheme"])) .scheme-controls { display: none; }
+
+/* Notices: the banners of the link and snapshot states and the line of old data, a band over the stage that
+   pushes it down (they are rare and must not be missed; the stage refits to the room left). */
+.notices {
+  position: relative; z-index: 13; flex: none;
+  display: flex; flex-direction: column;
+  padding-left: var(--cover-left); padding-right: var(--cover-right);
+}
+.banners { display: flex; flex-direction: column; }
+.banners:empty { display: none; }
+.banner { padding: var(--sp-2) var(--sp-4); font-size: var(--fs-body); }
+.banner__text { font-size: var(--fs-secondary); }
+/* The pause for a decision is said by the top bar and the panel: its banner stays for assistive technology only. */
+.banner[data-code="paused_decision"] {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); border: 0;
+}
+.old-data {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 6px var(--sp-4);
   border-bottom: 1px dashed var(--unknown);
   background: var(--hatch-unknown), var(--unknown-tint);
   color: var(--dust-1);
@@ -394,52 +410,29 @@ body[data-view="scheme"][data-stand="open"]:not([data-old-data]):has(.stage[data
 }
 .old-data__glyph { display: inline-flex; color: var(--unknown); }
 body[data-old-data] .centre { outline: 1px dashed var(--unknown); }
-body[data-old-data] .topbar__time, body[data-old-data] .topbar__people { background: var(--hatch-unknown); }
+body[data-old-data] .top__time { padding: 0 var(--sp-2); background: var(--hatch-unknown); }
 
-.centre__body { flex: 1 1 auto; position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-.view {
-  position: absolute; inset: 0;
+/* The object card: a floating sheet over the bottom right of the stage, only while something is selected. */
+.sheet {
+  position: absolute; right: calc(var(--cover-right) + var(--gap-stage)); bottom: var(--gap-stage); z-index: 12;
   display: flex; flex-direction: column;
-  min-width: 0; min-height: 0;
-}
-.view__bar {
-  flex: none;
-  display: flex; align-items: center; gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-4);
-  border-bottom: 1px solid var(--line);
-}
-.view__bar .panel__title { margin-right: var(--sp-4); }
-.view__scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
-
-/* The stage: the desk under the model, full bleed; the 3D picture and the scheme fill it, the HUD overlays it. */
-.view--scheme { background: var(--ink-0); }
-.view--scheme > .stage { position: absolute; inset: 0; overflow: hidden; background: var(--ink-0); }
-.stage__3d, .scheme { position: absolute; inset: 0; min-width: 0; min-height: 0; }
-/* The bar of a folded dock lies over the bottom of the stage (compact layout): the picture is fitted above it. */
-.view--scheme > .stage > .stage__3d, .view--scheme > .stage > .scheme { bottom: var(--dock-bar-cover, 0px); }
-.stage__3d:empty { display: none; }
-.stage__hud { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
-.stage__hud > * { pointer-events: auto; }
-
-/* The legend chip: bottom-left corner of the stage, above the folded dock bar in the compact layout. The
-   full legend unfolds upward from the chip as a narrow column along the left edge (scheme.css), so that it
-   leaves the middle of the stage, where an incident is framed, free; the mine does not move for it. */
-.legend {
-  position: absolute; left: var(--sp-3); bottom: calc(var(--dock-cover, 0px) + var(--sp-3)); z-index: 5;
-  max-width: calc(100% - 2 * var(--sp-3) - 180px);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  width: var(--w-sheet);
+  max-height: min(64%, calc(100% - 96px));
+  border: 1px solid var(--stone-1);
+  border-radius: var(--radius-panel);
   background: var(--ink-1);
+  overflow: hidden;
 }
-.legend:empty { display: none; }
-/* The open stand drawer covers the left edge: the legend chip moves out from under it. */
-body[data-stand="open"] .legend { left: calc(var(--w-stand) + var(--sp-3)); max-width: calc(100% - var(--w-stand) - 2 * var(--sp-3) - 180px); }
 
-.table--list .cell-note { display: block; width: fit-content; margin-top: 2px; }
-.table--list td:nth-child(1) { color: var(--dust-2); }
-.table--list td:nth-child(2) { font-weight: 600; }
-.table--list td:nth-child(3) { min-width: 96px; }
-.table--list td:nth-child(8), .table--list td:nth-child(9) { white-space: nowrap; }
+/* Sent commands: a small stack of toasts at the bottom left of the stage, newest first. */
+.toasts {
+  position: absolute; left: calc(var(--cover-left) + var(--gap-stage)); bottom: var(--gap-stage); z-index: 11;
+  width: 360px;
+  max-width: calc(100% - var(--cover-left) - var(--cover-right) - var(--w-sheet) - 3 * var(--gap-stage));
+  max-height: 46%;
+  overflow-y: auto;
+}
+.toasts:empty { display: none; }
 
 /* ---- the stand drawer: chalk mark-up over the left edge of the stage ------------------ */
 
@@ -466,166 +459,111 @@ body[data-old-data] .stand, body:not([data-link="ok"]) .stand { transition: none
 .stand__head {
   flex: none;
   display: flex; align-items: flex-start; gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+  padding: var(--sp-4) var(--sp-3) var(--sp-3) var(--sp-4);
   border-bottom: 1px dashed var(--stone-1);
   background: var(--hatch-chalk);
 }
 .stand__titles { flex: 1 1 auto; min-width: 0; }
 .stand__title { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-emphasis); color: var(--chalk); }
-.stand__subtitle { margin-top: 2px; font-size: var(--fs-caption); color: var(--dust-2); }
+.stand__subtitle { margin-top: 2px; font-size: var(--fs-secondary); color: var(--dust-2); white-space: normal; }
 .stand__close { flex: none; }
 .stand__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 var(--sp-4) var(--sp-4); }
-.stand__part { padding-top: var(--sp-3); }
+.stand__part { padding-top: var(--sp-4); }
 .stand__part--reset { margin-top: var(--sp-4); border-top: 1px dashed var(--stone-1); }
 
-/* ---- the decision dock -------------------------------------------------------------- */
+/* ---- the right panel (filled by view/decide.js) ------------------------------------------- */
 
-.dock {
-  flex: none;
-  display: flex; flex-direction: column;
-  min-height: 0;
-  /* Under the stage the dock leaves the stage at least 58 % of the viewport height; what does not fit scrolls. */
-  max-height: clamp(220px, calc(100% - var(--bar-flow) - 58vh), 46%);
-  background: var(--ink-1);
-  border-top: 1px solid var(--stone-1);
-}
-.dock__bar {
-  flex: none;
-  display: flex; align-items: center; gap: var(--sp-3);
-  min-height: var(--h-dock-bar);
-  padding: 0 var(--sp-3) 0 var(--sp-4);
-}
-.dock__title { flex: none; font-size: var(--fs-caption); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dust-2); }
-.dock__summary { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-secondary); }
-.dock__toggle { flex: none; margin-left: auto; }
-.dock__body { flex: 1 1 auto; min-height: 0; overflow: auto; border-top: 1px solid var(--line); }
-body[data-dock="collapsed"] .dock__body { display: none; }
-/* While it folds (200 ms, view/dock.js) the body is still drawn. */
-body[data-dock="collapsed"] .dock[data-folding] .dock__body { display: block; }
-
-/* ---- right column --------------------------------------------------------------------- */
-
-.right {
-  grid-area: right;
+.panel {
+  grid-column: 3; grid-row: 1;
+  position: relative;
   display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
+  overflow: hidden;
   background: var(--ink-1);
   border-left: 1px solid var(--line);
 }
-.right__card { flex: 1 1 auto; min-height: 140px; overflow-y: auto; }
-.right > .group { flex: none; }
-.journal { flex: none; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--line); }
-.journal__bar {
+body:not([data-panel="shown"]) .panel { display: none; }
+
+/* ---- menu overlays: Список, Прогоны, Журнал over the whole frame ---------------------------- */
+
+.menu-view {
+  position: absolute; inset: 0; z-index: 40;
+  display: flex; flex-direction: column;
+  min-height: 0;
+  background: var(--ink-0);
+}
+.menu-view__bar {
   flex: none;
-  display: flex; align-items: center; gap: var(--sp-2);
-  min-height: 36px;
-  padding: 0 var(--sp-2) 0 var(--sp-4);
-  overflow: hidden;
-  white-space: nowrap;
+  display: flex; align-items: center; gap: var(--sp-4);
+  min-height: 56px;
+  padding: 0 var(--sp-5);
+  background: var(--ink-1);
+  border-bottom: 1px solid var(--line);
 }
-.journal__order { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dust-2); font-size: 11px; }
-.journal__title { flex: none; }
-.journal__toggle { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block; line-height: 24px; }
-.journal__body { flex: 1 0 auto; min-width: 0; min-height: 0; overflow: hidden; }
-body[data-journal="open"] .journal { flex: 0 0 52%; }
-body[data-journal="open"] .journal__body { overflow-y: auto; }
-
-/* ---- wide layout -------------------------------------------------------------------- */
-
-@media (min-width: 1600px) and (min-height: 900px) {
-  .table--list { table-layout: fixed; }
-  .table--list td { overflow-wrap: anywhere; }
-  .table--list th { white-space: normal; }
-  .table--list th, .table--list td { padding-inline: 6px; }
-  .table--list th:nth-child(1) { width: 6.2%; }
-  .table--list th:nth-child(2) { width: 7.6%; }
-  .table--list th:nth-child(3) { width: 12%; }
-  .table--list th:nth-child(4) { width: 13.2%; }
-  .table--list th:nth-child(5) { width: 11.8%; }
-  .table--list th:nth-child(6) { width: 19%; }
-  .table--list th:nth-child(7) { width: 10.2%; }
-  .table--list th:nth-child(8) { width: 12%; }
-  .table--list th:nth-child(9) { width: 8%; }
-  .table--list td:nth-child(4) .badge, .table--list td:nth-child(5) .badge { white-space: nowrap; }
-  .table--list td:nth-child(8), .table--list td:nth-child(9) { font-size: 11px; }
+.menu-view__back { gap: var(--sp-2); }
+.menu-view__arrow { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.menu-view__title { font-size: var(--fs-section); font-weight: 600; color: var(--dust-1); }
+.menu-view__body { position: relative; flex: 1 1 auto; min-height: 0; }
+.menu-view .view { padding: 0 var(--sp-5); }
+.view__bar {
+  flex: none;
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
 }
+.view__bar .panel__title { margin-right: var(--sp-4); }
+/* The bar of the overlay names the view: the heading of the view is not repeated. */
+.menu-view .view__bar > h2 { display: none; }
+.view__scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.view--journal { overflow-y: auto; }
+.view--journal .journal { max-width: 1100px; padding: var(--sp-4) 0 var(--sp-5); }
 
-/* ---- compact layout ------------------------------------------------------------------ */
+.table--list .cell-note { display: block; width: fit-content; margin-top: 2px; }
+.table--list td:nth-child(1) { color: var(--dust-2); }
+.table--list td:nth-child(2) { font-weight: 600; }
+.table--list td:nth-child(3) { min-width: 96px; }
+.table--list td:nth-child(8), .table--list td:nth-child(9) { white-space: nowrap; }
+
+/* ---- compact layout (1280×720) ------------------------------------------------------------ */
 
 @media (max-width: 1599px), (max-height: 899px) {
   :root {
-    --w-right: 320px;
-    --h-top: 52px;
-    --h-bar: 36px;
+    --h-top: 48px;
+    --w-rail: 260px;
+    --w-panel: 360px;
     --w-stand: 320px;
-    --h-dock-bar: 36px;
+    --w-sheet: 340px;
+    --gap-stage: var(--sp-3);
   }
+  .topbar { gap: var(--sp-4); padding: 0 var(--sp-2) 0 var(--sp-3); }
+  .top__name { display: none; }
+  .notice { letter-spacing: 0; }
+  .top__run, .status__who, .status__reason { display: none; }
+  .top__clock { font-size: var(--fs-emphasis); }
+  .status--conditions { max-width: 170px; }
+  .top__cluster--link { overflow: hidden; }
 
-  .topbar { padding: 0 var(--sp-3) 0 var(--sp-2); }
-  .topbar__brand, .topbar__cluster { gap: var(--sp-3); padding: 0 7px; }
-  .topbar__brand { padding-left: 0; gap: var(--sp-2); }
-  .brand__name { display: none; }
-  .notice { width: 152px; letter-spacing: 0; white-space: normal; }
-  .notice > span { display: inline; }
-  .mark { width: 24px; height: 24px; }
-  .topbar__people { gap: 7px; }
-  .figure--people { column-gap: 3px; }
-  .topbar__stand { padding-right: 0; gap: var(--sp-2); }
-  .figure__value { font-size: 20px; line-height: 24px; }
-  .figure__cap { font-size: 10.5px; letter-spacing: .02em; }
-  /* Run and seed fold away (the reset in the stand drawer names the run); tick and speed too: the time and the state stay. */
-  .figure--run { display: none; }
-  .figure--time { grid-template-rows: 13px auto; column-gap: 8px; }
-  .figure--time .figure__value { grid-row: 2; }
-  .figure--time .figure__sub { display: none; }
-  .figure--time .figure__state { grid-row: 2; align-self: center; max-width: 124px; white-space: normal; font-size: 11px; line-height: 13px; }
-  .figure--people .figure__cap { max-width: 84px; font-size: 10px; line-height: 11px; letter-spacing: 0; }
-  .figure--people .figure__ghost { font-size: 20px; line-height: 24px; }
-  .topbar__people-cap { font-size: 10px; line-height: 11px; }
-  .topbar__people-row { gap: 6px; }
-  .status--link[data-link="stale"], .status--link[data-link="unavailable"] { padding: 0 3px; }
-  .status__reason, .status__who { display: none; }
+  /* The panel lies over the right part of the stage; the stage keeps the centre. */
+  body[data-panel="shown"] .frame { --panel: 0px; }
+  .panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 30; width: var(--w-panel); }
+  body[data-panel="shown"] .centre { --cover-right: var(--w-panel); }
 
-  /* The publications are named here only when they stopped: going on is the normal case, unknown is said by the banner. */
-  .topbar__line--sub .topbar__dot, .topbar__line--sub .status--publications:not([data-publications="stopped"]) { display: none; }
-  .old-tag { max-width: 70px; font-size: 10px; line-height: 11px; }
-  .status--conditions { max-width: 150px; }
-  .banner--info { max-width: 196px; margin-block: 4px; padding-block: 2px; line-height: 1.25; }
-  /* With the steps of an incident the pause is said twice already (the top bar and step 4): the words of the
-     steps get the room. */
-  .situation:has(.incident__strip[data-open]) .banner--info { display: none; }
-  .banner--info .banner__text { display: none; }
-
-  /* Compact steps; «показать маршруты» says «показать» (its full words are its accessible name). */
-  /* Two lines of words under the name of the step: the strip stays as low as a one-line strip with a heading. */
-  .step { padding: 2px var(--sp-2); }
-  .step--1 { flex: 1.4 1 0; }
-  .step__head { line-height: 14px; }
-  .step__num { width: 15px; height: 15px; font-size: 10px; }
-  .step__body { font-size: var(--fs-caption); line-height: 14px; }
-  .step__show-more { display: none; }
-  /* Beside the open drawer the HUD fills the top of the narrow stage: the tabs stand under it. */
-  body[data-view="scheme"][data-stand="open"]:not([data-old-data]):has(.stage[data-stage-mode="3d"]) .centre__bar { top: 52px; }
-  .step__label { font-size: 10.5px; letter-spacing: .04em; }
-
-  /* The dock folds to its bar at the bottom of the stage and unfolds over the stage. Over the list and the
-     runs it stays in the flow: they scroll, the stage does not. */
-  body[data-view="scheme"] .dock {
-    position: absolute; left: 0; right: 0; bottom: 0; z-index: 15;
-    max-height: 58%;
-    border-top: 1px solid var(--action);
-  }
-
-  .right__card { min-height: 116px; }
-  .journal__bar { min-height: 32px; }
-  .old-data { padding: 2px var(--sp-3); font-size: var(--fs-caption); }
-  .journal__order { display: none; }
-
-  .view__bar { padding: var(--sp-2) var(--sp-3); }
-  .table th, .table td { padding: 3px 5px; }
+  .rail-figs { padding: 0 var(--sp-3) var(--sp-3); }
+  /* «всего» and «вышли» on one line, the caption beside the number. */
+  .rail-figs__main .rail-fig { flex-direction: row; align-items: baseline; gap: var(--sp-2); }
+  .rail-fig__value { font-size: var(--fs-figure); line-height: 36px; }
+  .rail-figs__alerts .rail-fig__value { font-size: 26px; line-height: 30px; }
+  .rail-figs__alerts { margin-top: var(--sp-2); }
+  .rail-fig__cap { font-size: 11.5px; line-height: 14px; }
+  .rail__head { padding-left: var(--sp-3); padding-top: var(--sp-2); }
+  .rail__sub { padding: var(--sp-2) var(--sp-3) var(--sp-1); }
+  .zrow { padding-block: 4px; }
+  .legend__rows { display: none; }
+  .zrow__top, .zrow__sub { min-height: 30px; }
+  .top__cluster--link .status--publications:not([data-publications="stopped"]), .old-tag { display: none; }
+  .menu-view .view { padding: 0 var(--sp-4); }
+  .menu-view__bar { padding: 0 var(--sp-4); min-height: 48px; }
+  .table th, .table td { padding: 4px 6px; }
   .table th { white-space: normal; letter-spacing: 0; }
   .table--list th { text-transform: none; }
-  .table--list td:nth-child(6), .table--list td:nth-child(7) { overflow-wrap: anywhere; }
-  .table--list td:nth-child(8), .table--list td:nth-child(9) { white-space: normal; font-size: 11px; }
-  .table--list td:nth-child(3) { min-width: 80px; }
 }

@@ -1,25 +1,19 @@
-// The content of the decision dock under the stage (the dock itself, its bar
-// and its folding are view/dock.js's): what opened the incident, the options
-// of the model side by side with identical metric rows, a people bar per
-// option, the choice and the launch, and the facts of the executed option.
-// The one-line summary in the bar of the dock is written here too. Forecast
-// and fact never share a value: the forecast is outlined and hatched, the fact
-// solid, each with its caption. A time until everyone is out is written only
-// when the model says that everyone is out (CONTRACT.md, section 6). Nothing
-// here ranks the options.
+// What the right panel (view/decide.js, view/progress.js) and the archive of
+// runs (view/runs.js) know about options and their results: the cells of the
+// result metrics, the people bar of the common group, the table of metrics,
+// the name of an option as a verb, the headline of a forecast or a fact by
+// fixed rules, and the launch of an option. Forecast and fact never share a
+// value: the forecast is outlined and hatched, the fact solid, each with its
+// caption. A time until everyone is out is written only when the model says
+// that everyone is out (CONTRACT.md, section 6). Nothing here ranks options.
 //
-// The table of options reads as an answer (clarity pass, A3): the horizon and
-// the moment of the forecast by the model clock above it, one line that the
-// model recommends nothing, then the rows in the order of the question (people
-// in danger at the end, is everyone out and when, how many out, without a
-// route, exposures and downtime in minutes), and the people bar last as the
-// visual summary. Pointing at an option, or choosing it, tells the stage which
-// zones it acts on (ctx.hoverOption, C).
+// The rows of the table read as an answer (clarity pass, A3): people in danger
+// at the end, is everyone out and when, how many out, without a route,
+// exposures and downtime in minutes, and the people bar last as the summary.
 
-import {h, reconcile, s, setAttrs, setGlyph, setText} from '../dom.js';
+import {h, reconcile, s, setAttrs, setText} from '../dom.js';
 import {QUESTION} from '../icons.js';
-import {causesOf, incidentOf, labelOf, thingsOfKind} from '../model.js';
-import {blockNote, commandButton, guard, showBlock, standing} from './pending.js';
+import {labelOf, thingByName, thingsOfKind} from '../model.js';
 
 /** The result metrics in reading order of the archive of runs: is everyone out, then people, then exposure, then cost. */
 export const METRIC_ORDER = ['all_out', 'last_out_s', 'out', 'in_danger', 'danger_exposure_person_s',
@@ -34,7 +28,6 @@ export const DECISION_ROWS = ['in_danger', 'all_out', 'out', 'no_route', 'danger
   'unknown_exposure_person_s', 'downtime_s'];
 const PER_MINUTE = new Set(['danger_exposure_person_s', 'unknown_exposure_person_s', 'downtime_s']);
 
-const capitalize = (words) => (words ? words[0].toUpperCase() + words.slice(1) : words);
 
 /** True when the twin publishes at least one result metric with the prefix ("forecast_", "actual_" or none). */
 export function hasMetrics(values, prefix) {
@@ -244,7 +237,7 @@ export function peopleWords(text, people) {
  * @property {{values: Object, units: Object, name: string}} twin
  * @property {string} prefix "forecast_" or "actual_"
  * @property {boolean} published false: the twin has no metric with the prefix, the cells are dashes
- * @property {{checked: boolean, disabled: boolean}} [pick] the column can be chosen with a radio button
+ * @property {boolean} [chosen] the column of the option the dispatcher chose
  * @property {string} [state] written to data-state of the heading
  * @property {People} [people] the counts of its people bar
  */
@@ -254,12 +247,11 @@ export function peopleWords(text, people) {
  * the row of people bars under the metrics as their visual summary.
  * @param {Object} text
  * @param {Object<string, *>} attrs attributes of the table
- * @param {{lead?: {label: string, words: (column: Column) => string}, people: string, prefix: string,
- *          barWidth: number, onPick?: (key: string) => void}} options
- * @returns {{table: HTMLTableElement, update: (columns: Column[], metrics: (boolean|undefined), people: (string|undefined)) => void}}
+ * @param {{lead?: {label: string, words: (column: Column) => string}, people: string, prefix: string, barWidth: number}} options
+ * @returns {{table: HTMLTableElement, update: (columns: Column[], people: (string|undefined)) => void}}
  */
-function metricsTable(text, attrs, options) {
-  const {lead = null, onPick = null} = options;
+export function metricsTable(text, attrs, options) {
+  const {lead = null} = options;
   const head = h('tr');
   const leadRow = lead ? h('tr', {'data-row': 'lead'}) : null;
   const peopleRow = h('tr', {'data-row': 'people'});
@@ -268,37 +260,21 @@ function metricsTable(text, attrs, options) {
   let peopleLabel = options.people;
   const bars = new WeakMap();
   const key = (column) => (column ? column.key : '');
-  const chosenClass = (column) => (column.pick && column.pick.checked ? 'is-chosen' : null);
+  const chosenClass = (column) => (column.chosen ? 'is-chosen' : null);
   const series = (column) => (column.prefix === 'actual_' ? 'fact' : 'forecast');
 
   function createHead(column) {
     if (!column) return h('th', {scope: 'col', class: 'metrics__corner', text: text.UI.decision.metric});
-    const pick = h('label', {class: 'th-pick'}, h('span', {class: 'th-name'}));
-    if (onPick) {
-      const radio = h('input', {type: 'radio', name: 'decision-option', value: column.key});
-      radio.addEventListener('change', () => onPick(column.key));
-      pick.prepend(radio);
-    }
-    // The name with its radio button and the state on the first line, the kind of the option on the second.
-    return h('th', {scope: 'col'}, h('div', {class: 'th-box'}, pick, h('span', {class: 'th-sub'}), h('span', {class: 'th-sub'})));
+    return h('th', {scope: 'col'}, h('div', {class: 'th-box'}, h('span', {class: 'th-name'}), h('span', {class: 'th-sub'})));
   }
 
   function updateHead(th, column) {
     if (!column) return;
-    const radio = th.querySelector('input');
-    const sub = column.sub || [];
-    const checked = chosenClass(column) !== null;
-    const [pick, kind, state] = th.firstChild.children;
-    setText(pick.lastChild, column.head);
-    setText(kind, sub[0] || '');
-    setText(state, sub[1] || '');
-    if (radio) {
-      radio.hidden = !column.pick;
-      radio.disabled = !column.pick || column.pick.disabled;
-      if (radio.checked !== checked) radio.checked = checked;
-    }
+    const [name, sub] = th.firstChild.children;
+    setText(name, column.head);
+    setText(sub, (column.sub || []).filter(Boolean).join(' · '));
     setAttrs(th, {'data-column': column.key, 'data-state': column.state, 'data-series': series(column),
-      class: ['metrics__head', checked && 'is-chosen']});
+      class: ['metrics__head', chosenClass(column)]});
   }
 
   function createPeople(column) {
@@ -325,10 +301,9 @@ function metricsTable(text, attrs, options) {
 
   /**
    * @param {Column[]} columns
-   * @param {boolean} [metrics] false: the metric rows are not shown at all
    * @param {string} [people] the heading of the row of people bars
    */
-  function update(columns, metrics = true, people = options.people) {
+  function update(columns, people = options.people) {
     const all = [null, ...columns];
     peopleLabel = people;
     reconcile(head, all, key, createHead, updateHead);
@@ -336,11 +311,9 @@ function metricsTable(text, attrs, options) {
       reconcile(leadRow, all, key, (column) => (column ? h('td') : h('th', {scope: 'row', text: lead.label})),
         (td, column) => column && setAttrs(td, {text: lead.words(column), class: chosenClass(column)}));
     }
-    peopleRow.hidden = !metrics;
-    reconcile(peopleRow, metrics ? all : [], key, createPeople, updatePeople);
+    reconcile(peopleRow, all, key, createPeople, updatePeople);
     DECISION_ROWS.forEach((metric, index) => {
-      rows[index].hidden = !metrics;
-      reconcile(rows[index], metrics ? all : [], key,
+      reconcile(rows[index], all, key,
         (column) => (column ? h('td', null, h('span'))
           : h('th', {scope: 'row'}, text.metricLabel(metric), metric === 'in_danger' ? ` ${text.UI.decision.atEnd}` : null)),
         (td, column) => {
@@ -355,315 +328,129 @@ function metricsTable(text, attrs, options) {
   return {table, update};
 }
 
-// ---- the dock --------------------------------------------------------------------------
+// ---- one option in words ------------------------------------------------------------
+
+const lowerFirst = (words) => (words ? words[0].toLowerCase() + words.slice(1) : words);
 
 /**
- * @param {HTMLElement} root the element of index.html this view owns
- * @param {Object} ctx store, text, roots and the action functions
+ * What an option does, as the title of its card and of the launch button: «Наблюдать»,
+ * «Остановить участок Г и вывести людей», «Вывести всех». The zone comes from the published
+ * `scope`; an option kind the interface does not know keeps its code (with the option's label).
+ * @param {Object} text
+ * @param {import('../store.js').Model} model
+ * @param {import('../store.js').Thing} option
  */
-export function mount(root, ctx) {
-  const {store, text} = ctx;
-  const {UI} = text;
-  const D = UI.decision;
-
-  const optionName = (option) => `${option.label} — ${text.codeLabel('optionKind', option.attrs.option_kind)}`;
-  /** The zones of an option by their codes; «все участки» when the published list names every zone twin. */
-  function scopeOf(option) {
-    const {model} = store.getState();
-    const scope = Array.isArray(option.values.scope) ? option.values.scope : [];
-    const zones = thingsOfKind(model, 'zone');
-    if (scope.length === 0) return text.DASH;
-    if (zones.length > 1 && scope.length === zones.length && zones.every((zone) => scope.includes(zone.name))) return D.allZones;
-    return scope.map((zone) => labelOf(model, zone)).join(', ');
+export function optionVerb(text, model, option) {
+  const kind = option.attrs.option_kind;
+  const verb = typeof kind === 'string' && Object.prototype.hasOwnProperty.call(text.PANEL.verb, kind) ? text.PANEL.verb[kind] : null;
+  if (typeof verb === 'string') return verb;
+  const scope = Array.isArray(option.values.scope) ? option.values.scope : [];
+  if (typeof verb === 'function') {
+    const place = scope.length === 1 ? thingByName(model, scope[0]) : null;
+    return verb(place ? lowerFirst(place.label) : '');
   }
+  return `${option.label}: ${text.codeLabel('optionKind', kind)}`;
+}
 
-  /** How complete a forecast is, as the mark next to its numbers; no words for a full one. Never silent about an absent value. */
-  function qualityMark(quality) {
-    if (quality === 'full') return {words: '', badge: null};
-    if (quality === undefined) return {words: D.qualityNotPublished, badge: 'unknown'};
-    return {words: text.label('forecastQuality', quality), badge: quality === 'partial' ? 'attention' : 'unknown'};
+/** The zones of an option by their codes; «все участки» when the published list names every zone twin. */
+export function scopeText(text, model, option) {
+  const scope = Array.isArray(option.values.scope) ? option.values.scope : [];
+  const zones = thingsOfKind(model, 'zone');
+  if (scope.length === 0) return text.PANEL.noZones;
+  if (zones.length > 1 && scope.length === zones.length && zones.every((zone) => scope.includes(zone.name))) return text.PANEL.allZones;
+  return scope.map((zone) => labelOf(model, zone)).join(', ');
+}
+
+const isCount = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+/**
+ * The one sentence of a forecast ("forecast_") or of a fact ("actual_"), by fixed rules over the published
+ * fields, in this order:
+ *   all_out = true      → «Все выйдут за 9 мин 40 с» (the time only with a published last_out_s)
+ *   in_danger > 0       → «3 человека останутся в опасной зоне»
+ *   no_route > 0        → «Для 2 человек выход не рассчитан · вышли 12» (out when published)
+ *   in_danger = 0       → «В опасной зоне никого · вышли 4»
+ * Nothing published with the prefix → null (the caller says «Прогноз не опубликован»). When the fields a
+ * rule needs are missing, that rule says nothing; a dash stands where no rule applies. Nothing is guessed.
+ * @param {Object} text
+ * @param {Object<string, *>} values
+ * @param {'forecast_'|'actual_'} prefix
+ * @returns {{text: string, rule: ('all_out'|'in_danger'|'no_route'|'clear'|'none')}|null}
+ */
+export function headline(text, values, prefix) {
+  if (!hasMetrics(values, prefix)) return null;
+  const words = prefix === 'actual_' ? text.PANEL.fact : text.PANEL.forecast;
+  const get = (metric) => values[prefix + metric];
+  if (get('all_out') === true) {
+    const last = get('last_out_s');
+    return {text: isCount(last) ? words.allOutIn(last) : words.allOut, rule: 'all_out'};
   }
+  if (isCount(get('in_danger')) && get('in_danger') > 0) return {text: words.inDanger(Math.round(get('in_danger'))), rule: 'in_danger'};
+  const out = isCount(get('out')) ? get('out') : undefined;
+  if (isCount(get('no_route')) && get('no_route') > 0) return {text: words.noRoute(Math.round(get('no_route')), out), rule: 'no_route'};
+  if (get('in_danger') === 0) return {text: words.clear(out), rule: 'clear'};
+  return {text: text.DASH, rule: 'none'};
+}
 
-  // ---- the head: what opened the incident -------------------------------------------
+/** At most two secondary facts of a forecast or fact: exposure in a danger zone and downtime, in minutes. */
+export function secondaryFacts(text, twin, prefix) {
+  const facts = [];
+  const field = (metric) => `${prefix}${metric}`;
+  const exposure = text.perMinute(twin.values[field('danger_exposure_person_s')], twin.units[field('danger_exposure_person_s')] || 'person*s');
+  if (exposure.text !== text.DASH) facts.push({key: 'exposure', text: text.PANEL.exposure(exposure.text), title: exposure.title});
+  const downtime = text.perMinute(twin.values[field('downtime_s')], twin.units[field('downtime_s')] || 'zone*s');
+  if (downtime.text !== text.DASH) facts.push({key: 'downtime', text: text.PANEL.downtime(downtime.text), title: downtime.title});
+  return facts;
+}
 
-  const stateText = h('span', {class: 'decision__state'});
-  const causes = h('ul', {class: 'decision__causes'});
-  const where = h('span', {class: 'decision__where'});
-  const pauseGlyph = h('span', {class: 'decision__glyph'});
-  setGlyph(pauseGlyph, 'pause');
-  const pause = h('p', {class: 'decision__pause', 'data-testid': 'decision-pause', hidden: true},
-    pauseGlyph, h('span', {text: capitalize(`${text.VOCAB.runState.paused} ${text.VOCAB.pauseReason.decision}`)}));
-  const captions = h('ul', {class: 'decision__captions', 'data-testid': 'decision-caption'});
-  const advice = h('p', {class: 'decision__advice', 'data-testid': 'decision-advice', text: D.noRecommendation});
-  // Why the dock is open (state and causes of the incident) and the pause: the top of the side column, so that
-  // the table of options starts at the top of the dock and the stage keeps its height.
-  const head = h('div', {class: 'decision__head'}, stateText, causes, where, pause);
-  // The line in the bar of the dock: what is asked of the dispatcher, or what became of the decision.
-  const summary = h('span', {class: 'decision__summary'});
-  if (ctx.roots.decisionSummary) ctx.roots.decisionSummary.append(summary);
+/** How complete a forecast is: no words for a full one; never silent about an absent value. */
+export function qualityMark(text, quality) {
+  if (quality === 'full') return {words: '', badge: null};
+  if (quality === undefined) return {words: text.PANEL.qualityNotPublished, badge: 'unknown'};
+  if (quality === 'partial') return {words: text.PANEL.partial, badge: 'attention'};
+  return {words: text.label('forecastQuality', quality), badge: 'unknown'};
+}
 
-  // ---- facts of executed options ----------------------------------------------------
-
-  const facts = h('div', {class: 'decision__facts'});
-  const factTables = new WeakMap();
-
-  function createFact() {
-    const table = metricsTable(text, {class: 'metrics metrics--fact'}, {people: D.peopleShort, prefix: 'pbd', barWidth: 112});
-    const node = h('section', {class: 'decision__fact', 'data-testid': 'decision-fact'},
-      h('h3', {class: 'decision__fact-title'}), h('p', {class: 'decision__alert', hidden: true}), table.table);
-    factTables.set(node, table);
-    return node;
-  }
-
-  function updateFact(node, option, total) {
-    const [title, incomplete] = node.children;
-    node.setAttribute('data-option', option.name);
-    setText(title, D.factOf(optionName(option)));
-    const left = option.values.actual_no_route;
-    incomplete.hidden = !(typeof left === 'number' && left > 0);
-    setText(incomplete, incomplete.hidden ? '' : D.incomplete(left));
-    const forecast = hasMetrics(option.values, 'forecast_');
-    const quality = qualityMark(option.values.forecast_quality);
-    factTables.get(node).update([
-      {key: 'forecast', head: D.forecast, sub: forecast ? [quality.words] : [D.notPublished], twin: option, prefix: 'forecast_',
-        published: forecast, people: peopleOf(option.values, 'forecast_', total)},
-      {key: 'actual', head: D.actual, twin: option, prefix: 'actual_', published: true, people: peopleOf(option.values, 'actual_', total)},
-    ]);
-  }
-
-  // ---- the options: choice and forecast in one table -----------------------------------
-
-  let chosen = null;
-  let decisionSeen = null;
-  const optionsTable = metricsTable(text, {'data-testid': 'decision-options'}, {
-    lead: {label: D.zones, words: (column) => scopeOf(column.twin)},
-    people: D.people, prefix: 'pbd', barWidth: 196,
-    onPick: (name) => {
-      chosen = name;
-      render();
-    },
-  });
-
-  // ---- the option pointed at: ui.hoverOption (C) ---------------------------------------
-  // Hover or keyboard focus on a column names its option; leaving it falls back to the chosen option.
-  let hovered = null;
-  function pointAt(name) {
-    const {model} = store.getState();
-    const option = model && name ? model.byName[name] : null;
-    const chosenOption = model && chosen ? model.byName[chosen] : null;
-    const shown = option || chosenOption;
-    const id = shown && shown.kind === 'option' ? shown.thingId : null;
-    if (store.getState().ui.hoverOption !== id) ctx.hoverOption(id);
-  }
-  const columnOf = (target) => {
-    const cell = target && target.closest ? target.closest('[data-option], [data-column]') : null;
-    return cell ? (cell.getAttribute('data-option') || cell.getAttribute('data-column')) : null;
+/**
+ * The options of the incident as the model published them, and what follows from them without
+ * computing anything: the identifiers of the decision, one comparison key or not, the size of the
+ * common group where a series says that everyone is out (commonGroup).
+ * @param {import('../store.js').Model} model
+ */
+export function decisionOf(model) {
+  const options = thingsOfKind(model, 'option');
+  const distinct = (field) => [...new Set(options.map((option) => option.values[field]).filter((id) => typeof id === 'string'))];
+  const decisionIds = distinct('decision_id');
+  const keys = distinct('comparison_key');
+  // One key for all: every listed option publishes the same text. One option without a key is enough to break it.
+  const sharedKey = options.length > 0 && keys.length === 1 && options.every((option) => option.values.comparison_key === keys[0]);
+  const group = decisionIds.length === 1 && options.every((option) => option.values.decision_id === decisionIds[0])
+    ? commonGroup(options, ['forecast_', 'actual_']) : null;
+  return {
+    options, decisionIds, sharedKey, total: group ? group.total : null,
+    offered: options.filter((option) => option.values.state === 'offered'),
+    published: options.filter((option) => hasMetrics(option.values, 'forecast_')),
+    executing: options.find((option) => option.values.state === 'executing') || null,
+    executed: options.filter((option) => hasMetrics(option.values, 'actual_')),
   };
-  const enter = (event) => {
-    const name = columnOf(event.target);
-    if (name === hovered) return;
-    hovered = name;
-    pointAt(hovered);
-  };
-  const leave = () => {
-    hovered = null;
-    pointAt(null);
-  };
-  optionsTable.table.addEventListener('mouseover', enter);
-  optionsTable.table.addEventListener('focusin', enter);
-  optionsTable.table.addEventListener('mouseleave', leave);
-  optionsTable.table.addEventListener('focusout', (event) => {
-    if (!optionsTable.table.contains(event.relatedTarget)) leave();
-  });
-  // Said above the numbers: without one key for all options the columns are not a comparison.
-  const keysDiffer = h('p', {class: 'decision__alert', 'data-testid': 'decision-keys-differ', hidden: true});
-  const noForecast = h('p', {class: 'decision__alert', 'data-testid': 'decision-no-forecast', text: D.notPublished, hidden: true});
-  const nobodyLeft = h('p', {class: 'decision__alert', 'data-testid': 'decision-nobody-left', text: D.nobodyLeft, hidden: true});
-  // The table of options reads as an answer: what the numbers are (horizon, moment), that the model ranks nothing.
-  const forecast = h('section', {class: 'decision__forecast', 'data-testid': 'decision-forecast'},
-    h('div', {class: 'decision__heading'}, captions, advice), keysDiffer, optionsTable.table, noForecast);
-  const noPath = h('p', {class: 'decision__alert', 'data-testid': 'decision-no-path', hidden: true});
+}
 
-  const block = blockNote();
-  const picked = h('p', {class: 'decision__picked', hidden: true});
-  const why = h('p', {class: 'note note--why', 'data-testid': 'decision-command', hidden: true});
-  const execute = commandButton({
-    class: 'btn btn--dispatch btn--block', 'data-testid': 'btn-execute', 'data-command-type': 'action.execute_option',
-    text: `${D.execute}…`,
-  }, async () => {
-    const {model} = store.getState();
-    const option = model ? model.byName[chosen] : null;
-    if (!option) return;
-    // The command carries the decision the user saw: if the conditions change under the open dialog, the model refuses it.
-    const decisionId = option.values.decision_id;
-    const message = D.confirmText(optionName(option), scopeOf(option));
-    if (await ctx.confirm({title: D.confirmTitle, message, confirmLabel: D.execute})) {
-      ctx.sendCommand('action.execute_option', option.name, {decisionId});
-    }
-  });
-  const runBox = h('div', {class: 'decision__run'}, block, picked, execute, why);
-  const ids = h('p', {class: 'decision__ids mono', 'data-testid': 'decision-ids'});
-  const groupNote = h('p', {class: 'decision__note', 'data-testid': 'decision-group'});
-  const notes = h('p', {class: 'decision__note', text: `${D.sameGroup}. ${capitalize(D.downtimeNote)}. ${D.stopKeepsPause}`});
-
-  // How the numbers are counted, the size of the group and the identifiers: one line folded under the button.
-  const more = h('details', {class: 'decision__more', 'data-testid': 'decision-more'},
-    h('summary', {class: 'decision__more-title', text: D.howCounted}), groupNote, notes, ids);
-
-  const panel = h('div', {class: 'decision'},
-    s('svg', {class: 'pb-defs', width: 0, height: 0, 'aria-hidden': 'true', focusable: 'false'}, s('defs', null, peoplePatterns('pbd'))),
-    // The options and their numbers on the left; on the right why the dock is open, what the model cannot do
-    // (next to the numbers it is about), what the numbers are, and the launch.
-    h('div', {class: 'decision__main'}, forecast,
-      h('div', {class: 'decision__side'}, head, noPath, nobodyLeft, facts, runBox, more)));
-
-  /** The caption of a group of options whose forecast has the same horizon, tick and quality. */
-  function updateCaption(node, [, options], several) {
-    const {forecast_horizon_s: horizon, forecast_tick: tick, forecast_quality: quality} = options[0].values;
-    let words = typeof horizon === 'number' ? D.forecastFor(horizon) : capitalize(D.forecast);
-    const at = text.tickSeconds(tick);
-    if (at !== null) words += ` · ${D.forecastTick(text.modelTime(at))}`;
-    if (several) words += ` (${options.map((option) => option.label).join(', ')})`;
-    setText(node.firstChild, words);
-    setAttrs(node, {title: D.forecastTitle(horizon, tick) || null});
-    const mark = node.lastChild;
-    const shown = qualityMark(quality);
-    mark.hidden = shown.words === '';
-    setText(mark, shown.words);
-    setAttrs(mark, {class: shown.badge ? `badge badge--${shown.badge}` : null});
-    node.setAttribute('data-quality', quality === undefined ? '' : quality);
-  }
-
-  function render() {
-    const state = store.getState();
-    const {model, snapshot} = state;
-    const incident = model ? incidentOf(model) : null;
-    const incidentState = incident && incident.hasState ? incident.values.state : undefined;
-    if (typeof incidentState !== 'string' || incidentState === 'none') {
-      // No child nodes: view/dock.js hides the dock and the stage takes its room. The note says why
-      // to whoever reads the element: «no incident» only when the model published exactly that.
-      if (root.firstChild) root.replaceChildren();
-      setAttrs(root, {'data-empty-note': incidentState === 'none' ? D.noIncident : D.noData});
-      setText(summary, '');
-      chosen = null;
-      hovered = null;
-      if (store.getState().ui.hoverOption !== null) ctx.hoverOption(null);
-      return;
-    }
-    const name = (local) => labelOf(model, local);
-    const options = thingsOfKind(model, 'option');
-    setAttrs(panel, {'data-incident-state': incidentState});
-    setText(stateText, text.label('incidentState', incidentState));
-
-    // What opened the incident: every cause when the model lists them, else the trigger.
-    const {values} = incident;
-    const listed = causesOf(values);
-    const shown = listed.length > 0 ? listed : [{trigger: values.trigger, tick: values.opened_at_tick}];
-    reconcile(causes, shown, (cause, index) => index, () => h('li'), (node, cause) => {
-      const parts = [text.label('incidentTrigger', cause.trigger)];
-      if (typeof cause.subject === 'string') parts[0] += `: ${name(cause.subject)}`;
-      const at = text.tickSeconds(cause.tick);
-      if (at !== null) parts.push(D.at(text.modelTime(at)));
-      setText(node, parts.join(', '));
-      setAttrs(node, {title: typeof cause.tick === 'number' ? D.tick(cause.tick) : null});
-    });
-    const place = [];
-    if (typeof values.zone === 'string') place.push(`${text.fieldLabel('zone')}: ${name(values.zone)}`);
-    if (typeof values.opened_at_tick === 'number') place.push(`${text.fieldLabel('opened_at_tick')} ${values.opened_at_tick}`);
-    setText(where, place.join(' · '));
-    pause.hidden = !(snapshot && snapshot.runState === 'paused' && snapshot.pauseReason === 'decision');
-
-    const stranded = thingsOfKind(model, 'worker').filter((worker) => worker.values.egress_status === 'none');
-    noPath.hidden = stranded.length === 0;
-    setText(noPath, noPath.hidden ? '' : D.noPath(stranded.map((worker) => worker.label).join(', ')));
-
-    // Identifiers of the decision; a new decision of the model clears the choice made on the old numbers.
-    const distinct = (field) => [...new Set(options.map((option) => option.values[field]).filter((id) => typeof id === 'string'))];
-    const decisionIds = distinct('decision_id');
-    const keys = distinct('comparison_key');
-    if (decisionIds.join() !== decisionSeen) {
-      decisionSeen = decisionIds.join();
-      chosen = null;
-    }
-    const offered = options.filter((option) => option.values.state === 'offered');
-    const chosenOption = offered.find((option) => option.name === chosen) || null;
-    if (!chosenOption) chosen = null;
-    // One key for all: every listed option publishes the same text. One option without a key is enough to break it.
-    const shared = options.length > 0 && keys.length === 1 && options.every((option) => option.values.comparison_key === keys[0]);
-    const lines = [`${text.fieldLabel('decision_id')}: ${decisionIds.join(', ') || text.DASH}`];
-    if (shared) lines.push(`${text.fieldLabel('comparison_key')}: ${keys[0]} — ${D.sharedKey}`);
-    setText(ids, lines.join(' · '));
-    keysDiffer.hidden = shared || options.length === 0;
-    setText(keysDiffer, keysDiffer.hidden ? '' : D.keysDiffer(options.map((option) => {
-      const key = option.values.comparison_key;
-      return `${option.label}: ${typeof key === 'string' && key !== '' ? key : D.keyNotPublished}`;
-    }).join('; ')));
-    setAttrs(panel, {
-      'data-decision-id': decisionIds.length === 1 ? decisionIds[0] : null,
-      'data-comparison': shared ? 'shared' : (options.length > 0 ? 'different' : null),
-    });
-
-    // The common group of one decision: one size for every option and for its fact (CONTRACT.md 6).
-    const group = decisionIds.length === 1 && options.every((option) => option.values.decision_id === decisionIds[0])
-      ? commonGroup(options, ['forecast_', 'actual_']) : null;
-    const total = group ? group.total : null;
-    setText(groupNote, group ? D.groupFrom(group.total, group.from) : D.groupUnknown);
-    setAttrs(groupNote, {'data-total': total});
-
-    const executed = options.filter((option) => hasMetrics(option.values, 'actual_'));
-    reconcile(facts, executed, (option) => option.name, createFact, (node, option) => updateFact(node, option, total));
-
-    const published = options.filter((option) => hasMetrics(option.values, 'forecast_'));
-    const groups = new Map();
-    for (const option of published) {
-      const key = [option.values.forecast_horizon_s, option.values.forecast_tick, option.values.forecast_quality].join('|');
-      groups.set(key, [...(groups.get(key) || []), option]);
-    }
-    reconcile(captions, [...groups], ([key]) => key, () => h('li', null, h('span'), ' ', h('span')),
-      (node, entry) => updateCaption(node, entry, groups.size > 1));
-    noForecast.hidden = published.length > 0;
-    advice.hidden = published.length === 0;
-    // «люди через 15 мин» when every published forecast has one horizon.
-    const horizons = [...new Set(published.map((option) => option.values.forecast_horizon_s))];
-    const peopleLabel = horizons.length === 1 && typeof horizons[0] === 'number' ? D.peopleIn(horizons[0]) : D.people;
-    optionsTable.update(options.map((option) => {
-      const has = published.includes(option);
-      return {
-        key: option.name, head: option.label, twin: option, prefix: 'forecast_', published: has, state: option.values.state,
-        sub: [text.codeLabel('optionKind', option.attrs.option_kind),
-          text.label('optionState', option.values.state) + (has || published.length === 0 ? '' : `; ${D.notPublished.toLowerCase()}`)],
-        // An option that is not offered stays in the table and cannot be chosen.
-        pick: offered.length > 0 ? {checked: option === chosenOption, disabled: !offered.includes(option)} : undefined,
-        people: peopleOf(option.values, 'forecast_', total),
-      };
-    }), published.length > 0, peopleLabel);
-    nobodyLeft.hidden = !(published.length > 0 && published.every((option) => option.values.forecast_no_route > 0));
-    // The note on the size of the group explains the bars: without a number of the model there are none.
-    groupNote.hidden = published.length === 0 && executed.length === 0;
-
-    runBox.hidden = offered.length === 0;
-    const blocked = showBlock(block, text, state);
-    // Next to the button: what is missing, or what became of the command for the chosen option (its buttons are in the left panel).
-    const own = standing(text, state, 'action.execute_option', chosen);
-    let reason = '';
-    if (!chosenOption) reason = D.choose;
-    else if (typeof chosenOption.values.decision_id !== 'string') reason = `${text.fieldLabel('decision_id')}: ${UI.card.notPublished}`;
-    picked.hidden = !chosenOption;
-    setText(picked, chosenOption ? `${capitalize(D.chosen)}: ${optionName(chosenOption)}` : '');
-    setAttrs(execute, {'data-command-target': chosen});
-    guard(execute, blocked || reason !== '' || own.bars, why, reason || own.words);
-
-    const running = options.find((option) => option.values.state === 'executing');
-    const fact = executed[executed.length - 1];
-    // The zones of the option pointed at, or else of the chosen one, for the stage and the scheme.
-    pointAt(hovered);
-    let line = D.summaryStates;
-    if (offered.length > 0) line = chosenOption ? D.summaryChosen(optionName(chosenOption)) : D.summaryOffered(offered.length);
-    else if (running) line = D.summaryExecuting(optionName(running));
-    else if (fact) line = D.summaryFact(optionName(fact), peopleWords(text, peopleOf(fact.values, 'actual_', total)));
-    setText(summary, line);
-    if (!root.firstChild) root.append(panel);
-  }
-
-  store.watch((state) => [state.model, state.pending, state.commandsBlocked, state.blockReason], render);
+/**
+ * Launch an option: the confirmation dialog, then `action.execute_option` with the option's own
+ * `decision_id` — the decision the user saw; if the conditions change under the open dialog, the model
+ * refuses it as stale.
+ * @param {Object} ctx
+ * @param {import('../store.js').Thing} option
+ * @returns {Promise<boolean>} true when the command was handed to the command engine
+ */
+export async function launchOption(ctx, option) {
+  const {text, store} = ctx;
+  const P = text.PANEL;
+  const {model} = store.getState();
+  const verb = optionVerb(text, model, option);
+  const decisionId = option.values.decision_id;
+  const message = P.confirmText(verb, scopeText(text, model, option));
+  if (!await ctx.confirm({title: P.confirmTitle, message, confirmLabel: P.confirmLabel})) return false;
+  ctx.sendCommand('action.execute_option', option.name, {decisionId});
+  return true;
 }

@@ -14,13 +14,22 @@
 // and its horizon («показать», an incident that opens); panels over the stage refit it only when they would hide
 // the incident or leave the stage mostly empty, at once.
 //
+// Variant 2 («Пульт смены»): each zone with workings has a loader (lhd.glb, loaders.js), the symbol of the zone's
+// published work state — lit while it works, dark and signed «остановлен» when stopped, grey with «?» without a
+// published state; a change fades its lights once (400 ms). It never moves: its place is chosen once per run on a
+// free floor. The camera follows the situation of the shift (situation.js) once per change: the decision frames the
+// incident, the execution the walk, the result and the norm the overview (choreograph).
+//
 // Read-only mirrors on the scene root (.s3) for tests: data-fx (the changes now explained), data-fx-count,
 // data-auto-framed (the incident framed by itself), data-refits (refits after a panel or a size change),
-// data-framing (how the last zone framing was chosen), data-scope (zones of the hovered option).
+// data-framing (how the last zone framing was chosen), data-scope (zones of the hovered option), data-loaders
+// (loaders placed), data-loader-fx-count (fades of their lights), data-choreo and data-choreo-count (the camera
+// moves that followed the situation).
 
 import * as THREE from 'three';
 import {showsOldData} from '../link.js';
-import {incidentOf, isUnderground, routeOf, thingByName} from '../model.js';
+import {incidentOf, isUnderground, routeOf, thingByName, thingsOfKind} from '../model.js';
+import {situationOf} from '../situation.js';
 import * as geo from '../geometry.js';
 import {SCENE} from '../text3d.js';
 import * as text from '../text.js';
@@ -29,9 +38,10 @@ import {labelItems, tooltipLines} from './content.js';
 import {changesBetween, describe, groupWorkers} from './describe.js';
 import {createLabels} from './labels.js';
 import {
-  alongStep, buildLayout, DIMS, levelY, loaderPlaces, pointOnWorking, sceneBounds, sceneLine, silhouette, stepBetween, stepLength,
-  toScene, verticalFactor, WIDTH_FACTOR, zoneEntrances,
+  alongStep, buildLayout, DIMS, levelY, LOADER_SCALE, loaderPlaces as placesForLoaders, pointOnWorking, sceneBounds, sceneLine, silhouette, stepBetween,
+  stepLength, toScene, verticalFactor, zoneEntrances,
 } from './layout.js';
+import {createLoaders} from './loaders.js';
 import {drawAtlas, spriteGeometry, spriteMaterials, writeSprites} from './markers.js';
 import {TOKEN, TONE} from './palette.js';
 import {
@@ -45,12 +55,10 @@ const TWEEN_MS = 900;
 const DRAW_IN_MS = 550;
 const EXPLODE_MS = 600;
 const MAX_STEP_M = 80;
-/** The key of the decorative loader in picking and hover: not a twin, never selected. */
-const DECOR = 'decor:loader';
-/** The loader of lhd.glb is 10 m long; it is drawn enlarged as much as the width of the channels. */
-const LOADER_LENGTH = 10 * WIDTH_FACTOR;
-/** The loader is shown from this many pixels of its length on: smaller it would be a dark speck. */
-const LOADER_MIN_PX = 48;
+/** The key of a zone's loader in picking, hover and labels: `loader:<zone>`; a click on it selects the zone. */
+const LOADER = 'loader:';
+/** The loader of lhd.glb is 10 m long; it is drawn LOADER_SCALE times larger. */
+const LOADER_LENGTH = 10 * LOADER_SCALE;
 /** The most pixels the light quality renders (about a 1280×860 buffer). */
 const LOW_PIXELS = 1.1e6;
 const SPRITE_PX = {worker: 30, ring: 40, sensor: 22, exit: 30, sign: 24};
@@ -148,10 +156,13 @@ export function createScene(host, options) {
   let routeGroup = new THREE.Group();
   world.add(interGroup, interOverlay, routeGroup);
   let desk = null;
-  let loader = null;
-  let loaderPlaceInfo = null;
-  let loaderCandidates = [];
-  let loaderNear = false;
+  // The loaders of the zones: candidates per zone from the attributes, and the place each one took for this run.
+  const loaders = createLoaders({low, shadow: textures.shadow, scale: LOADER_SCALE});
+  world.add(loaders.group);
+  let loaderCandidates = new Map();
+  let loaderPlaces = new Map();      // zone -> {working, offsetM, facing, span}
+  let loaderRun = null;              // the run (and topology) the places were chosen for
+  let loaderFade = false;            // a change of a zone's work state is being shown
   let view = null;
   let signature = '';
   let groups = [];
@@ -195,7 +206,7 @@ export function createScene(host, options) {
   // The camera: what it frames, and when the user last moved it (an incident is framed by itself only after a pause).
   let focusId = null;              // the object the camera was last asked to frame, until the user moves it
   let lastTouch = -Infinity;
-  const seenIncidents = new Set();
+  let situationKey = null;          // the situation of the shift last seen (choreograph)
   let settleTimer = 0;
   let settleWhy = null;            // 'size' | 'panel'
   let lastPanelCover = '';
@@ -393,15 +404,24 @@ export function createScene(host, options) {
       });
     }
     buildDesk();
-    loaderCandidates = state && state.model ? loaderPlaces(layout, state.attributes.mine.nodes || {}, zoneWorkingSet(), LOADER_LENGTH) : [];
-    loaderPlaceInfo = null;
-    if (loader) placeLoader();
+    loaderCandidates = state && state.model ? candidatesOfLoaders() : new Map();
+    loaderPlaces = new Map();
+    loaderRun = null;
+    placeLoaders();
   }
 
-  function zoneWorkingSet() {
-    const names = new Set();
-    for (const zone of state.model.byKind.zone || []) for (const name of zone.attrs.workings || []) names.add(name);
-    return names;
+  /** Places for the loader of each zone that has horizontal workings, from the attributes only. */
+  function candidatesOfLoaders() {
+    const zones = (state.model.byKind.zone || []).map((zone) => ({name: zone.name,
+      workings: (Array.isArray(zone.attrs.workings) ? zone.attrs.workings : []).filter((name) => layout.workings.has(name))}))
+      .filter((zone) => zone.workings.some((name) => !layout.workings.get(name).between));
+    const sensors = new Map();
+    for (const sensor of thingsOfKind(state.model, 'sensor')) {
+      if (typeof sensor.attrs.working !== 'string' || !Number.isFinite(sensor.attrs.offset_m)) continue;
+      if (!sensors.has(sensor.attrs.working)) sensors.set(sensor.attrs.working, []);
+      sensors.get(sensor.attrs.working).push(sensor.attrs.offset_m);
+    }
+    return placesForLoaders(layout, state.attributes.mine.nodes || {}, zones, sensors, LOADER_LENGTH);
   }
 
   /** The plan direction of the first horizontal working of a level at a node, for a portal to face along. */
@@ -481,7 +501,7 @@ export function createScene(host, options) {
       group.updateMatrixWorld(true);
     });
     placeDesk();
-    if (loader) placeLoader();
+    placeLoaders();
     buildInter();
     buildInterOverlay();
     clearGhosts();
@@ -1184,117 +1204,128 @@ export function createScene(host, options) {
     pins.geometry.setAttribute('position', new THREE.BufferAttribute(pinArray, 3));
   }
 
-  // ---- loader (decor) -------------------------------------------------------------------
+  // ---- loaders: the published work state of each zone ---------------------------------------
 
   /**
-   * The first place of the list that nothing published occupies: no person, no route, no sensor on the
-   * stretch it covers, and the working is not closed (its barricade). None free: no loader.
+   * Once per run, the first place of each zone's list that nothing published occupies: no person, no published
+   * route, no closed or pending working on the stretch it and its light cover. The loader then stays there for
+   * the run: it never moves (it is a symbol of the zone's work, not a machine of the model). No free place: none.
    */
-  function chooseLoaderPlace() {
-    if (!view || loaderCandidates.length === 0) return null;
-    const margin = 6;
-    const busy = (name, span) => {
-      const inside = (offset) => Number.isFinite(offset) && offset >= span[0] - margin && offset <= span[1] + margin;
-      const working = view.workings[name];
+  function chooseLoaderPlaces() {
+    const run = `${view.run}|${signatureOfTopology()}`;
+    if (loaderRun === run || !view.hasSnapshot) return false;
+    loaderRun = run;
+    // A person is a marker drawn over everything and a route a tube along the floor: a short gap is enough.
+    const margin = 1;
+    const routes = thingsOfKind(state.model, 'worker').flatMap((worker) => {
+      if (!isUnderground(worker)) return [];
+      return geo.routePieces(routeOf(state.model, worker), {working: worker.values.at_working, offsetM: worker.values.offset_m}, (local) => {
+        const line = layout.workings.get(local);
+        return line ? {from: line.from, to: line.to, lengthM: line.lengthM, total: line.total} : null;
+      });
+    });
+    const busy = (place) => {
+      const [low0, high0] = place.span;
+      const inside = (offset) => Number.isFinite(offset) && offset >= low0 - margin && offset <= high0 + margin;
+      const working = view.workings[place.working];
       if (!working || working.passability === 'closed' || working.pending) return true;
-      if (Object.values(view.workers).some((worker) => worker.at === name && inside(worker.offsetM))) return true;
-      if (view.routes.some((route) => route.pieces.some((piece) => piece.working === name
-        && Math.max(piece.start, piece.end) >= span[0] - margin && Math.min(piece.start, piece.end) <= span[1] + margin))) return true;
-      return Object.keys(view.sensors).some((sensor) => {
-        const attrs = thingByName(state.model, sensor).attrs;
-        return attrs.working === name && inside(attrs.offset_m);
-      });
+      const near = (offset) => Number.isFinite(offset) && offset >= low0 - 1.5 && offset <= high0 + 1.5;
+      if (Object.values(view.workers).some((worker) => worker.at === place.working && near(worker.offsetM))) return true;
+      return routes.some((piece) => piece.working === place.working
+        && Math.max(piece.start, piece.end) >= low0 - margin && Math.min(piece.start, piece.end) <= high0 + margin);
     };
-    return loaderCandidates.find((place) => !busy(place.working, place.span)) || null;
-  }
-
-  function placeLoader() {
-    if (!loader || !loaderPlaceInfo || !layout) {
-      if (loader) loader.visible = false;
-      root.toggleAttribute('data-decor-placed', false);
-      return;
+    loaderPlaces = new Map();
+    for (const [zone, candidates] of loaderCandidates) {
+      const place = candidates.find((candidate) => !busy(candidate));
+      if (place) loaderPlaces.set(zone, place);
     }
-    const line = layout.workings.get(loaderPlaceInfo.working);
-    const at = pointOnWorking(layout, loaderPlaceInfo.working, loaderPlaceInfo.offsetM, k);
-    if (!line || !at) return;
-    const dir = loaderPlaceInfo.towardsEnd ? at.dir : at.dir.map((v) => -v);
-    loader.position.set(at.point[0], at.point[1] + 0.06, at.point[2]);
-    loader.rotation.set(0, Math.atan2(-dir[2], dir[0]), 0);
-    loader.visible = loaderNear;
-    loader.updateMatrixWorld(true);
-    root.toggleAttribute('data-decor-placed', true);
+    placeLoaders();
+    return true;
   }
 
-  /** The loader is drawn only when it is large enough on the screen to be recognised. */
-  function updateLoaderZoom() {
-    if (!loader || !loaderPlaceInfo) return;
-    const p = project([loader.position.x, loader.position.y, loader.position.z]);
-    const near = Boolean(p && p.visible && p.scale * LOADER_LENGTH >= LOADER_MIN_PX);
-    if (near !== loaderNear) {
-      loaderNear = near;
-      loader.visible = near;
-      root.setAttribute('data-decor-shown', String(near));
-      gizmo.setDecor(near);
+  function signatureOfTopology() {
+    return `${layout.levels.length}:${layout.workings.size}`;
+  }
+
+  /** The scene pose of each placed loader for the current spread of the slabs. */
+  function placeLoaders() {
+    const poses = new Map();
+    if (layout) {
+      for (const [zone, place] of loaderPlaces) {
+        const at = pointOnWorking(layout, place.working, place.offsetM, k);
+        if (!at) continue;
+        const dir = place.facing > 0 ? at.dir : at.dir.map((v) => -v);
+        poses.set(zone, {position: [at.point[0], at.point[1] + 0.06, at.point[2]], angle: Math.atan2(-dir[2], dir[0])});
+      }
+    }
+    loaders.setPoses(poses);
+    root.setAttribute('data-loaders', String(poses.size));
+  }
+
+  /** The published work state of a zone as the look of its loader: working, stopped, or unknown. */
+  function workLook(zone) {
+    if (!view.hasSnapshot || !zone) return 'unknown';
+    return zone.workState === 'working' || zone.workState === 'stopped' ? zone.workState : 'unknown';
+  }
+
+  /** The looks follow the published work states; a change seen while watching fades the lights once (400 ms). */
+  function updateLoaderLooks(animate) {
+    let started = false;
+    for (const name of loaderCandidates.keys()) started = loaders.setState(name, workLook(view.zones[name]), animate) || started;
+    if (started) {
+      loaderFade = true;
+      root.setAttribute('data-loader-fx-count', String(Number(root.getAttribute('data-loader-fx-count') || 0) + 1));
+    }
+    if (!animate) {
+      loaders.finish();
+      loaderFade = false;
     }
   }
 
-  /** Paint of the scene's copy of the model: lifted from the dark glb values so that it reads on stone. */
-  const LOADER_PAINT = {
-    lhd_paint_graphite: '#66717B', lhd_steel_worn: '#9A948A', lhd_rubber: '#34373B', lhd_lens: '#F2EADC', lhd_copper: '#B07A52',
-  };
+  /** Scene point of a loader's middle, a little above its roof (its label and its leader end there). */
+  function loaderPoint(zone, lift = 1.2) {
+    const pose = loaderPlaces.has(zone) && layout ? pointOnWorking(layout, loaderPlaces.get(zone).working, loaderPlaces.get(zone).offsetM, k) : null;
+    return pose ? [pose.point[0], pose.point[1] + lift * LOADER_SCALE, pose.point[2]] : null;
+  }
 
-  async function loadLoader() {
+  /** The zone whose loader lies under a screen point, if any. */
+  function overLoader(x, y) {
+    if (!loaders.loaded) return null;
+    let best = null;
+    for (const zone of loaderPlaces.keys()) {
+      const p = project(loaderPoint(zone));
+      if (!p || !p.visible) continue;
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (d < Math.max((LOADER_LENGTH / 2) * p.scale, 10) && (!best || d < best.d)) best = {d, zone};
+    }
+    return best ? best.zone : null;
+  }
+
+  /** The words of a loader's tooltip: the zone's published work state; the machine itself is not in the model. */
+  function loaderLines(zoneName) {
+    const thing = thingByName(state.model, zoneName);
+    if (!thing) return [];
+    const rate = thing.values.production_rate;
+    const look = workLook(view.zones[zoneName]);
+    const unit = thing.units && thing.units.production_rate;
+    const words = look === 'unknown' ? SCENE.loaderUnknown
+      : `${text.label('workState', look)}${look === 'working' && Number.isFinite(rate) ? ` · ${text.quantity(rate, unit || 't/h')}` : ''}`;
+    return [SCENE.loaderTitle(thing.label, words), SCENE.loaderNote(LOADER_SCALE)];
+  }
+
+  async function loadLoaders() {
     try {
-      const {GLTFLoader} = await import('three/addons/loaders/GLTFLoader.js');
-      const gltf = await new GLTFLoader().loadAsync(new URL('../../models/lhd.glb', import.meta.url).href);
+      await loaders.load(new URL('../../models/lhd.glb', import.meta.url).href);
       if (disposed) return;
-      const model = gltf.scene;
-      const outline = new THREE.MeshBasicMaterial({color: '#101215', side: THREE.BackSide});
-      const outlines = [];
-      model.traverse((object) => {
-        if (!object.isMesh) return;
-        const source = Array.isArray(object.material) ? object.material[0] : object.material;
-        const paint = new THREE.Color(LOADER_PAINT[source && source.name] || (source ? source.color : '#7A7F86'));
-        object.material = low
-          ? new THREE.MeshLambertMaterial({color: paint, emissive: '#1B2128'})
-          : new THREE.MeshStandardMaterial({color: paint, roughness: 0.6, metalness: 0.1, emissive: '#1B2128'});
-        if (source) source.dispose();
-        // An ink outline (the back faces pushed out along the normals): the machine keeps its silhouette on any floor.
-        const geometry = object.geometry.clone();
-        const position = geometry.attributes.position;
-        const normal = geometry.attributes.normal;
-        if (normal) {
-          for (let i = 0; i < position.count; i += 1) {
-            position.setXYZ(i, position.getX(i) + normal.getX(i) * 0.07, position.getY(i) + normal.getY(i) * 0.07,
-              position.getZ(i) + normal.getZ(i) * 0.07);
-          }
-          const edge = new THREE.Mesh(geometry, outline);
-          edge.position.copy(object.position);
-          edge.quaternion.copy(object.quaternion);
-          edge.scale.copy(object.scale);
-          outlines.push([object.parent, edge]);
-        }
-      });
-      for (const [parent, edge] of outlines) parent.add(edge);
-      model.scale.setScalar(WIDTH_FACTOR);
-      // A soft contact shadow on the floor: the machine stands, it does not float.
-      const shadow = new THREE.Mesh(plane(-LOADER_LENGTH * 0.62, LOADER_LENGTH * 0.62, -2.6 * WIDTH_FACTOR, 2.6 * WIDTH_FACTOR, 0.05),
-        new THREE.MeshBasicMaterial({map: textures.shadow, transparent: true, depthWrite: false, opacity: 0.9,
-          polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6}));
-      shadow.renderOrder = 8;
-      loader = new THREE.Group();
-      loader.add(shadow, model);
-      loader.name = 'decor:loader';
-      loader.visible = false;
-      world.add(loader);
-      loaderPlaceInfo = chooseLoaderPlace();
-      placeLoader();
       root.setAttribute('data-decor', 'loaded');
+      gizmo.setDecor(true);
+      placeLoaders();
       setLabels();
       invalidate();
     } catch (error) {
-      // The model is decoration: the scene is complete without it.
+      // The work state of a zone is still on its tag and in the rail: the scene is complete without the machines.
       root.setAttribute('data-decor', 'absent');
+      gizmo.setDecor(false);
     }
   }
 
@@ -1325,12 +1356,14 @@ export function createScene(host, options) {
       return p ? [p[0], p[1] + 7.5, p[2]] : null;
     },
     exit: exitPoint,
+    loader: (zone) => loaderPoint(zone, 2.6),
   };
 
   function setLabels() {
     if (!layout || !view || !state || !state.model) return labels.set([]);
     const arriving = new Set(fx ? [...fx.closed].map((name) => view.workings[name] && view.workings[name].thingId) : []);
-    return labels.set(labelItems({model: state.model, view, layout, groups, anchors, arriving}));
+    const placed = loaders.loaded ? [...loaderPlaces.keys()].map((zone) => ({zone, look: workLook(view.zones[zone]), lines: loaderLines(zone)})) : [];
+    return labels.set(labelItems({model: state.model, view, layout, groups, anchors, arriving, loaders: placed}));
   }
 
   const v3 = new THREE.Vector3();
@@ -1353,11 +1386,16 @@ export function createScene(host, options) {
     const origin = root.getBoundingClientRect();
     fixedObstacles = [];
     // Controls over the stage: the HUD, the tabs when they lie over it, the legend chip (view/legend.js), the notice
-    // of a fallback, the gizmo and the caption of old data.
+    // of a fallback, the gizmo, the caption of old data, and in the shift desk the floating card of the selection,
+    // the banners and the toasts of commands when they lie over the stage.
     const others = [...document.querySelectorAll('#stage-hud .hud__row, #stage-hud .hud__status, .hud__keys[open] .hud__keys-body, '
-      + '#legend, .stage-notice:not([hidden]), #centre > .centre__bar')];
+      + '#legend, .stage-notice:not([hidden]), #centre > .centre__bar, #banners > *, #pending > *, '
+      + 'body[data-sheet="open"] #sheet, body[data-stand="open"] #stand-drawer, #panel, #rail-region')]
+      // What lies beside the stage (the rail with its legend, the panel of the wide layout) is no obstacle.
+      .filter((element) => overStage(element));
     // The legend counts for the camera only as its chip: the open legend is read and closed, it never moves the mine.
-    const chip = document.querySelector('#legend [data-testid="legend-toggle"]');
+    const legendChip = document.querySelector('#legend [data-testid="legend-toggle"]');
+    const chip = legendChip && overStage(legendChip) ? legendChip : null;
     for (const element of [...others, gizmo.element, ...(old.hidden ? [] : [oldText]), ...(chip ? [chip] : [])]) {
       const rect = element.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
@@ -1365,6 +1403,13 @@ export function createScene(host, options) {
           camera: element.id !== 'legend' || !chip});
       }
     }
+  }
+
+  /** Whether an element lies over the 3D stage (a panel of a narrow screen) rather than beside it. */
+  function overStage(element) {
+    const r = element.getBoundingClientRect();
+    const o = root.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.left < o.right - 1 && r.right > o.left + 1 && r.top < o.bottom - 1 && r.bottom > o.top + 1;
   }
 
   function placeLabels() {
@@ -1377,12 +1422,13 @@ export function createScene(host, options) {
       const r = sprite.size / 2 + 2;
       obstacles.push({x: p.x - r, y: p.y - r, w: 2 * r, h: 2 * r, key: sprite.group ? `worker:${sprite.group.key}` : sprite.key});
     }
-    // The decorative loader, while it is drawn: the labels of the scene leave it visible.
-    if (loader && loader.visible) {
-      const p = project([loader.position.x, loader.position.y + WIDTH_FACTOR, loader.position.z]);
-      if (p && p.visible) {
-        const r = (LOADER_LENGTH / 2) * p.scale;
-        obstacles.push({x: p.x - r, y: p.y - r * 0.6, w: 2 * r, h: r * 1.2, key: DECOR});
+    // The loaders: the labels of the scene leave them visible (their own sign excepted).
+    if (loaders.loaded) {
+      for (const zone of loaderPlaces.keys()) {
+        const p = project(loaderPoint(zone, 1));
+        if (!p || !p.visible) continue;
+        const r = Math.max((LOADER_LENGTH / 2) * p.scale, 6);
+        obstacles.push({x: p.x - r, y: p.y - r * 0.5, w: 2 * r, h: r, key: `${LOADER}${zone}`});
       }
     }
     // Barricades: a label never covers the barrier it explains.
@@ -1408,7 +1454,7 @@ export function createScene(host, options) {
     const sprite = spriteList.find((entry) => !entry.cell.startsWith('ring') && (entry.key === thingId
       || (entry.group && entry.group.members.some((member) => view.workers[member].thingId === thingId))));
     if (sprite) return sprite.position;
-    if (thingId === DECOR) return loader && loader.visible ? [loader.position.x, loader.position.y + 1.2 * WIDTH_FACTOR, loader.position.z] : null;
+    if (typeof thingId === 'string' && thingId.startsWith(LOADER)) return loaders.loaded ? loaderPoint(thingId.slice(LOADER.length)) : null;
     if (thing && thing.kind === 'working' && layout.workings.has(thing.name)) {
       const line = layout.workings.get(thing.name);
       const mid = geo.pointAt(sceneLine(layout, line, k), line.cum, line.total / 2).point;
@@ -1455,9 +1501,9 @@ export function createScene(host, options) {
     const vertical = document.createElement('span');
     const thickness = document.createElement('span');
     thickness.textContent = SCENE.notToScale;
+    // The caption of the loaders, from the start (the box keeps its size while the model loads); gone if it cannot load.
     const decor = document.createElement('span');
-    decor.hidden = true;
-    decor.textContent = SCENE.decorNote(WIDTH_FACTOR);
+    decor.textContent = SCENE.decorNote(LOADER_SCALE);
     notes.append(vertical, thickness, decor);
     const col = document.createElement('div');
     col.className = 's3__gizmo-text';
@@ -1467,7 +1513,7 @@ export function createScene(host, options) {
     let lastBar = null;
     return {
       element,
-      /** The caption of the decorative loader, while it is drawn. */
+      /** The caption of the loaders (what they mean, how much larger they are drawn), once they are loaded. */
       setDecor(shown) {
         decor.hidden = !shown;
       },
@@ -1527,8 +1573,11 @@ export function createScene(host, options) {
     active = stepSelect(now) || active;
     active = stepScope(now) || active;
     active = stepGhosts(now) || active;
+    if (loaderFade) {
+      loaderFade = loaders.step(now, reduced());
+      active = loaderFade || active;
+    }
     if (spritesDirty) buildSprites();
-    updateLoaderZoom();
     const started = performance.now();
     renderer.render(scene, camera);
     renderMs.push(performance.now() - started);
@@ -1610,7 +1659,7 @@ export function createScene(host, options) {
 
   /**
    * Rectangles over the stage that the picture keeps clear of, in pixels of the stage: the HUD, the tabs,
-   * the legend chip, the gizmo, a notice; the dock when it is unfolded over the stage (compact layout) and
+   * the legend chip, the gizmo, a notice; the panel when it lies over the stage (compact layout) and
    * the open stand drawer.
    */
   function coverRects() {
@@ -1623,11 +1672,15 @@ export function createScene(host, options) {
       const r = element.getBoundingClientRect();
       if (r.width > 0 && r.height > 0) rects.push({x: r.left - origin.left - grow, y: r.top - origin.top - grow, w: r.width + 2 * grow, h: r.height + 2 * grow});
     };
-    const dock = document.getElementById('decision-dock');
-    if (dock && !dock.hidden && document.body.dataset.dock === 'open' && getComputedStyle(dock).position === 'absolute') add(dock);
     const drawer = document.getElementById('stand-drawer');
     if (drawer && document.body.dataset.stand === 'open') add(drawer, 12);
-    // The dock and the drawer cover a part of the stage; the other rectangles are chips that may give way.
+    // The shift desk: the right panel where it lies over the stage (the compact layout: positioned absolutely; in the
+    // wide layout it is in flow and the stage itself is narrower), and the rail if it ever does.
+    for (const id of ['panel', 'rail-region']) {
+      const element = document.getElementById(id);
+      if (element && !element.hidden && getComputedStyle(element).position === 'absolute' && overStage(element)) add(element, 4);
+    }
+    // The panel and the drawer cover a part of the stage; the other rectangles are chips that may give way.
     rects.forEach((r, index) => {
       r.cover = index >= chips;
     });
@@ -1786,16 +1839,21 @@ export function createScene(host, options) {
     return `${width}x${height}:${rects.filter((r) => r.cover).map((r) => [r.x, r.y, r.w, r.h].map(Math.round).join(',')).join(';')}`;
   }
 
-  /** The part of the stage left free by the dock unfolded over its bottom and the stand drawer over its left edge. */
+  /**
+   * The part of the stage left free by what covers it: a panel over its bottom (a panel of the bottom), over its
+   * left edge (the stand drawer, the rail) or over its right edge (the decision panel on a narrow screen).
+   */
   function freeRect(rects) {
     let left = 0;
+    let right = width;
     let bottom = height;
     for (const r of rects) {
       if (!r.cover) continue;
       if (r.w >= width * 0.6 && r.y > height * 0.2) bottom = Math.min(bottom, Math.max(r.y, 0));
       else if (r.h >= height * 0.6 && r.x < width * 0.25) left = Math.max(left, r.x + r.w);
+      else if (r.h >= height * 0.6 && r.x + r.w > width * 0.75) right = Math.min(right, Math.max(r.x, 0));
     }
-    return {x: left, y: 0, w: Math.max(width - left, 1), h: Math.max(bottom, 1)};
+    return {x: left, y: 0, w: Math.max(right - left, 1), h: Math.max(bottom, 1)};
   }
 
   /** Margins of a framed object: inside the free part of the stage, smaller when that part is small. */
@@ -1835,7 +1893,7 @@ export function createScene(host, options) {
    * What «показать» of a zone frames (clarity spec B, camera): the zone with its tag, the people now in it, the
    * end points of their published routes (a person without one: the nearest exit), and the level it lies on.
    */
-  function zoneArea(zoneName) {
+  function zoneArea(zoneName, walkers = null) {
     const zone = view && view.zones[zoneName];
     if (!zone || zone.workings.length === 0) return null;
     const points = [];
@@ -1847,7 +1905,7 @@ export function createScene(host, options) {
     const ends = [];
     const exitsNear = [];
     for (const [name, worker] of Object.entries(view.workers)) {
-      if (!worker.at || !inside.has(worker.at)) continue;
+      if (!worker.at || !(inside.has(worker.at) || (walkers && walkers.has(name)))) continue;
       const at = workerPoint(name);
       if (!at) continue;
       people.push([at[0], at[1] + 6, at[2]]);
@@ -1919,11 +1977,11 @@ export function createScene(host, options) {
 
   /**
    * The view that frames a zone by the rule of «показать». When the whole way out does not fit the free part of
-   * the stage at a readable scale (the dock unfolded over a small stage), the zone, its people and where their
+   * the stage at a readable scale (the panel over a small stage), the zone, its people and where their
    * routes leave its level are framed instead: never the whole mine shrunk into a strip.
    */
-  function zoneGoal(zoneName, rects = coverRects()) {
-    const area = zoneArea(zoneName);
+  function zoneGoal(zoneName, rects = coverRects(), walkers = null) {
+    const area = zoneArea(zoneName, walkers);
     if (!area) return null;
     const label = area.level ? [levelLabelPoint(area.level, orbit.state.az)] : [];
     const minDist = area.level ? horizonDist(area.level) : 200;
@@ -1951,6 +2009,14 @@ export function createScene(host, options) {
       return fitPoints([[b.minX, y + DIMS.depth, b.minZ], [b.maxX, y + DIMS.depth, b.maxZ], [b.minX, y - DIMS.thickness, b.maxZ],
         [b.maxX, y + DIMS.depth, b.minZ]], 120, rects);
     }
+    if (typeof id === 'string' && id.startsWith(LOADER)) {
+      // A zone's loader, close up: the machine and the light ahead of it fill the middle of the stage.
+      const p = loaderPoint(id.slice(LOADER.length), 1);
+      if (!p) return null;
+      // About three machine lengths across the free part of the stage.
+      const free = freeRect(rects);
+      return centreIn(p, (3 * LOADER_LENGTH * height) / (2 * Math.tan((camera.fov * DEG) / 2) * Math.max(free.w, 1)), rects);
+    }
     const thing = model.things[id] || thingByName(model, id);
     if (!thing) return null;
     if (thing.kind === 'zone') return zoneGoal(thing.name, rects);
@@ -1975,11 +2041,22 @@ export function createScene(host, options) {
       points = [exitPoint(thing.name)];
     }
     if (points.length === 0) return null;
-    if (points.length === 1) {
-      const p = points[0];
-      points = [[p[0] - 30, p[1] - 4, p[2] - 30], [p[0] + 30, p[1] + 8, p[2] + 30]];
-    }
+    // One mark (a person, a sensor, an exit): in the middle of the free stage at the smallest distance of its kind.
+    if (points.length === 1) return centreIn(points[0], minDist, rects);
     return fitPoints(points, minDist, rects);
+  }
+
+  /** A view at `dist` that puts a scene point in the middle of the part of the stage no panel covers. */
+  function centreIn(point, dist, rects) {
+    const free = freeRect(rects);
+    const at = new THREE.Vector3(point[0], point[1], point[2]);
+    placeProbe(at, dist, orbit.state.az, orbit.state.el);
+    const right = new THREE.Vector3().setFromMatrixColumn(probe.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(probe.matrixWorld, 1);
+    const perPixel = (2 * dist * Math.tan((camera.fov * DEG) / 2)) / Math.max(height, 1);
+    const dx = free.x + free.w / 2 - width / 2;
+    const dy = free.y + free.h / 2 - height / 2;
+    return {target: at.addScaledVector(right, -dx * perPixel).addScaledVector(up, dy * perPixel), dist, ok: true};
   }
 
   /** Glide to an object (full thingId) or a level (local name); the azimuth is kept. */
@@ -2046,7 +2123,9 @@ export function createScene(host, options) {
     lastPanelCover = cover;
     const goal = refitGoal(rects, why === 'size');
     if (!goal) {
-      idleIfQuiet();
+      // The picture stays; its labels are placed once more clear of what now lies over the stage.
+      obstaclesAt = 0;
+      invalidate();
       return;
     }
     if (orbit.gliding) orbit.retarget(goal);
@@ -2173,7 +2252,8 @@ export function createScene(host, options) {
       }
     }
     if (best) return best.thingId;
-    if (overDecor(x, y)) return DECOR;
+    const machine = overLoader(x, y);
+    if (machine) return `${LOADER}${machine}`;
     const hit = stoneDistance(x, y);
     const stoneAt = hit ? hit.distance : Infinity;
     // The floor of a channel lies under the top face: stone in front of it by up to the channel's width,
@@ -2225,10 +2305,11 @@ export function createScene(host, options) {
     return hit;
   }
 
-  function overDecor(x, y) {
-    if (!loader || !loader.visible) return false;
-    const p = project([loader.position.x, loader.position.y + 1.2 * WIDTH_FACTOR, loader.position.z]);
-    return Boolean(p && p.visible && Math.hypot(p.x - x, p.y - y) < Math.max((LOADER_LENGTH / 2) * p.scale, 8));
+  /** A loader stands for its zone: picking it selects the zone. */
+  function selectable(thingId) {
+    if (typeof thingId !== 'string' || !thingId.startsWith(LOADER)) return thingId;
+    const zone = state && state.model ? thingByName(state.model, thingId.slice(LOADER.length)) : null;
+    return zone ? zone.thingId : null;
   }
 
   // ---- input ----------------------------------------------------------------------------
@@ -2276,8 +2357,7 @@ export function createScene(host, options) {
     orbit.release();
     if (!wasMoved && event.type === 'pointerup') {
       const at = local(event);
-      const thingId = pick(at.x, at.y);
-      ctx.select(thingId === DECOR ? null : thingId);
+      ctx.select(selectable(pick(at.x, at.y)));
     }
     invalidate();
   };
@@ -2295,8 +2375,8 @@ export function createScene(host, options) {
   });
   canvas.addEventListener('dblclick', (event) => {
     const at = local(event);
-    const thingId = pick(at.x, at.y);
-    if (thingId && thingId !== DECOR) {
+    const thingId = selectable(pick(at.x, at.y));
+    if (thingId) {
       ctx.select(thingId);
       focus(thingId);
     }
@@ -2344,7 +2424,7 @@ export function createScene(host, options) {
 
   function updateHover(x, y) {
     const next = pick(x, y);
-    const decor = next === DECOR;
+    const machine = typeof next === 'string' && next.startsWith(LOADER) ? next.slice(LOADER.length) : null;
     if (next !== hovered) {
       hovered = next;
       spritesDirty = true;
@@ -2356,8 +2436,8 @@ export function createScene(host, options) {
       canvas.style.cursor = '';
       return;
     }
-    canvas.style.cursor = decor ? 'help' : 'pointer';
-    const lines = decor ? [SCENE.decor(WIDTH_FACTOR)] : tooltipLines(labels.items, next);
+    canvas.style.cursor = 'pointer';
+    const lines = machine ? loaderLines(machine) : tooltipLines(labels.items, next);
     if (lines.length === 0) {
       hideTip();
       return;
@@ -2420,13 +2500,13 @@ export function createScene(host, options) {
   });
   resizeObserver.observe(host);
   // Not the legend: opening it never moves the mine.
-  for (const id of ['stage-hud', 'decision-dock']) {
+  for (const id of ['stage-hud', 'panel', 'rail-region', 'pending']) {
     const element = document.getElementById(id);
     if (element) resizeObserver.observe(element);
   }
-  // The dock unfolding over the stage and the stand drawer change no size of the stage.
+  // Panels that unfold over the stage change no size of the stage: the body names them.
   const coverObserver = new MutationObserver(() => settleSoon('panel'));
-  coverObserver.observe(document.body, {attributes: true, attributeFilter: ['data-dock', 'data-stand']});
+  coverObserver.observe(document.body, {attributes: true, attributeFilter: ['data-stand', 'data-panel', 'data-sheet', 'data-rail', 'data-situation']});
 
   // ---- context loss ----------------------------------------------------------------------
 
@@ -2459,8 +2539,9 @@ export function createScene(host, options) {
       buildStatic();
       view = null;
       signature = '';
-      loaderPlaceInfo = null;
-      if (loader) placeLoader();
+      loaderPlaces = new Map();
+      loaderRun = null;
+      placeLoaders();
       setLabels();
       root.removeAttribute('data-levels');
       root.removeAttribute('data-workings');
@@ -2480,9 +2561,9 @@ export function createScene(host, options) {
       if (layout) {
         applyK();
         if (overviewMode || !width) overview(false);
-        if (!loader && !root.hasAttribute('data-decor')) {
+        if (!root.hasAttribute('data-decor')) {
           root.setAttribute('data-decor', 'loading');
-          loadLoader();
+          loadLoaders();
         }
       }
     }
@@ -2496,6 +2577,8 @@ export function createScene(host, options) {
       if (Object.values(view.zones).some((zone) => zone.lastKnown) || Object.values(view.workings).some((working) => working.lastKnown)) {
         if (setLabels()) invalidate();
       }
+      // A situation may change with nothing else drawn differently (an option starts): the camera still follows it.
+      choreograph(view.hasSnapshot);
       return;
     }
     const before = view;
@@ -2528,11 +2611,9 @@ export function createScene(host, options) {
     updateScope(Boolean(before) && calm(view) && !reduced());
     buildOverlays();
     buildRoutes(animate);
-    // The loader keeps out of the way of what the model publishes: it moves to the next free place, or goes.
-    const place = chooseLoaderPlace();
-    const moved = place !== loaderPlaceInfo;
-    loaderPlaceInfo = place;
-    if (moved && loader) placeLoader();
+    // The loaders take their places once per run and then show the published work state of their zones.
+    chooseLoaderPlaces();
+    updateLoaderLooks(animate);
     setLabels();
     old.hidden = !view.old;
     root.toggleAttribute('data-old', view.old);
@@ -2548,25 +2629,71 @@ export function createScene(host, options) {
       pendingFocus = null;
       focus(id);
     }
-    frameNewIncident(Boolean(before) && before.hasSnapshot && !rebuilt);
+    choreograph(Boolean(before) && before.hasSnapshot && !rebuilt);
     spritesDirty = true;
     invalidate();
   }
 
-  /**
-   * An incident that opens while the page is watching is framed once, when the user has left the camera alone
-   * for HANDS_OFF_MS; one already open when the picture appears is not (the overview comes first).
-   */
-  function frameNewIncident(watching) {
+  /** The zones a running withdrawal is about: the published scope of the option being executed, else the zones withdrawing. */
+  function walkZones() {
+    const option = thingsOfKind(state.model, 'option').find((entry) => entry.values.state === 'executing');
+    const scope = option && Array.isArray(option.values.scope) ? option.values.scope.filter((name) => view.zones[name]) : [];
+    if (scope.length > 0) return [...scope].sort();
+    return Object.keys(view.zones).filter((name) => view.zones[name].withdrawal === 'in_progress').sort();
+  }
+
+  /** The situation of the shift (situation.js) with what it is about: the camera follows a change of it once. */
+  function situationNow() {
+    const situation = situationOf(state);
     const incident = incidentOf(state.model);
-    if (!incident || incident.values.state !== 'active' || typeof incident.values.zone !== 'string') return;
-    const opened = Number.isFinite(incident.values.opened_at_tick) ? incident.values.opened_at_tick : JSON.stringify(incident.values.causes || null);
-    const id = `${view.run}:${incident.values.zone}:${opened}`;
-    if (seenIncidents.has(id)) return;
-    seenIncidents.add(id);
-    if (!watching || view.old || !view.linkOk || performance.now() - lastTouch < HANDS_OFF_MS) return;
-    const zone = thingByName(state.model, incident.values.zone);
-    if (zone && focus(zone.thingId)) root.setAttribute('data-auto-framed', id);
+    const opened = incident ? (Number.isFinite(incident.values.opened_at_tick) ? incident.values.opened_at_tick
+      : JSON.stringify(incident.values.causes || null)) : '';
+    const about = incident && typeof incident.values.zone === 'string' ? `${incident.values.zone}:${opened}` : '';
+    const subject = {decision: about, executing: `${walkZones().join(',')}|${about}`, done: about}[situation] || '';
+    return {situation, key: `${view.run}|${situation}|${subject}`, incident: about ? `${view.run}:${about}` : null};
+  }
+
+  /**
+   * Camera choreography of the situations (variant 2): an incident waiting for a decision frames its zone, its
+   * people and their exits; an executed withdrawal frames the walk (the zone, the people walking out, the ends of
+   * their published routes); a closed incident and the norm return to the overview. Once per change of the
+   * situation, only while the page is watching (never on the first picture, a new run or old data) and only when the
+   * user has left the camera alone for HANDS_OFF_MS. Instant under reduced motion (the orbit glides at once).
+   */
+  function choreograph(watching) {
+    const now = situationNow();
+    if (now.key === situationKey) return;
+    const sameRun = situationKey !== null && situationKey.startsWith(`${view.run}|`);
+    situationKey = now.key;
+    if (!watching || !sameRun) return;
+    const log = (what) => {
+      root.setAttribute('data-choreo', `${now.situation}:${what}`);
+      if (!what.startsWith('skipped')) root.setAttribute('data-choreo-count', String(Number(root.getAttribute('data-choreo-count') || 0) + 1));
+    };
+    if (view.old || !view.linkOk) return log('skipped-old');
+    if (performance.now() - lastTouch < HANDS_OFF_MS) return log('skipped-touched');
+    if (now.situation === 'decision') {
+      const zone = incidentZone() ? thingByName(state.model, incidentZone()) : null;
+      if (zone && focus(zone.thingId)) {
+        root.setAttribute('data-auto-framed', now.incident);
+        log(zone.name);
+      }
+    } else if (now.situation === 'executing') {
+      const zones = walkZones();
+      const walkers = new Set(Object.keys(view.workers).filter((name) => view.workers[name].status === 'moving_to_exit'));
+      const goal = zones.length === 1 && width ? zoneGoal(zones[0], coverRects(), walkers) : null;
+      if (goal) {
+        overviewMode = false;
+        focusId = thingByName(state.model, zones[0]).thingId;
+        orbit.glideTo({target: goal.target, dist: goal.dist});
+        invalidate();
+        log(`walk:${zones[0]}`);
+      } else if (overview(true)) {
+        log('overview');
+      }
+    } else if ((now.situation === 'done' || now.situation === 'norm') && overview(true)) {
+      log('overview');
+    }
   }
 
   function summary() {
@@ -2661,6 +2788,7 @@ export function createScene(host, options) {
         width: Math.round(Math.max(level.box.maxX - level.box.minX, level.box.maxZ - level.box.minZ))})) : [],
       focus: focusId,
       overview: overviewMode,
+      target: ['x', 'y', 'z'].map((axis) => Math.round(orbit.state.target[axis] * 10) / 10),
       // The labels of the last frame: box, anchor, how far the decluttering pushed each, and its leader.
       labels: labels.placement,
       // The transitions now running (for frame sampling in tests): progress of each part, 0…1.
@@ -2679,17 +2807,28 @@ export function createScene(host, options) {
         scopeZones: scopeDrawn.zones,
         scopeWorkers: scopeDrawn.workers,
       },
-      // The decorative loader: where it stands (a working and an offset of length_m), how large, whether drawn.
-      decor: loader && loaderPlaceInfo ? {
-        working: (layout.workings.get(loaderPlaceInfo.working) || {}).thingId || null, offsetM: loaderPlaceInfo.offsetM,
-        span: loaderPlaceInfo.span, lengthM: LOADER_LENGTH, factor: WIDTH_FACTOR, shown: loader.visible,
-        world: [loader.position.x, loader.position.y, loader.position.z].map((v) => Math.round(v * 100) / 100),
-      } : null,
+      // The loaders of the zones: where each stands (a working and an offset of length_m), its look and its light.
+      loaders: loaders.loaded ? loaders.info().map((entry) => {
+        const place = loaderPlaces.get(entry.zone);
+        const p = loaderPoint(entry.zone, 0);
+        // Its length on the screen now, in pixels (from the bucket to the counterweight).
+        const at = pointOnWorking(layout, place.working, place.offsetM, k);
+        const ends = at ? [-1, 1].map((sign) => project(at.point.map((v, i) => v + (sign * at.dir[i] * LOADER_LENGTH) / 2))) : null;
+        return {...entry, zoneId: (thingByName(state.model, entry.zone) || {}).thingId || null,
+          working: (layout.workings.get(place.working) || {}).thingId || null, offsetM: place.offsetM, span: place.span,
+          world: p ? p.map((v) => Math.round(v * 100) / 100) : null,
+          px: ends && ends[0] && ends[1] ? Math.round(Math.hypot(ends[0].x - ends[1].x, ends[0].y - ends[1].y)) : null};
+      }) : null,
+      loader: {lengthM: LOADER_LENGTH, scale: LOADER_SCALE, triangles: loaders.triangles(), calls: loaders.calls,
+        // The places each zone's loader may take (attributes only), best first: [working, offset, span].
+        candidates: Object.fromEntries([...loaderCandidates].map(([zone, list]) => [zone,
+          list.map((place) => [place.working, Math.round(place.offsetM * 10) / 10, place.span.map((v) => Math.round(v * 10) / 10)])]))},
     };
   }
 
   function dispose() {
     disposed = true;
+    loaders.dispose();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = 0;
     resizeObserver.disconnect();

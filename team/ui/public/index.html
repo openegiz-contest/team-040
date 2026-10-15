@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Диспетчер смены — цифровой двойник рудника (синтетические данные)</title>
+<title>Пульт смены — цифровой двойник рудника (синтетические данные)</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="fonts/fonts.css">
 <link rel="stylesheet" href="css/base.css">
@@ -12,36 +12,37 @@
 <link rel="stylesheet" href="css/panels.css">
 <link rel="stylesheet" href="css/compare.css">
 <link rel="stylesheet" href="css/scene3d.css">
+<link rel="stylesheet" href="css/decide.css">
 <script type="importmap">{"imports": {"three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/"}}</script>
 </head>
 <body data-boot="loading" data-link="ok" data-publications="unknown" data-snapshot="none" data-commands="blocked"
-      data-view="scheme" data-dock="none" data-stand="closed" data-journal="collapsed">
+      data-view="scheme" data-situation="none" data-panel="none" data-rail="open" data-menu="none" data-sheet="closed"
+      data-stand="closed">
 <noscript><p class="noscript">Интерфейсу нужен JavaScript. Синтетические данные. Расчёт модели, не сведения о реальной шахте</p></noscript>
 <div class="app" id="app">
   <header class="topbar" id="statusbar"></header>
 
-  <section class="situation" id="situation" data-testid="situation-strip">
-    <div class="banners" id="banners"></div>
-    <div class="incident" id="incident"></div>
-  </section>
+  <div class="frame" id="frame">
+    <aside class="rail" id="rail-region">
+      <div class="rail__body" id="rail" data-testid="rail"></div>
+      <div class="legend" id="legend" data-testid="legend"></div>
+    </aside>
 
-  <main class="centre" id="centre">
-    <div class="centre__bar">
-      <div class="tabs" id="tabs"></div>
-      <div class="centre__controls" id="scheme-controls"></div>
-    </div>
-    <div class="old-data" id="old-data" hidden></div>
-    <div class="centre__body">
+    <main class="centre" id="centre">
+      <div class="notices">
+        <div class="banners" id="banners"></div>
+        <div class="old-data" id="old-data" hidden></div>
+      </div>
       <section class="view view--scheme" id="view-scheme" data-view="scheme">
         <div class="stage" id="stage" data-testid="stage">
           <div class="stage__3d" id="stage-3d" data-testid="scene3d"></div>
           <div class="scheme" id="scheme" data-testid="scheme"></div>
           <div class="stage__hud" id="stage-hud"></div>
         </div>
-        <div class="legend" id="legend" data-testid="legend"></div>
+        <div class="scheme-controls" id="scheme-controls"></div>
       </section>
-      <section class="view view--list" id="view-list" data-view="list" data-testid="list" hidden></section>
-      <section class="view view--runs" id="view-runs" data-view="runs" hidden></section>
+      <section class="sheet" id="sheet" data-testid="card"></section>
+      <div class="toasts" id="pending" data-testid="pending-area"></div>
 
       <aside class="stand" id="stand-drawer" data-testid="stand-drawer">
         <div class="stand__head" id="stand-head"></div>
@@ -50,23 +51,21 @@
           <section class="stand__part stand__part--reset" id="reset"></section>
         </div>
       </aside>
-    </div>
+    </main>
 
-    <section class="dock" id="decision-dock" data-testid="decision-dock">
-      <div class="dock__bar" id="dock-bar"></div>
-      <div class="dock__body" id="decision" data-testid="decision-panel"></div>
-    </section>
-  </main>
+    <aside class="panel" id="panel" data-testid="panel"></aside>
 
-  <aside class="right" id="right">
-    <section class="right__card" id="card" data-testid="card"></section>
-    <section class="group group--dispatch" id="actions" data-testid="actions-panel"></section>
-    <section class="group group--pending" id="pending"></section>
-    <section class="journal" id="journal-region">
-      <div class="journal__bar" id="journal-bar"></div>
-      <div class="journal__body" id="journal" data-testid="journal"></div>
+    <section class="menu-view" id="menu-view" data-testid="menu-view" hidden>
+      <div class="menu-view__bar" id="menu-bar"></div>
+      <div class="menu-view__body">
+        <section class="view view--list" id="view-list" data-view="list" data-testid="list" hidden></section>
+        <section class="view view--runs" id="view-runs" data-view="runs" hidden></section>
+        <section class="view view--journal" id="view-journal" data-view="journal" hidden>
+          <div class="journal" id="journal" data-testid="journal"></div>
+        </section>
+      </div>
     </section>
-  </aside>
+  </div>
 </div>
 <div id="dialog-root"></div>
 <script type="module" src="js/main.js"></script>

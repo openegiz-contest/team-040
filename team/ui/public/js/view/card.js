@@ -1,5 +1,6 @@
-// The card, unfolding progressively. Nothing selected: the summary of the
-// shift as the model published it. An object selected: a header with its code,
+// The object card of «Пульт смены»: a floating sheet over the bottom right of
+// the stage, present only while an object is selected (× or Esc closes it and
+// clears the selection). It unfolds progressively: a header with its code,
 // kind and the badges of the three axes (hazard, knowledge, reachability); its
 // key figures; the reason of the state in sentences; the related twins as
 // buttons that select them; «Подробнее» reveals every published value with
@@ -7,11 +8,11 @@
 // the same full snapshot the stage shows (never a separate read). Nothing is
 // computed here. Moments are said by the model clock with their age («в
 // 00:13:30 (7 мин назад)»); the ticks are in the titles and under «Подробнее».
-// Motion: «Подробнее» unfolds and folds (180 ms, height and fade); a zone of
-// the summary whose hazard changed flashes once (450 ms).
+// Motion: «Подробнее» unfolds and folds (180 ms, height and fade); a related
+// zone whose hazard changed flashes once (450 ms).
 
 import {unresolvedFor} from '../commands.js';
-import {h, reconcile, setAttrs, setText} from '../dom.js';
+import {h, reconcile, s, setAttrs, setText} from '../dom.js';
 import {
   exitAtNode, knownHazard, labelOf, placeOf, routeOf, sensorsOfWorking, sensorsOfZone, thingByName, thingsOfKind,
   workersAtExit, workersAtWorking, workersInZone, workingsOfZone,
@@ -44,8 +45,6 @@ const KEY_FIGURES = {
 };
 const HAZARD_SIGN = {normal: null, attention: 'attention', danger: 'danger', unknown: 'unknown'};
 const QUALITY_BADGE = {fresh: ['fresh', null], stale: ['stale', 'clock'], lost: ['lost', 'lost'], none: ['none', 'none']};
-const PEOPLE = ['workers_total', 'workers_out', 'workers_in_danger', 'workers_no_route', 'workers_unknown',
-  'danger_exposure_person_s', 'unknown_exposure_person_s', 'all_out', 'downtime_s'];
 
 export function mount(root, ctx) {
   const {store, text} = ctx;
@@ -55,7 +54,9 @@ export function mount(root, ctx) {
   const kind = h('span', {class: 'card__kind'});
   const code = h('span', {class: 'card__code'});
   const focus = h('button', {class: 'btn btn--small card__focus', type: 'button', 'data-testid': 'card-focus', text: UI.card.focus});
-  const close = h('button', {class: 'btn btn--quiet btn--small card__close', type: 'button', 'data-testid': 'card-close', text: UI.card.close});
+  const close = h('button', {
+    class: 'btn btn--quiet card__close', type: 'button', 'data-testid': 'card-close', 'aria-label': UI.sheet.close, title: UI.sheet.closeTitle,
+  }, s('svg', {viewBox: '0 0 16 16', width: 16, height: 16, 'aria-hidden': 'true', focusable: 'false'}, s('path', {d: 'M3.5 3.5l9 9M12.5 3.5l-9 9'})));
   close.addEventListener('click', () => ctx.select(null));
   let shownId = null;
   focus.addEventListener('click', () => {
@@ -107,9 +108,20 @@ export function mount(root, ctx) {
       }
     }
   });
-  root.append(h('div', {class: 'card'},
-    h('div', {class: 'card__head'}, h('div', {class: 'card__ident'}, kind, ' ', code), ' ', h('div', {class: 'card__tools'}, focus, close)),
-    badges, hint, figures, lead, sections, more, fields, times));
+  const body = h('div', {class: 'card__body'}, badges, hint, figures, lead, focus, sections, more, fields, times);
+  root.append(h('div', {class: 'card', role: 'region', 'aria-labelledby': 'card-code'},
+    h('div', {class: 'card__head'}, h('div', {class: 'card__ident'}, kind, ' ', code), ' ', close), body));
+  setAttrs(code, {id: 'card-code'});
+
+  // Esc closes the card from anywhere but a field that has its own use for it (a dialog, the menu, the stand,
+  // the legend take it first).
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || root.hidden || document.getElementById('app').inert) return;
+    const focused = document.activeElement;
+    if (focused && focused !== document.body && focused.closest('#stand-drawer, #menu-view, #panel')) return;
+    event.preventDefault();
+    ctx.select(null);
+  });
 
   /** Sections: rows (a key-value list), notes (a list), links (buttons that select). */
   function drawSections(parent, list) {
@@ -144,7 +156,7 @@ export function mount(root, ctx) {
           }
           setText(item.firstChild, link.prefix ? `${link.prefix} ` : '');
           setText(item.lastChild, link.text);
-          // A zone of the summary whose published hazard changed while the page watched: one flash.
+          // A related zone whose published hazard changed while the page watched: one flash.
           const before = item.getAttribute('data-hazard');
           setAttrs(item, {'data-badge': link.badge || null, 'data-hazard': link.hazard || null});
           if (link.hazard && before && before !== link.hazard && flashing) {
@@ -168,7 +180,13 @@ export function mount(root, ctx) {
     setText(kind, view.kind);
     setText(code, view.code);
     code.hidden = !view.code;
-    close.hidden = !view.selected;
+    // The card unfolds when it appears (180 ms), never on load, over old data or under reduced motion.
+    const appearing = root.hidden && view.selected;
+    root.hidden = !view.selected;
+    if (appearing && flashing) {
+      play(root, [{opacity: 0, transform: 'translateY(8px)'}, {opacity: 1, transform: 'none'}], {duration: MS.disclosure, easing: EASE});
+    }
+    setAttrs(document.body, {'data-sheet': view.selected ? 'open' : 'closed'});
     focus.hidden = !view.thingId;
     shownId = view.thingId;
     setText(hint, view.hint);
@@ -271,7 +289,7 @@ export function mount(root, ctx) {
       view.hint = UI.card.notFound;
       return view;
     }
-    if (!thing) return summary(view, state, name, link);
+    if (!thing) return view;
 
     const {values, units, attrs} = thing;
     view.selected = true;
@@ -408,52 +426,6 @@ export function mount(root, ctx) {
       view.times[0] = `${UI.card.modelTime}: ${text.modelTime(values.sim_time_s)}`;
       view.timesTitle = text.tickWords(values.tick);
     }
-    return view;
-  }
-
-  /** Thresholds are a setting of the demonstration: shown as the mine twin gives them, never applied here. */
-  function thresholdRows(thresholds) {
-    const rows = [];
-    for (const [quantity, levels] of Object.entries(thresholds && typeof thresholds === 'object' ? thresholds : {})) {
-      if (!levels || typeof levels !== 'object') continue;
-      const shown = Object.keys(levels).filter((level) => level !== 'unit')
-        .map((level) => `${text.codeLabel('thresholdLevel', level)} ${text.quantity(levels[level], levels.unit)}`);
-      rows.push([text.codeLabel('threshold', quantity), shown.join(', '), quantity]);
-    }
-    return rows;
-  }
-
-  function summary(view, state, name, link) {
-    const {model} = state;
-    view.kind = UI.card.summary;
-    view.hint = model.hasSnapshot ? UI.card.nothingSelected : UI.list.noState;
-    const shift = model.shift;
-    view.sections.push({key: 'exits', title: text.VOCAB.kindPlural.exit, wide: true, links: thingsOfKind(model, 'exit').map((exit) => link(exit,
-      [`${exit.label}: ${text.label('exitState', exit.values.state)}`,
-        typeof exit.values.workers_out === 'number' ? UI.scheme.out(exit.values.workers_out) : ''].filter(Boolean).join('; '),
-      exit.values.state === 'available' ? null : (exit.values.state === 'unavailable' ? 'blocked' : 'unknown')))});
-    view.sections.push({key: 'zones', title: text.VOCAB.kindPlural.zone, wide: true, links: thingsOfKind(model, 'zone').map((zone) => ({
-      ...link(zone,
-        [`${zone.label}: ${text.hazardText(zone.hazard)}`, text.label('workState', zone.values.work_state), text.label('withdrawal', zone.values.withdrawal_state),
-          typeof zone.values.workers_count === 'number' ? text.counted(zone.values.workers_count, text.FORMS.worker) : '']
-          .filter((words) => words && words !== text.DASH).join('; '),
-        zone.hazard.state === 'normal' ? null : BADGE[zone.hazard.state]),
-      hazard: model.hasSnapshot ? zone.hazard.state : null,
-    }))});
-    if (shift && model.hasSnapshot) {
-      view.fields.push({key: 'people', title: text.VOCAB.kindPlural.worker, rows: PEOPLE.filter((field) => shift.values[field] !== undefined).map((field) => {
-        const value = shift.values[field];
-        const label = text.METRICS.includes(field) ? text.metricLabel(field) : text.fieldLabel(field);
-        return [label, typeof value === 'boolean' ? text.yesNo(value) : text.quantity(value, shift.units[field]), field];
-      })});
-      view.fields.push({key: 'people-note', title: '', notes: [{text: UI.incident.overlap}]});
-    }
-    view.fields.push({key: 'conditions', title: UI.status.conditions, links: model.conditions.length > 0
-      ? model.conditions.map((condition) => ({text: text.conditionText(condition, name), stand: true}))
-      : [{text: UI.status.noConditions}]});
-    const thresholds = thresholdRows(state.attributes ? state.attributes.mine.thresholds : null);
-    if (thresholds.length > 0) view.fields.push({key: 'thresholds', title: UI.card.thresholds, rows: thresholds});
-    view.fields.push({key: 'marks', title: UI.card.marks, notes: [{text: UI.card.otherCodes}]});
     return view;
   }
 

@@ -68,7 +68,8 @@ function crosses(a, b, box) {
 /**
  * @typedef {Object} LabelItem
  * @property {string} key
- * @property {string|null} thingId     null for a label that is not an object (a level, the decor)
+ * @property {string|null} thingId     null for a label that is not an object (a level, the sign of a loader)
+ * @property {Array<{text: string}>} [tip]  every word of the object for its tooltip, when the label shows fewer
  * @property {Object<string, *>} attrs state attributes (model.stateAttributes) and aria-label
  * @property {Array<{text: string, bold?: boolean, muted?: boolean}>} lines
  * @property {string[]} signs           names of icons.js signs before the first line; "kind:state" for another symbol
@@ -97,11 +98,13 @@ export function createLabels(layer, onSelect, onHover) {
   function create(item) {
     const button = h('button', {type: 'button', class: 's3-label'},
       h('span', {class: 's3-label__signs', 'aria-hidden': 'true'}), h('span', {class: 's3-label__lines'}));
+    // A label that is not an object itself (the sign of a zone's loader) selects the object it stands for.
+    const target = () => button.getAttribute('data-thing-id') || button.getAttribute('data-select');
     button.addEventListener('click', () => {
-      const thingId = button.getAttribute('data-thing-id');
+      const thingId = target();
       if (thingId) onSelect(thingId);
     });
-    button.addEventListener('pointerenter', () => onHover(button.getAttribute('data-thing-id')));
+    button.addEventListener('pointerenter', () => onHover(target()));
     button.addEventListener('pointerleave', () => onHover(null));
     return button;
   }

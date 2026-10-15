@@ -765,8 +765,6 @@ export function shortCommandId(id) {
 export const UI = {
   status: {
     region: 'Состояние стенда',
-    brand: 'Диспетчер смены',
-    brandSub: 'цифровой двойник рудника',
     platform: 'Платформа',
     model: 'Модель',
     run: 'Прогон',
@@ -777,59 +775,18 @@ export const UI = {
     commandsBlocked: COMMANDS_BLOCKED,
     oldTag: 'последние полученные данные:',
     speed: (value) => `×${num(value)}`,
-    link: 'Связь',
     runTitle: (run, seed) => `Прогон ${run}; seed ${seed}`,
     timeTitle: (tick) => `Время модели; тик${NBSP}${tick}`,
   },
   incident: {
-    region: 'Инцидент и люди',
     inDanger: 'в опасных зонах',
     noRoute: 'без расчётного маршрута',
     unknown: 'состояние неизвестно',
     total: 'всего',
     out: 'вышли',
-    overlap: 'числа считает модель; один работник может входить в несколько',
     zone: 'участок',
     people: 'Люди',
     peopleTitle: 'Люди: счётчики модели; один работник может входить в несколько',
-  },
-  // The situation strip: an incident as the sequence the dispatcher needs.
-  situation: {
-    region: 'Ход инцидента',
-    steps: ['Что изменилось', 'Где люди', 'Какие пути', 'Варианты'],
-    show: 'показать',
-    showRoutes: 'показать маршруты',
-    showRoutesWord: 'маршруты',
-    openOptions: 'к вариантам',
-    // Step 1: «Участок Г — опасно», «+ потеряны данные Э-05».
-    head: (zone, words) => (zone ? `${zone} — ${words}` : words),
-    more: (words) => `+ ${words}`,
-    cause: {passage_closed: 'закрыт проход', data_lost: 'потеряны данные'},
-    executingOption: (option) => `исполняется: ${option}`,
-    doneOption: (option) => `исполнено: ${option}`,
-    // Step 2: the number is a counter of the model, the codes come from the fields of each worker.
-    inDanger: (count, codes) => `${num(count)}${NBSP}чел. в опасной зоне${codes ? `: ${codes}` : ''}`,
-    inZone: (zone, codes) => `${zone}: ${codes}`,
-    nobodyInZone: (zone) => `${zone}: работников нет`,
-    unknownPeople: (count, codes) => `${num(count)}${NBSP}чел. — состояние неизвестно${codes ? `: ${codes}` : ''}`,
-    // Step 3.
-    noRoute: (codes) => `${codes}: нет расчётного маршрута`,
-    nobodyLeads: 'ни один вариант модели их не выводит',
-    hasRoute: (codes) => `${codes}: расчётный маршрут есть`,
-    unknown: (codes) => `${codes}: маршрут не рассчитан`,
-    longer: (items) => `маршрут длиннее: ${items}`,
-    plus: (code, metres) => `${code} +${metres}`,
-    routesUnchanged: 'расчётные маршруты не удлинились',
-    exitsAvailable: 'все выходы доступны (модель)',
-    exitsNot: (items) => `выходы: ${items}`,
-    // Step 4.
-    options: (count) => counted(count, FORMS.option),
-    noOptions: 'варианты не опубликованы',
-    paused: 'модель ждёт выбора',
-    executing: 'решение исполняется',
-    done: 'решение исполнено, итог в вариантах',
-    honesty: 'Числа — счётчики модели; коды работников — из опубликованных полей каждого работника',
-    noIncidentData: 'нет данных об инциденте',
   },
   stand: {
     toggle: 'Стенд',
@@ -841,23 +798,54 @@ export const UI = {
     closeTitle: 'Закрыть управление стендом',
     active: (count) => (count > 0 ? `активно: ${counted(count, FORMS.condition)}` : 'условий нет'),
   },
-  dock: {
-    title: 'Варианты решения',
-    expand: 'Развернуть',
-    collapse: 'Свернуть',
+  // «Пульт смены»: the top bar, the menu and its overlays, the people rail, the floating card.
+  top: {
+    brand: 'Пульт смены',
+    shift: 'Смена',
+    run: (run) => `прогон ${run}`,
+    menu: 'Меню',
+    menuTitle: 'Список объектов, прогоны, журнал',
   },
-  tabs: {
-    region: 'Вид',
-    scheme: 'Шахта',
+  menu: {
+    region: 'Меню',
+    back: 'Назад к шахте',
     list: 'Список',
+    listHint: 'все объекты и их состояние',
     runs: 'Прогоны',
-    rightRegion: 'Правая панель',
-    decision: 'Решение',
-    card: 'Карточка',
+    runsHint: 'прогноз и факт завершённых прогонов',
     journal: 'Журнал',
-    journalOpen: 'Развернуть журнал',
-    journalClose: 'Свернуть журнал',
-    runBox: 'Прогон',
+    journalHint: 'события модели, новые сверху',
+  },
+  rail: {
+    title: 'Люди',
+    region: 'Люди: счётчики модели и где находятся работники',
+    collapse: 'Свернуть',
+    collapseTitle: 'Свернуть панель «Люди» до полосы чисел',
+    expandTitle: 'Развернуть панель «Люди»',
+    figuresNote: 'числа модели; человек может входить в несколько',
+    where: 'Где люди',
+    whereTitle: 'По опубликованному положению каждого работника; точка — один человек',
+    outside: 'Вне участков',
+    noPosition: 'Положение не опубликовано',
+    out: 'Вышли',
+    nobody: 'никого',
+    nobodyOut: 'пока никто',
+    noState: 'состояние не получено',
+    working: (rate) => (rate ? `работает · ${rate}` : 'работает'),
+    stopped: 'остановлен',
+    withdrawing: 'вывод идёт',
+    withdrawn: 'вывод завершён',
+    incomplete: 'вывод не завершён',
+    actionsTitle: (zone) => `Действия диспетчера: ${zone}`,
+    selectZone: (zone) => `${zone}: выбрать и показать на модели`,
+    // The badge of a zone row is short; its title and the accessible name of the row carry the full words.
+    hazardShort: {normal: 'норма', attention: 'внимание', danger: 'опасно', unknown: 'неизвестно'},
+    worker: (code, words) => `${code}: ${words}`,
+    exitGroup: (exit) => `через ${exit}`,
+  },
+  sheet: {
+    close: 'Закрыть карточку',
+    closeTitle: 'Закрыть карточку и снять выбор (Esc)',
   },
   oldData: (snapshot) => `${shownDataText(snapshot)}. Текущее состояние неизвестно`,
   list: {
@@ -896,7 +884,7 @@ export const UI = {
   legend: {
     title: 'Легенда',
     hint: 'одни обозначения для 3D и для схемы',
-    chipLabel: 'Легенда: опасность, данные, достижимость, выход, закрытый проход, маршрут. Развернуть или свернуть',
+    chipLabel: 'Легенда: опасность, люди, данные, выходы, закрытый проход, маршрут. Развернуть или свернуть',
     hazard: 'Опасность',
     knowledge: 'Данные',
     workerOk: 'работник (есть расчётный маршрут)',
@@ -904,6 +892,9 @@ export const UI = {
     exit: 'Выход',
     commands: 'Команды',
     inDangerZone: 'работник в опасной зоне',
+    // The rail «Люди» rings a worker whose place has no known hazard state (published location_hazard = unknown).
+    unknownZone: 'работник, опасность на его месте неизвестна (в панели «Люди»)',
+    people: 'Люди',
     group: 'группа на одном отрезке',
     route: 'расчётный маршрут (модель) выбранного объекта или участка инцидента',
     routeShort: 'маршрут',
@@ -916,10 +907,7 @@ export const UI = {
   },
   card: {
     title: 'Карточка',
-    summary: 'Сводка смены',
-    nothingSelected: 'Объект не выбран. Выберите объект на модели шахты или в списке',
     notFound: 'Выбранного объекта нет среди двойников',
-    close: 'Снять выбор',
     state: 'Состояние',
     attributes: 'Атрибуты',
     related: 'Связанные объекты',
@@ -938,10 +926,6 @@ export const UI = {
     more: (count) => `Подробнее: все поля (${num(count)})`,
     less: 'Скрыть поля',
     focus: 'Показать на модели',
-    fields: 'Все опубликованные поля',
-    thresholds: 'Пороги — настройка демонстрации',
-    marks: 'Обозначения на схеме',
-    otherCodes: 'Остальные коды — при выборе объекта, в плане горизонта и на вкладке «Список»',
   },
   conditions: {
     title: 'Условия сценария (стенд)',
@@ -970,7 +954,7 @@ export const UI = {
     chooseOption: '— выберите участок —',
     chooseZone: 'Выберите участок',
     otherZone: (incident, chosen) => `Инцидент: ${incident}. Выбран другой участок: ${chosen}`,
-    waitsForOption: 'Модель ждёт выбора варианта — см. «Варианты решения». Здесь — отдельные команды по участку',
+    waitsForOption: 'Модель ждёт выбора варианта в панели «Решение». Здесь — отдельные команды по участку',
   },
   reset: {
     title: 'Прогон',
@@ -1082,4 +1066,115 @@ export const UI = {
     unclassified: 'итог не классифицирован, в сравнение не входит',
   },
   dialog: {confirm: 'Подтвердить', cancel: 'Отмена'},
+};
+
+// --------------------------------------------------------------------------
+// The right panel of «Пульт смены» (view/decide.js, view/progress.js):
+// Решение, Выполнение, Итог. One question per situation, one sentence per answer.
+// --------------------------------------------------------------------------
+
+const PANEL_PEOPLE = ['человек', 'человека', 'человек'];
+// «для 2 человек», «для 1 человека»: the genitive after «для».
+const PANEL_PEOPLE_GEN = ['человека', 'человек', 'человек'];
+
+/** "3 человека" */
+function panelPeople(count) {
+  return `${num(count)}${NBSP}${plural(count, PANEL_PEOPLE)}`;
+}
+
+export const PANEL = {
+  region: 'Решение по инциденту',
+  title: {decision: 'Решение', executing: 'Выполнение', done: 'Итог'},
+  paused: 'Модель на паузе — ждёт выбора',
+  show: 'Показать',
+  steps: ['Что случилось', 'Кто под угрозой', 'Что можно сделать'],
+  // Step 1: «Участок Г — опасно», «+ потеряны данные Э-05 · в 00:21:00 (только что)».
+  head: (zone, words) => (zone ? `${zone} — ${words}` : words),
+  more: (words) => `+ ${words}`,
+  cause: {passage_closed: 'закрыт проход', data_lost: 'потеряны данные'},
+  at: (clock, ago) => (ago ? `в ${clock} (${ago})` : `в ${clock}`),
+  justNow: 'только что',
+  // Step 2: the number is a counter of the model, the codes come from the fields of each worker.
+  inDanger: (count, codes) => `${panelPeople(count)} в опасной зоне${codes ? `: ${codes}` : ''}`,
+  unknownPeople: (count, codes) => `${num(count)} — состояние неизвестно${codes ? `: ${codes}` : ''}`,
+  noRoute: (codes) => `у ${codes} нет расчётного маршрута`,
+  inZone: (zone, codes) => `${zone}: ${codes}`,
+  nobodyInZone: (zone) => `${zone}: работников нет`,
+  nobodyInDanger: 'В опасной зоне никого (счётчик модели)',
+  peopleTitle: 'Числа — счётчики модели; коды — из опубликованных полей каждого работника',
+  // Step 3.
+  forecastFor: (seconds) => `Прогноз модели на ${duration(seconds)}`,
+  forecastNoHorizon: 'Прогноз модели',
+  noRecommendation: 'модель не рекомендует вариант — выбор за диспетчером',
+  partial: 'по неполным данным',
+  qualityNotPublished: 'полнота прогноза не опубликована',
+  notPublished: 'Прогноз не опубликован',
+  noOptions: 'Модель не опубликовала вариантов',
+  keysDiffer: 'У вариантов нет общего ключа сравнения: их прогнозы нельзя сравнивать между собой',
+  nobodyLeads: (codes) => `у ${codes} нет расчётного маршрута — ни один вариант модели их не выводит`,
+  // A card is named by what it does; an option kind the interface does not know keeps its code.
+  verb: {
+    observe: 'Наблюдать',
+    stop_withdraw_zone: (zone) => (zone ? `Остановить ${zone} и вывести людей` : 'Остановить участок и вывести людей'),
+    withdraw_all: 'Вывести всех',
+    withdraw_level: (level) => (level ? `Вывести ${level}` : 'Вывести горизонт'),
+  },
+  // The headline of a forecast, by fixed rules from the published fields (view/decision.js headline()).
+  forecast: {
+    allOutIn: (seconds) => `Все выйдут за ${duration(seconds)}`,
+    allOut: 'Все выйдут',
+    inDanger: (count) => `${panelPeople(count)} ${count % 10 === 1 && count % 100 !== 11 ? 'останется' : 'останутся'} в опасной зоне`,
+    noRoute: (count, out) => `Для ${num(count)}${NBSP}${plural(count, PANEL_PEOPLE_GEN)} выход не рассчитан${typeof out === 'number' ? ` · вышли${NBSP}${num(out)}` : ''}`,
+    clear: (out) => `В опасной зоне никого${typeof out === 'number' ? ` · вышли${NBSP}${num(out)}` : ''}`,
+  },
+  // The same rules over the fact of the run: past tense, and never a success that was not published.
+  fact: {
+    allOutIn: (seconds) => `Все вышли за ${duration(seconds)}`,
+    allOut: 'Все вышли',
+    inDanger: (count) => `${panelPeople(count)} ${count % 10 === 1 && count % 100 !== 11 ? 'остался' : 'остались'} в опасной зоне`,
+    noRoute: (count, out) => `Вышли ${typeof out === 'number' ? `${num(out)} — ` : ''}не все: для ${num(count)}${NBSP}${plural(count, PANEL_PEOPLE_GEN)} выход не рассчитан`,
+    clear: (out) => `В опасной зоне никого${typeof out === 'number' ? ` · вышли${NBSP}${num(out)}` : ''}`,
+  },
+  exposure: (words) => `пребывание в опасной зоне ${words}`,
+  downtime: (words) => `простой участков ${words}`,
+  details: 'Подробнее',
+  detailsTitle: 'Все показатели прогноза',
+  // The launch: one primary button.
+  launch: (verb) => `Запустить: ${verb}`,
+  launchIdle: 'Запустить вариант',
+  chooseFirst: 'Выберите вариант выше',
+  confirmTitle: 'Запустить вариант?',
+  confirmText: (verb, scope) => `${verb}. Участки: ${scope}. Модель применит вариант и снимет паузу`,
+  confirmLabel: 'Запустить',
+  allZones: 'все участки',
+  noZones: 'участки не меняются',
+  // Выполнение.
+  executing: (verb) => `Выполняется: ${verb}`,
+  withdrawing: (zones) => `Выполняется: вывод персонала — ${zones}`,
+  outNow: 'вышли',
+  inDangerNow: 'в опасной зоне',
+  unknownNow: 'состояние неизвестно',
+  expectOut: (count) => `по прогнозу модели выйдут ${num(count)}`,
+  expectAllOut: (seconds) => (typeof seconds === 'number' ? `по прогнозу модели выйдут все за ${duration(seconds)}` : 'по прогнозу модели выйдут все'),
+  expect: (words) => `по прогнозу модели: ${words[0].toLowerCase()}${words.slice(1)}`,
+  peopleOf: (zones) => `Люди: ${zones}`,
+  peopleNote: 'по приписке и по опубликованному положению; статус — из полей работника',
+  nobodyListed: 'Работников участков варианта модель не публикует',
+  worker: {
+    working: 'работает', moving_to_exit: 'идёт к выходу', waiting: 'ждёт', out: 'вышел', unknown: 'состояние неизвестно',
+  },
+  outAt: (exit) => `вышел · ${exit}`,
+  inDangerZone: 'в опасной зоне',
+  placeUnknown: 'опасность на месте неизвестна',
+  noRouteWord: 'нет расчётного маршрута',
+  launched: (verb) => `Запуск «${verb}»`,
+  selected: (verb) => `Выбран вариант: ${verb} (данные модели)`,
+  // Итог.
+  done: (verb) => `Итог: ${verb}`,
+  doneUnknown: 'Итог инцидента',
+  vsForecast: 'Факт прогона рядом с прогнозом модели',
+  factNotPublished: 'Факт прогона не опубликован',
+  incomplete: (zone) => `${zone}: вывод не завершён`,
+  close: 'Закрыть итог',
+  closeTitle: 'Скрыть панель итога до следующего инцидента (данные не меняются)',
 };

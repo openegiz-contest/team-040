@@ -2,8 +2,8 @@
 // sentence is put together from the code, its subject and its argument; a
 // code this interface does not know is shown as it came. A jump of `seq` is
 // said in its own line: missing events are never passed over in silence.
-// Condensed by default: the latest three lines; the button of its bar unfolds
-// the whole journal (body[data-journal="open"]). A line starts with its moment
+// It is an overlay of the menu («Журнал»): the whole journal, one line per
+// event. A line starts with its moment
 // by the model clock and its age («00:13:30 · 7 мин назад»); the tick is in its title.
 
 import {h, reconcile, setAttrs, setText} from '../dom.js';
@@ -78,25 +78,8 @@ export function mount(root, ctx) {
   const note = h('p', {class: 'journal-line muted'});
   root.append(list, note);
 
-  // The bar: heading, order, and the button that unfolds the whole journal.
-  const toggle = h('button', {
-    class: 'btn btn--quiet btn--small journal__toggle', type: 'button', 'data-testid': 'journal-toggle',
-    'aria-controls': 'journal', 'aria-expanded': 'false',
-  });
-  const isOpen = () => document.body.getAttribute('data-journal') === 'open';
-  const showToggle = () => {
-    const count = list.querySelectorAll('[data-testid="journal-entry"]').length;
-    setAttrs(toggle, {'aria-expanded': String(isOpen()), text: isOpen() ? UI.journal.less : UI.journal.more(count)});
-  };
-  toggle.addEventListener('click', () => {
-    document.body.setAttribute('data-journal', isOpen() ? 'collapsed' : 'open');
-    showToggle();
-  });
-  ctx.roots.journalBar.append(
-    h('h2', {class: 'panel__title journal__title', text: UI.journal.title}),
-    h('span', {class: 'journal__order', text: UI.journal.order}),
-    toggle,
-  );
+  // The overlay of the menu shows the whole journal; its order is said once, over the lines.
+  root.prepend(h('p', {class: 'journal__order', text: UI.journal.order}));
   let shown = null;
   let shownFor = null;
 
@@ -145,6 +128,5 @@ export function mount(root, ctx) {
     reconcile(list, journalLines(events, lastSeq), (line) => line.key, create, (node, line) => update(node, line, state));
     note.hidden = events.length > 0;
     setText(note, journal && journal.hasState ? UI.journal.empty : UI.list.noState);
-    showToggle();
   });
 }

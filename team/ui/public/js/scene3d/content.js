@@ -1,6 +1,13 @@
 // The words of the scene's labels and its tooltip, from the published state
 // (text.js and text3d.js). Pure apart from the label anchors, which are
 // functions of the vertical factor given by the scene.
+//
+// Few words by default (variant 2, «Пульт смены»): the horizons, one line per
+// zone («Участок Г · опасно · 3 чел.»), the exits («Восстающий · вышли 0») and
+// the objects in a problem state (a closed passage, people in danger or without
+// a computed route, data that are not fresh, a stopped zone's loader). Codes of
+// workings, sensors and ordinary people appear on hover, on selection or close
+// up; the details of a zone on its selection, in its tooltip and accessible name.
 
 import {labelOf, stateAttributes, thingByName} from '../model.js';
 import * as text from '../text.js';
@@ -20,7 +27,7 @@ const {UI} = text;
  *                                     group(group), sensor(name), exit(name)
  * @returns {import('./labels.js').LabelItem[]}
  */
-export function labelItems({model, view, layout, groups, anchors, arriving = new Set()}) {
+export function labelItems({model, view, layout, groups, anchors, arriving = new Set(), loaders = []}) {
   const items = [];
   const name = (local) => labelOf(model, local);
   const selected = view.selected;
@@ -48,7 +55,7 @@ export function labelItems({model, view, layout, groups, anchors, arriving = new
     if (!thing || zone.workings.length === 0) continue;
     // The published number of people in the zone follows its state (clarity spec A10).
     const people = zone.workers !== null ? ` · ${SCENE.people(zone.workers)}` : '';
-    const lines = [{text: `${thing.label}: ${text.hazardText(thing.hazard)}${people}`, bold: true}];
+    const lines = [{text: `${thing.label} · ${text.hazardText(thing.hazard)}${people}`, bold: true}];
     const more = [];
     if (zone.workState === 'stopped') more.push(text.label('workState', zone.workState));
     if (zone.withdrawal && zone.withdrawal !== 'none') more.push(text.label('withdrawal', zone.withdrawal));
@@ -58,17 +65,23 @@ export function labelItems({model, view, layout, groups, anchors, arriving = new
     if (lastKnown) lines.push({text: lastKnown, bold: zone.lastKnown === 'danger'});
     if (zone.restriction && zone.restriction !== 'allowed') more.push(text.label('restriction', zone.restriction));
     if (zone.pending) more.push(UI.scheme.pending);
-    for (const word of more) lines.push({text: word});
+    // The details stay in the tooltip and the accessible name; the tag shows them while its zone is selected.
+    const full = [...lines, ...more.map((word) => ({text: word}))];
+    if (thing.thingId === selected) for (const word of more) lines.push({text: word});
     const signs = [hazardSign(thing.hazard.state)];
     if (thing.hazard.state === 'unknown' && zone.lastKnown === 'danger') signs.push('lastDanger');
-    if (zone.workState === 'stopped') signs.push('stopped');
-    if (zone.withdrawal === 'in_progress' || zone.withdrawal === 'incomplete') signs.push('leaving');
-    if (zone.restriction === 'blocked') signs.push('blocked');
     if (zone.pending) signs.push('pending');
+    // The signs of the details go with their words: on the selected tag only.
+    if (thing.thingId === selected) {
+      if (zone.workState === 'stopped') signs.push('stopped');
+      if (zone.withdrawal === 'in_progress' || zone.withdrawal === 'incomplete') signs.push('leaving');
+      if (zone.restriction === 'blocked') signs.push('blocked');
+    }
     items.push({
       key: thing.thingId, thingId: thing.thingId,
-      attrs: attrsOf(thing, zone.pending, lines.map((line) => line.text).join('; ')),
-      lines, signs: signs.filter(Boolean), rank: 2, always: true,
+      attrs: attrsOf(thing, zone.pending, full.map((line) => line.text).join('; ')),
+      // A zone in danger (the incident's, as a rule) is placed before its people's labels: it names what happens.
+      lines, tip: full, signs: signs.filter(Boolean), rank: thing.hazard.state === 'danger' ? 1.7 : 2, always: true,
       cls: ['s3-label--zone', `s3-label--${thing.hazard.state}`, thing.thingId === selected && 'is-selected',
         scopeZones.has(local) && 'is-scope'].filter(Boolean),
       anchor: () => anchors.zone(local), place: 'centre',
@@ -78,11 +91,14 @@ export function labelItems({model, view, layout, groups, anchors, arriving = new
   // Exits: always.
   for (const [local, exit] of Object.entries(view.exits)) {
     const thing = thingByName(model, local);
-    const first = exit.out !== null ? `${thing.label} · ${UI.scheme.out(exit.out)}` : thing.label;
-    const lines = [{text: first, bold: true}, {text: text.label('exitState', exit.state), muted: exit.state === 'available'}];
+    const first = exit.out !== null ? `${thing.label} · ${SCENE.exitOut(exit.out)}` : thing.label;
+    const stateLine = {text: text.label('exitState', exit.state), muted: exit.state === 'available'};
+    // One line while the exit is available; its state is said when it is not.
+    const lines = exit.state === 'available' && thing.thingId !== selected ? [{text: first, bold: true}] : [{text: first, bold: true}, stateLine];
+    const full = [{text: first, bold: true}, stateLine];
     items.push({
-      key: thing.thingId, thingId: thing.thingId, attrs: attrsOf(thing, false, lines.map((line) => line.text).join('; ')),
-      lines, signs: [], rank: 3, always: true,
+      key: thing.thingId, thingId: thing.thingId, attrs: attrsOf(thing, false, full.map((line) => line.text).join('; ')),
+      lines, tip: full, signs: [], rank: 3, always: true,
       cls: ['s3-label--exit', exit.state !== 'available' && 's3-label--problem', thing.thingId === selected && 'is-selected'].filter(Boolean),
       anchor: () => anchors.exit(local), place: 'around',
     });
@@ -126,11 +142,12 @@ export function labelItems({model, view, layout, groups, anchors, arriving = new
     items.push({
       key: thing.thingId, thingId: thing.thingId, attrs: attrsOf(thing, working.pending, `${thing.label}: ${said.join('; ')}`),
       lines, signs: signs.filter(Boolean),
-      // A closed passage is placed before the zone tags: it is usually what the incident is about.
-      rank: closed ? 1.5 : (problem ? 2 : (line.between ? 5 : 8)), always: problem || line.between,
+      // A closed passage is placed before the zone tags: it is usually what the incident is about. The shafts, ramps
+      // and raises are named close up, as the other codes.
+      rank: closed ? 1.5 : (problem ? 2 : (line.between ? 5 : 8)), always: problem,
       cls: ['s3-label--working', problem && 's3-label--problem', closed && 's3-label--closed', working.pending && 's3-label--pending',
         isSelected && 'is-selected', arriving.has(thing.thingId) && 'is-arriving'].filter(Boolean),
-      anchor: () => anchors.working(local, closed), place: 'around', minScale: problem || line.between ? 0 : 1.6,
+      anchor: () => anchors.working(local, closed), place: 'around', minScale: problem ? 0 : (line.between ? 3 : 4.5),
     });
   }
 
@@ -174,7 +191,7 @@ export function labelItems({model, view, layout, groups, anchors, arriving = new
       cls: ['s3-label--worker', noRoute && 's3-label--noroute', status !== 'ok' && status !== 'none' && 's3-label--unknown',
         inDanger && 's3-label--indanger', lead.thingId === selected && 'is-selected',
         group.members.some((member) => scopeWorkers.has(member)) && 'is-scope'].filter(Boolean),
-      anchor: () => anchors.group(group), place: 'around', minScale: problem ? 0 : 1.1,
+      anchor: () => anchors.group(group), place: 'around', minScale: problem ? 0 : 4,
     });
   }
 
@@ -190,15 +207,32 @@ export function labelItems({model, view, layout, groups, anchors, arriving = new
       attrs: attrsOf(thing, sensor.pending, `${thing.label}: ${text.label('quality', sensor.quality)}; ${text.label('linkState', sensor.link)}`),
       lines, signs: sensor.pending ? ['pending'] : [], rank: problem ? 4 : 9, always: problem,
       cls: ['s3-label--sensor', problem && 's3-label--problem', thing.thingId === selected && 'is-selected'].filter(Boolean),
-      anchor: () => anchors.sensor(local), place: 'around', minScale: problem ? 0 : 2.2,
+      anchor: () => anchors.sensor(local), place: 'around', minScale: problem ? 0 : 5,
+    });
+  }
+
+  // Loaders: the symbol of a zone's published work state. A working zone's loader needs no word (its lamps are lit);
+  // a stopped one carries «остановлен», one without a published work state «?». The sign selects the zone.
+  for (const {zone, look, lines: said} of loaders) {
+    const thing = thingByName(model, zone);
+    if (!thing || look === 'working') continue;
+    const word = look === 'stopped' ? text.label('workState', 'stopped') : SCENE.loaderQuestion;
+    items.push({
+      key: `loader:${zone}`, thingId: null,
+      attrs: {'data-kind': 'loader', 'data-zone': thing.thingId, 'data-select': thing.thingId, 'data-work-state': look,
+        'aria-label': said.join('. '), 'aria-pressed': String(thing.thingId === selected)},
+      lines: [{text: word, bold: look === 'stopped'}], tip: said.map((line, index) => ({text: line, bold: index === 0})),
+      signs: look === 'stopped' ? ['stopped'] : [], rank: 2.5, always: true,
+      cls: ['s3-label--loader', `s3-label--loader-${look}`],
+      anchor: () => anchors.loader(zone), place: 'around',
     });
   }
 
   return items;
 }
 
-/** The text of the tooltip of a hovered object: its label lines, or the decor note. */
+/** The text of the tooltip of a hovered object: all its words (the label may show fewer). */
 export function tooltipLines(items, key) {
   const item = items.find((entry) => entry.thingId === key || entry.key === key);
-  return item ? item.lines.map((line) => line.text) : [];
+  return item ? (item.tip || item.lines).map((line) => line.text) : [];
 }

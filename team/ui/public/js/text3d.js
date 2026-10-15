@@ -4,6 +4,9 @@
 
 import {counted, FORMS, num} from './text.js';
 
+/** «Участок Г» -> «Г»: the zone named after «участка» (any other label is kept whole). */
+const zoneShort = (label) => String(label).replace(/^Участок\s+/u, '');
+
 export const STAGE = {
   region: 'Сцена рудника',
   modeGroup: 'Вид сцены',
@@ -68,7 +71,14 @@ export const SCENE = {
   workers: (count) => `под землёй на модели: ${num(count)}`,
   between: (kind, code) => `${kind} ${code}`,
   levelsSpan: (upper, lower) => `${upper} — ${lower}`,
-  decor: (factor) => `ПДМ — элемент оформления, нет данных в модели; масштаб увеличен ×${num(factor, 0)}, как ширина выработок`,
-  decorNote: (factor) => `ПДМ — оформление, увеличена ×${num(factor, 0)}`,
+  /** The tooltip of a zone's loader: the zone's published work state; the machine itself is not in the model. */
+  loaderTitle: (zone, words) => `Символ работы участка ${zoneShort(zone)}: ${words} (данные модели)`,
+  loaderNote: (factor) => `Техника в модели не описана · ПДМ показана увеличенной ×${num(factor, 1)}`,
+  loaderUnknown: 'работа участка не опубликована',
+  /** The sign of a loader whose zone has no published work state. */
+  loaderQuestion: 'работа: ?',
+  decorNote: (factor) => `ПДМ — символ работы участка, ×${num(factor, 1)}`,
+  /** People out at an exit, after its name on its label. */
+  exitOut: (count) => `вышли ${num(count)}`,
   noPosition: (codes) => `Без опубликованного положения: ${codes}`,
 };

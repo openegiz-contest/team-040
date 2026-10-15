@@ -5,7 +5,8 @@
 
 import {canRetry, isUnresolved} from '../commands.js';
 import {h, reconcile, setAttrs, setGlyph, setText} from '../dom.js';
-import {CONDITION_COMMANDS, labelOf} from '../model.js';
+import {CONDITION_COMMANDS, labelOf, thingByName} from '../model.js';
+import {optionVerb} from './decision.js';
 
 const PHASE_GLYPH = {
   sending: 'clock', sent: 'clock', applied: 'ok', rejected: 'blocked', no_ack: 'attention',
@@ -52,6 +53,9 @@ export function isStandCommand(type) {
  * «Условие стенда: В-07 закрыта», «Условие стенда снято: В-07 закрыта»; every other command by its name.
  */
 export function sentTitle(text, state, type, target) {
+  // The launch of an option is named as the button of the panel that sent it: «Запустить: Остановить участок Г и вывести людей».
+  const option = type === 'action.execute_option' && state.model ? thingByName(state.model, target) : null;
+  if (option && option.kind === 'option') return text.PANEL.launch(optionVerb(text, state.model, option));
   for (const [kind, commands] of Object.entries(CONDITION_COMMANDS)) {
     if (type !== commands.set && type !== commands.undo) continue;
     const words = text.conditionText({kind, target, raw: `${kind}:${target}`}, (name) => targetLabel(state, type, name));

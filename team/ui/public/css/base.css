@@ -1,5 +1,8 @@
 /* The visual system of the dispatcher screen: «Разрез массива», a museum
-   cutaway model of the mine on a graphite desk.
+   cutaway model of the mine on a graphite desk; «Пульт смены» (variant 2)
+   makes it calmer and larger: body text 15 px, key figures 32–40 px, panel
+   radius 8 px, spacing 16/24/32, fewer borders (planes are told apart by tone
+   and space), primary buttons 44 px high, every click target at least 32 px.
 
    Tokens, type, controls and state badges shared by every region and by the
    3D module (js/scene3d/palette.js mirrors the colour tokens). Flat graphite
@@ -59,11 +62,14 @@
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --fs-caption: 12px;
   --fs-secondary: 13px;
-  --fs-body: 14px;
+  --fs-body: 15px;
   --fs-emphasis: 16px;
+  /* One clear sentence of a panel (the answer to its question). */
+  --fs-lead: 20px;
   --fs-section: 20px;
-  --fs-figure: 28px;
-  --lh: 1.4;
+  --fs-figure: 32px;
+  --fs-figure-l: 40px;
+  --lh: 1.45;
 
   /* ---- spacing ---- */
   --sp-1: 4px;
@@ -73,9 +79,11 @@
   --sp-5: 24px;
   --sp-6: 32px;
 
-  --radius: 4px;
-  --control-h: 32px;
-  --control-h-small: 28px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --control-h: 36px;
+  --control-h-small: 32px;
+  --primary-h: 44px;
   --ring: 2px solid var(--copper);
   --move-ms: 600ms;
   --ease: cubic-bezier(.4, 0, .2, 1);
@@ -229,8 +237,10 @@ body[data-old-data] .move-transition { transition: none; }
 }
 .btn:hover { background: var(--ink-3); border-color: var(--stone-1); }
 .btn:active { background: var(--ink-3); }
-.btn--small { min-height: 24px; padding: 0 var(--sp-2); font-size: var(--fs-caption); }
+.btn--small { min-height: var(--control-h-small); padding: 0 var(--sp-3); font-size: var(--fs-caption); }
 .btn--block { display: flex; width: 100%; }
+/* The one primary button of a screen state (44 px): «Запустить: …». */
+.btn--big { min-height: var(--primary-h); padding: 0 var(--sp-5); font-size: var(--fs-body); }
 
 .btn--dispatch, .btn--primary {
   border-color: var(--action);
@@ -376,7 +386,7 @@ body[data-old-data] .move-transition { transition: none; }
   text-decoration: underline; text-decoration-color: var(--copper);
   text-decoration-thickness: 2px; text-underline-offset: 6px;
 }
-.tab--small { min-height: 24px; padding: 0 var(--sp-2); font-size: var(--fs-caption); }
+.tab--small { min-height: var(--control-h-small); padding: 0 var(--sp-2); font-size: var(--fs-caption); }
 
 /* ---- badges of the three axes ---------------------------------------------
    Each value: its own outline or pattern and a sign (glyph) next to the words.
@@ -390,12 +400,12 @@ body[data-old-data] .move-transition { transition: none; }
 .badge {
   display: inline-flex; align-items: center; gap: 5px;
   max-width: 100%;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 4px;
   font-size: var(--fs-caption);
   font-weight: 500;
-  line-height: 18px;
+  line-height: 20px;
   vertical-align: baseline;
 }
 .badge .glyph { width: 14px; height: 14px; vertical-align: -2px; }
@@ -418,11 +428,11 @@ body[data-old-data] .move-transition { transition: none; }
   display: inline-flex; align-items: center; gap: 4px;
   padding: 0 var(--sp-2);
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 4px;
   background: var(--ink-2);
   color: var(--dust-1);
   font-size: var(--fs-caption);
-  line-height: 20px;
+  line-height: 22px;
   white-space: nowrap;
 }
 .chip--stand { border: 1px dashed var(--chalk); background: transparent; color: var(--chalk); font-family: var(--font-mono); font-size: 11.5px; }

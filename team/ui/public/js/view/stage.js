@@ -10,7 +10,9 @@
 //
 // Mirrored on the stage element for tests, read-only: data-stage-mode,
 // data-quality, data-renderer, data-explode, data-rendering, data-levels,
-// data-workings, data-workers-drawn, data-camera, data-fallback, data-frames.
+// data-workings, data-workers-drawn, data-camera, data-fallback, data-frames, data-hud-fold (the HUD folded to
+// icons beside the gizmo), data-loaders (the loaders of
+// the zones drawn), data-choreo (the last camera move that followed the situation of the shift).
 
 import {h, reconcile, s, setAttrs, setText} from '../dom.js';
 import {thingsOfKind} from '../model.js';
@@ -22,7 +24,7 @@ export const SLOW_FRAME_MS = 200;
 const SOFTWARE = /swiftshader|llvmpipe|softpipe|software|basic render/i;
 const EXPLODE_DEFAULT = 0.8;
 const MIRRORED = ['data-rendering', 'data-levels', 'data-workings', 'data-workers-drawn', 'data-camera', 'data-frames',
-  'data-tweens', 'data-routes', 'data-first-frame-ms', 'data-decor'];
+  'data-tweens', 'data-routes', 'data-first-frame-ms', 'data-decor', 'data-loaders', 'data-choreo'];
 
 /** Icons of the HUD (16 px, stroked): the row folds to them while the dock is unfolded over a small stage. */
 const ICONS = {
@@ -314,6 +316,7 @@ export function mount(root, ctx) {
       'data-explode': explodeValue().toFixed(2),
     });
     mirror();
+    fitHud();
   }
 
   function mirror() {
@@ -357,6 +360,32 @@ export function mount(root, ctx) {
   };
   /** Renderer figures of the 3D stage (triangles, draw calls, frames); null when not in 3D. Read-only. */
   ctx.stage.info = () => (mode === '3d' && instance ? instance.info() : null);
+
+  // ---- the HUD beside the gizmo ------------------------------------------------------------
+
+  /**
+   * Fold the HUD row to icons (and the gizmo to its compass) when, in full, it would run over the gizmo or wrap:
+   * the panel or the stand drawer over a narrow stage leaves it little room. Measured unfolded, then decided.
+   */
+  function fitHud() {
+    const was = root.hasAttribute('data-hud-fold');
+    root.removeAttribute('data-hud-fold');
+    let fold = false;
+    const gizmo = mode === '3d' ? stage3d.querySelector('.s3__gizmo') : null;
+    const row = rowMain.getBoundingClientRect();
+    if (row.width > 0) {
+      fold = row.height > 48;
+      if (gizmo) {
+        const g = gizmo.getBoundingClientRect();
+        fold = fold || (row.left < g.right + 8 && row.top < g.bottom + 4 && row.bottom > g.top - 4);
+      }
+    }
+    if (fold) root.setAttribute('data-hud-fold', '');
+    if (fold !== was && instance) instance.invalidate();
+  }
+  const hudObserver = new ResizeObserver(() => fitHud());
+  hudObserver.observe(root);
+  new MutationObserver(() => fitHud()).observe(document.body, {attributes: true, attributeFilter: ['data-stand', 'data-panel']});
 
   // ---- store ---------------------------------------------------------------------------
 

@@ -1,6 +1,8 @@
-// The legend of the stage: a one-row chip at its bottom left with the key
-// symbols of the three axes (hazard, knowledge, reachability), the exit, the
-// closed passage and the route; a press unfolds the full legend above it.
+// The legend: a chip at the bottom of the people rail with the key symbols of
+// hazard and of the people (the dots of the rail are the markers of the stage);
+// a press unfolds the full legend of the three axes (hazard, knowledge,
+// reachability), the exits, the closed passage and the route above it, over the
+// rail, so that the stage stays free.
 // It serves the 3D scene and the scheme alike: both draw the same semantics.
 // Every sample is built by the functions that draw the scheme (icons.js), so
 // it cannot differ from the object it explains.
@@ -58,6 +60,7 @@ export function mount(root, ctx) {
       [worker({'data-egress': 'none'}), VOCAB.egress.none],
       [worker({'data-egress': 'unknown'}), VOCAB.egress.unknown],
       [worker({'data-egress': 'ok', 'data-location-hazard': 'danger'}, 24), L.inDangerZone],
+      [worker({'data-egress': 'ok', 'data-location-hazard': 'unknown'}, 24), L.unknownZone],
       [worker({'data-egress': 'ok', class: 'worker is-going'}, 30), VOCAB.workerStatus.moving_to_exit],
       [worker({'data-egress': 'ok'}), `${UI.scheme.grouped(3)} ${L.group}`],
       [route(), L.route],
@@ -79,35 +82,31 @@ export function mount(root, ctx) {
     groups.map(([title, items]) => h('div', {class: 'legend__group', 'data-legend-group': title},
       h('span', {class: 'legend__title', text: `${title}:`}), items.map(item))));
 
-  // ---- the chip: the key symbols in one row ----------------------------------------
-  const key = (sample, words, hint) => h('span', {class: 'legend__item', title: hint || words}, sample,
-    words ? h('span', {class: 'legend__words', text: words}) : null);
-  const chipGroup = (title, ...items) => h('span', {class: 'legend__group'}, h('span', {class: 'legend__title', text: `${title}:`}), items);
+  // ---- the chip at the bottom of the people rail: two rows of key symbols and «Легенда» ---------------
+  const key = (sample, hint) => h('span', {class: 'legend__item', title: hint}, sample);
+  const chipRow = (title, ...items) => h('span', {class: 'legend__row'}, h('span', {class: 'legend__title', text: title}), items);
   const caret = s('svg', {class: 'legend__caret', viewBox: '0 0 10 10', 'aria-hidden': 'true', focusable: 'false'},
     s('path', {d: 'M1.5 6.5L5 3l3.5 3.5'}));
   const chip = h('button', {
     type: 'button', class: 'legend__chip', 'data-testid': 'legend-toggle',
-    'aria-expanded': 'false', 'aria-controls': PANEL_ID, 'aria-label': L.chipLabel,
+    'aria-expanded': 'false', 'aria-controls': PANEL_ID, 'aria-label': L.chipLabel, title: L.chipLabel,
   },
-  chipGroup(L.hazard,
-    key(working({hazard: 'normal'}, 'lc'), '', VOCAB.hazard.normal), key(working({hazard: 'attention'}, 'lc'), '', VOCAB.hazard.attention),
-    key(working({hazard: 'danger'}, 'lc'), '', VOCAB.hazard.danger), key(working({hazard: 'unknown'}, 'lc'), '', VOCAB.hazard.unknown)),
-  chipGroup(L.knowledge,
-    key(sensor('fresh'), '', VOCAB.quality.fresh), key(sensor('stale'), '', VOCAB.quality.stale),
-    key(sensor('lost'), '', VOCAB.quality.lost), key(working({bare: true}, 'lc'), '', VOCAB.quality.none)),
-  chipGroup(L.reach,
-    key(worker({'data-egress': 'ok'}), '', L.workerOk), key(worker({'data-egress': 'none'}), '', VOCAB.egress.none),
-    key(worker({'data-egress': 'unknown'}), '', VOCAB.egress.unknown)),
-  chipGroup(L.exit, key(exit('available'), '', L.exitAvailable)),
-  key(working({bare: true, closed: true}, 'lc'), L.closedShort, VOCAB.passability.closed),
-  key(route(30), L.routeShort, L.route),
-  h('span', {class: 'legend__more', text: L.more}), caret);
+  h('span', {class: 'legend__rows'},
+    chipRow(L.hazard,
+      key(working({hazard: 'normal'}, 'lc'), VOCAB.hazard.normal), key(working({hazard: 'attention'}, 'lc'), VOCAB.hazard.attention),
+      key(working({hazard: 'danger'}, 'lc'), VOCAB.hazard.danger), key(working({hazard: 'unknown'}, 'lc'), VOCAB.hazard.unknown)),
+    chipRow(L.people,
+      key(worker({'data-egress': 'ok'}), L.workerOk),
+      key(worker({'data-egress': 'ok', 'data-location-hazard': 'danger'}, 24), L.inDangerZone),
+      key(worker({'data-egress': 'none'}), VOCAB.egress.none),
+      key(worker({'data-egress': 'unknown'}), VOCAB.egress.unknown))),
+  h('span', {class: 'legend__more'}, h('span', {class: 'legend__more-words', text: L.more}), caret));
 
   function show(open) {
     if (open) {
-      // The room above the chip, under the controls at the top of the stage: the column never leaves the stage.
-      const stage = ctx.roots.stage ? ctx.roots.stage.getBoundingClientRect() : null;
-      const room = stage ? root.getBoundingClientRect().top - stage.top - 56 : 0;
+      // The room above the chip, under the top bar: the column never leaves the frame.
+      const frame = ctx.roots.frame ? ctx.roots.frame.getBoundingClientRect() : null;
+      const room = frame ? root.getBoundingClientRect().top - frame.top - 12 : 0;
       panel.style.setProperty('--legend-room', `${Math.max(Math.round(room), 160)}px`);
     }
     panel.hidden = !open;
