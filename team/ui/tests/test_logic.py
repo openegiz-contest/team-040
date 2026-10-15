@@ -86,7 +86,7 @@ class ValidateTest(LogicTestCase):
         self.assertEqual(result["runState"], "running")
         self.assertEqual(result["pauseReason"], "none")
         self.assertEqual(result["topologyVersion"], "t1")
-        self.assertEqual((result["manifest"], result["dynamic"], result["sceneIds"]), (77, 72, 72))
+        self.assertEqual((result["manifest"], result["dynamic"], result["sceneIds"]), (81, 76, 76))
         self.assertTrue(result["sceneKeysMatch"])
         self.assertFalse(result["shiftHasScene"], "the scene must not be kept twice")
         self.assertEqual(result["total"], 14)
@@ -292,7 +292,7 @@ class ValidateTest(LogicTestCase):
         self.assertEqual(got["noTopology"], ["missing_field", "topology_version"])
         self.assertEqual(got["noNodes"], ["missing_field", "nodes"])
         self.assertEqual(got["noAttributes"], ["malformed", "attributes"])
-        self.assertEqual(got["incomplete"], ["manifest_incomplete", ["team040.mine:w-07"], 77])
+        self.assertEqual(got["incomplete"], ["manifest_incomplete", ["team040.mine:w-07"], 81])
         self.assertTrue(got["wholeOk"])
         self.assertTrue(got["order"], "attributes are indexed in manifest order whatever the answer order")
         self.assertEqual(got["kind"], "working")
@@ -327,7 +327,7 @@ class ApiTest(LogicTestCase):
         batches = [entry["url"] for entry in self.page.requests if "/ditto/api/2/things?ids=" in entry["url"]]
         attribute_batches = [url for url in batches if url.endswith("&fields=thingId,attributes")]
         sizes = [len(url.split("ids=")[1].split("&")[0].split(",")) for url in attribute_batches]
-        self.assertEqual(sizes[:4], [20, 20, 20, 17], "77 manifest ids go out as four batches of at most 20")
+        self.assertEqual(sizes[:5], [20, 20, 20, 20, 1], "81 manifest ids go out as five batches of at most 20")
         self.assertTrue(all(size <= 20 for size in sizes))
         self.assertFalse([url for url in batches if "nothing-here" not in url and "x=1" in url],
                          "an id that is not a safe thingId never reaches a URL")
@@ -1168,7 +1168,8 @@ class ModelTest(LogicTestCase):
           };
         """)
         self.assertEqual(got["kinds"], {"mine": 1, "shift": 1, "level": 3, "working": 36, "zone": 4, "sensor": 10,
-                                        "worker": 14, "exit": 3, "incident": 1, "option": 3, "journal": 1})
+                                        "worker": 14, "exit": 3, "incident": 1, "option": 3, "journal": 1,
+                                        "equipment": 4})
         self.assertEqual(got["hasSnapshot"], [True, False])
         self.assertEqual(got["label"], ["Участок В", "zone", "zone-c", "team040.mine:zone-c", True])
         self.assertEqual(got["zoneHazard"], {"state": "unknown", "raw": "unknown", "known": True, "defensive": False})

@@ -30,6 +30,7 @@ export function describe(state, layout) {
     sensors: {},
     workers: {},
     exits: {},
+    equipment: {},
     routes: [],
     routeReason: 'selection',
     // The published scope of the decision option under the pointer or chosen (ui.hoverOption): its zones and
@@ -96,6 +97,24 @@ export function describe(state, layout) {
       offsetM: placed ? values.offset_m : null,
       hasState: worker.hasState,
       pending: pendingOf(worker),
+    };
+  }
+  // Equipment twins (contract question 18): a loader drawn where the model publishes it. Without a published
+  // position on a known working it has no place (`at` null) and is not drawn.
+  for (const machine of thingsOfKind(model, 'equipment')) {
+    if (machine.attrs.equipment_kind !== 'lhd') continue;
+    const {values} = machine;
+    const placed = typeof values.at_working === 'string' && Number.isFinite(values.offset_m) && layout.workings.has(values.at_working);
+    view.equipment[machine.name] = {
+      thingId: machine.thingId,
+      zone: str(machine.attrs.zone),
+      state: str(values.state),
+      activity: str(values.activity),
+      at: placed ? values.at_working : null,
+      offsetM: placed ? values.offset_m : null,
+      toward: str(values.toward_node),
+      loaded: typeof values.loaded === 'boolean' ? values.loaded : null,
+      hasState: machine.hasState,
     };
   }
   for (const exit of thingsOfKind(model, 'exit')) {

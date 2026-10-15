@@ -62,6 +62,32 @@ from cdp import (  # noqa: E402,F401  (re-exported for test modules)
 CHROME_MISSING_MESSAGE = "Chrome не найден: браузерная проверка не выполнена"
 
 
+# An init script (Page.add_init_script) that removes the equipment twins (`<ns>:lhd-*`, contract question 18) from
+# every /ditto/ answer the page reads: the manifest, dynamic_ids and the scene of shift. The page then sees a model
+# without equipment, as on a stand that does not publish it, and the 3D stage keeps the static symbols of the zones.
+STRIP_EQUIPMENT = """
+(() => {
+  const gone = (item) => (typeof item === 'string' && item.includes(':lhd-'))
+    || (item !== null && typeof item === 'object' && typeof item.thingId === 'string' && item.thingId.includes(':lhd-'));
+  const drop = (value) => {
+    if (Array.isArray(value)) return value.filter((item) => !gone(item)).map(drop);
+    if (value !== null && typeof value === 'object') for (const key of Object.keys(value)) value[key] = drop(value[key]);
+    return value;
+  };
+  const original = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const response = await original(...args);
+    const url = String((args[0] && args[0].url) || args[0]);
+    if (!url.includes('/ditto/')) return response;
+    const body = await response.text();
+    let out = body;
+    try { out = JSON.stringify(drop(JSON.parse(body))); } catch (error) { /* not JSON: as it came */ }
+    return new Response(out, {status: response.status, statusText: response.statusText, headers: response.headers});
+  };
+})();
+"""
+
+
 def repo_path(*parts):
     """Absolute path below the worktree root, independent of the current directory."""
     return os.path.join(os.path.dirname(os.path.dirname(_UI_DIR)), *parts)

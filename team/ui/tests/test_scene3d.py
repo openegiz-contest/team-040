@@ -32,7 +32,7 @@ import statistics
 import time
 import unittest
 
-from browser_support import OUTPUT_DIR, BrowserTestCase, MockServer, wait_until
+from browser_support import OUTPUT_DIR, STRIP_EQUIPMENT, BrowserTestCase, MockServer, wait_until
 
 NS = "team040.mine"
 SWIFTSHADER = ("--use-angle=swiftshader", "--enable-unsafe-swiftshader")
@@ -67,6 +67,8 @@ def thing(name):
 class Stage3dCase(BrowserTestCase):
     chrome_args = SWIFTSHADER
     mock_args = ()
+    # The static symbols of the zones' work are tested on a model without equipment twins (STRIP_EQUIPMENT).
+    strip_equipment = False
 
     @classmethod
     def setUpClass(cls):
@@ -76,6 +78,9 @@ class Stage3dCase(BrowserTestCase):
 
     def open(self, scenario, route="", drawn=True, probe=True, timeout=30.0):
         """Restart the scenario and load the page; wait for the first measured 3D frames when `drawn`."""
+        if self.strip_equipment and not getattr(self.page, "_strip_equipment", False):
+            self.page.add_init_script(STRIP_EQUIPMENT)
+            self.page._strip_equipment = True
         if probe and not getattr(self.page, "_scene3d_probe", False):
             self.page.add_init_script(PROBE)
             self.page._scene3d_probe = True
@@ -287,7 +292,9 @@ class IdleAndMotionTest(Stage3dCase):
 
     def test_a_running_model_with_still_people_draws_nothing_once_the_first_frames_are_done(self):
         """In `normal` the model ticks every second but nothing visible changes: after the boot frames
-        (first frame, the measured frames, labels) the stage requests no animation frame at all."""
+        (first frame, the measured frames, labels) the stage requests no animation frame at all. (Without the
+        equipment twins: their loaders move by publications, EquipmentTest.)"""
+        self.page.add_init_script(STRIP_EQUIPMENT)
         self.open("normal")
         self.wait_idle()
         boot = self.page.evaluate("window.__probe.raf")
@@ -837,6 +844,8 @@ class HoverOptionTest(Stage3dStoryCase):
 
 class TransitionTest(Stage3dStoryCase):
     """B, M6–M10: each transition runs once, ends in the published state, never on load."""
+    # The end picture is compared pixel by pixel with a fresh load: moving loaders would differ between the two.
+    strip_equipment = True
 
     def test_a_hazard_change_sweeps_once_and_ends_in_the_published_state(self):
         self.page.set_viewport(1280, 720)
@@ -968,6 +977,8 @@ class ReducedMotionTransitionTest(Stage3dStoryCase):
 
 
 class ReducedMotionLoaderTest(Stage3dStoryCase):
+    strip_equipment = True
+
     def setUp(self):
         super().setUp()
         self.page.send("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
@@ -1053,6 +1064,8 @@ ZONES_OF = f"""(async () => {{
 class LoaderTest(Stage3dStoryCase):
     """The loader of each zone: one machine per zone with workings, standing still on a free floor, its look bound to the
     zone's published work state (variant 2: the 3D model carries meaning)."""
+    strip_equipment = True
+
 
     def loaders(self):
         return self.js(f"return {APP}.ctx.stage.info().loaders;")
@@ -1181,6 +1194,8 @@ class LoaderTest(Stage3dStoryCase):
 
 class LoaderLightTest(Stage3dStoryCase):
     """A stop executed from the decision turns the lights of that zone's loader off once, in about 400 ms."""
+    strip_equipment = True
+
 
     def test_stop_turns_the_lights_of_that_zone_off_once(self):
         self.decision()
@@ -1376,10 +1391,13 @@ class MeasureTest(Stage3dCase):
         self.wait_idle()
         times = self.page.evaluate("window.__probe.times")
         deltas = [b - a for a, b in zip(times, times[1:])]
+        heap = self.page.metrics().get("JSHeapUsedSize", 0) / 1e6
+        # Idle: a model that publishes nothing new (paused). In `normal` the loaders of the model move by publications.
+        self.open("paused_heartbeat")
+        self.wait_idle()
         self.page.evaluate("window.__probe.raf = 0")
         time.sleep(5.0)
         idle = self.page.evaluate("window.__probe.raf") / 5.0
-        heap = self.page.metrics().get("JSHeapUsedSize", 0) / 1e6
         return {
             "size": f"{width}x{height}", "renderer": info["renderer"], "first_3d_frame_ms": first_frame,
             "measured_first_frames_ms": int(stage["measuredMs"]),
@@ -1399,6 +1417,460 @@ class MeasureTest(Stage3dCase):
         for result in results:
             self.assertEqual(result["idle_frames_per_s"], 0)
             self.assertLess(result["first_3d_frame_ms"], 15000)
+
+
+
+# ---- S3b: loaders that move by the published equipment twins, and figures of people close up -------------------
+
+# Samples, every `step` ms for `ms` ms after `act`, the published fields of every equipment twin and the loaders as the
+# stage draws them: p = [at_working, offset_m, state, toward_node, loaded, from, to] of the twin (from/to: its working),
+# d = [working, offset, facing, gliding] as drawn, l = [look, light, loaded] of the loader, f = the figures of people.
+MACHINES = """(async () => {
+  const app = (await import('/js/main.js')).app;
+  const out = [];
+  %(act)s;
+  const t0 = performance.now();
+  while (performance.now() - t0 < %(ms)d) {
+    const s = app.store.getState();
+    const info = app.ctx.stage.info();
+    const ends = (name) => { const w = s.model.byName[name]; return w ? [w.attrs.from, w.attrs.to] : [null, null]; };
+    out.push({t: Math.round(performance.now() - t0), seq: s.snapshot ? s.snapshot.seq : null, run: s.snapshot ? s.snapshot.runState : null,
+      link: document.body.dataset.link,
+      p: Object.fromEntries((s.model.byKind.equipment || []).map((x) => [x.name, [x.values.at_working, x.values.offset_m,
+        x.values.state, x.values.toward_node, x.values.loaded === true, ...ends(x.values.at_working)]])),
+      d: Object.fromEntries(info.actors.machines.map((m) => [m.name, [m.working, m.offsetM, m.facing, m.gliding]])),
+      l: Object.fromEntries((info.loaders || []).map((x) => [x.zone, [x.state, x.light, x.loaded]])),
+      glides: info.actors.glides, f: info.actors.figures,
+      w: Object.fromEntries(s.model.byKind.worker.map((x) => [x.name, [x.values.at_working, x.values.offset_m]]))});
+    await new Promise((resolve) => setTimeout(resolve, %(step)d));
+  }
+  return out;
+})()"""
+
+LIGHT_OF = {"working": 1, "parked": 0.35, "stopped": 0}
+
+
+class EquipmentCase(Stage3dStoryCase):
+    """The loaders of the model (equipment twins `lhd-*`, contract question 18)."""
+
+    def tearDown(self):
+        self.page.set_viewport(1280, 720)
+        super().tearDown()
+
+    def wait_loaded(self):
+        self.page.wait_for("document.querySelector('#stage-3d .s3').getAttribute('data-decor') === 'loaded'", timeout=20.0)
+        self.wait_idle()
+
+    def machines(self, act="", ms=4000, step=20):
+        return self.page.evaluate(MACHINES % {"act": act, "ms": ms, "step": step}, timeout=ms / 1000 + 30)
+
+    def published(self):
+        return self.js(f"""const s = {APP}.store.getState();
+          return Object.fromEntries((s.model.byKind.equipment || []).map((x) => [x.name, x.values]));""")
+
+    def assert_honest(self, samples, glide_expected):
+        """Every drawn loader is at its published position, or on the step between the previous and the newly published
+        one (never beyond either end), facing its travel while it glides and its published toward_node when it stands."""
+        previous = {}
+        before = {}
+        glided = 0
+        between = 0
+        for sample in samples:
+            for name, published in sample["p"].items():
+                if published[0] is None or name not in sample["d"]:
+                    continue
+                key = (published[0], published[1])
+                if before.get(name, key) != key:
+                    previous[name] = before[name]
+                before[name] = key
+                working, offset, facing, gliding = sample["d"][name]
+                if not gliding:
+                    self.assertEqual((working, round(offset, 1)), (published[0], round(published[1], 1)),
+                                     f"{name} stands where it is published: {sample}")
+                    side = 1 if published[3] == published[6] else (-1 if published[3] == published[5] else None)
+                    if side is not None:
+                        self.assertEqual(facing, side, f"{name} faces its published toward_node {published[3]}")
+                    continue
+                glided += 1
+                start = previous.get(name)
+                if start and start[0] == published[0] == working:
+                    low, high = sorted((start[1], published[1]))
+                    self.assertTrue(low - 0.05 <= offset <= high + 0.05, f"{name} glides only between {start} and {key}: {offset}")
+                    self.assertEqual(facing, 1 if published[1] > start[1] else -1, f"{name} faces its travel")
+                    if low + 0.5 < offset < high - 0.5:
+                        between += 1
+        if glide_expected:
+            self.assertGreater(glided, 0, "the loaders glide between publications")
+            self.assertGreater(between, 0, "drawn between two published positions while gliding")
+        else:
+            self.assertEqual(glided, 0, "no glide")
+        return glided
+
+    def moved(self, samples, name=None):
+        """The loaders whose published position changed during the samples."""
+        out = set()
+        for a, b in zip(samples, samples[1:]):
+            for key, value in b["p"].items():
+                if (name is None or key == name) and key in a["p"] and a["p"][key][:2] != value[:2]:
+                    out.add(key)
+        return out
+
+
+class EquipmentTest(EquipmentCase):
+    """With equipment twins the loaders are the machines of the model: each where it is published, moving only by
+    publications, its lamps by its published state, a load in its bucket; hover names it, a click selects its twin."""
+
+    def test_each_loader_of_the_model_stands_where_it_is_published_with_its_look(self):
+        self.page.set_viewport(1920, 1080)
+        self.open("normal")
+        self.wait_loaded()
+        # The drawing and the published fields, read together while no loader glides (the model runs in `normal`).
+        self.page.wait_for(f"(async () => {APP}.ctx.stage.info().actors.glides === 0)()", timeout=5.0, interval=0.02)
+        info, published = self.js(f"""const app = {APP}; const s = app.store.getState();
+          return [app.ctx.stage.info(), Object.fromEntries((s.model.byKind.equipment || []).map((x) => [x.name, x.values]))];""")
+        self.assertEqual(info["actors"]["glides"], 0)
+        self.assertTrue(info["actors"]["equipment"], "the loaders are drawn from the equipment twins")
+        self.assertEqual(sorted(entry["zone"] for entry in info["loaders"]), sorted(published), "one loader per equipment twin")
+        self.assertEqual(len(published), 4)
+        for entry in info["loaders"]:
+            values = published[entry["zone"]]
+            with self.subTest(machine=entry["zone"]):
+                look = values.get("state") if values.get("state") in LIGHT_OF else "unknown"
+                self.assertEqual(entry["state"], look, "the look is the published state")
+                self.assertEqual(entry["light"], LIGHT_OF.get(look, 0))
+                self.assertEqual(entry["loaded"], values.get("loaded") is True, "a published load is in the bucket")
+                self.assertEqual(entry["working"], thing(values["at_working"]))
+                self.assertAlmostEqual(entry["offsetM"], values["offset_m"], places=2)
+                p = self.js(f"return {APP}.ctx.stage.screenOf({json.dumps(thing(entry['zone']))});")
+                self.assertTrue(p and p["visible"], f"in sight at the overview: {p}")
+        caption = self.page.evaluate("document.querySelector('[data-testid=\"scene3d-gizmo\"]').textContent")
+        self.assertIn("ПДМ — по данным модели, ×2,5", caption)
+        self.assertEqual(self.page.evaluate("document.querySelectorAll('#stage-3d .s3-label--loader[data-zone]').length"), 0,
+                         "no symbol of a zone's work: the machines are the model's")
+        self.assertLessEqual(info["loader"]["calls"], 8, "instanced: the draw calls do not grow with the machines")
+        self.assertEqual(list(self.page.console_errors), [])
+
+    def test_loaders_glide_between_publications_and_never_beyond(self):
+        self.open("normal")
+        self.wait_loaded()
+        samples = self.machines(ms=5000)
+        self.assertTrue(self.moved(samples), "the published positions change in `normal`")
+        self.assert_honest(samples, glide_expected=True)
+        # The step of a glide ends exactly at the published position.
+        self.page.wait_for(f"(async () => {APP}.ctx.stage.info().actors.glides === 0)()", timeout=3.0)
+
+    def test_frozen_on_pause_and_at_once_on_a_failed_read(self):
+        self.decision()
+        self.wait_loaded()
+        samples = self.machines(ms=2500, step=50)
+        self.assertTrue(all(sample["run"] == "paused" for sample in samples))
+        self.assertFalse(self.moved(samples), "a paused model publishes the same positions")
+        self.assert_honest(samples, glide_expected=False)
+        self.page.evaluate("window.__probe.raf = 0")
+        time.sleep(2.0)
+        self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "no frame while paused")
+        # A running model, then a failed read: the glide ends at once at the last published position, nothing moves.
+        self.open("normal")
+        self.wait_loaded()
+        self.page.wait_for(f"(async () => {APP}.ctx.stage.info().actors.glides > 0)()", timeout=10.0, interval=0.02,
+                           message="a loader glides")
+        self.mock.fault("http_502")
+        try:
+            self.page.wait_for("document.body.dataset.link !== 'ok'", timeout=5.0)
+            self.page.wait_for(f"(async () => {APP}.ctx.stage.info().actors.glides === 0)()", timeout=1.0,
+                               message="the first failed read ends every glide")
+            first = self.machines(ms=10, step=10)[0]
+            for name, published in first["p"].items():
+                self.assertEqual(first["d"][name][:2], [published[0], published[1]], f"{name} at its last published position")
+            self.page.wait_for("document.querySelector('#stage-3d .s3').hasAttribute('data-old')", timeout=10.0)
+            self.wait_idle(timeout=3.0)
+            self.page.evaluate("window.__probe.raf = 0")
+            time.sleep(2.0)
+            self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "nothing moves while reads fail")
+            self.assertEqual(self.machines(ms=10, step=10)[0]["d"], first["d"])
+        finally:
+            self.mock.fault("none")
+
+    def test_stop_parks_that_zones_loader_dark_and_the_others_keep_working(self):
+        self.decision()
+        self.wait_loaded()
+        zone_of = self.js(f"""const s = {APP}.store.getState();
+          return Object.fromEntries((s.model.byKind.equipment || []).map((x) => [x.name, x.attrs.zone]));""")
+        stopped = [name for name, zone in zone_of.items() if zone == "zone-d"]
+        self.assertEqual(len(stopped), 1, zone_of)
+        stopped = stopped[0]
+        samples = self.machines(act="await app.ctx.sendCommand('action.execute_option', 'option-stop-withdraw')", ms=7000, step=30)
+        last = samples[-1]
+        self.assertEqual(last["p"][stopped][2], "stopped", "the model stops the incident zone's loader")
+        self.assertEqual(last["l"][stopped][:2], ["stopped", 0], "its lamps are out")
+        lights = [sample["l"][stopped][1] for sample in samples]
+        self.assertEqual(lights, sorted(lights, reverse=True), f"its lights go out once: {lights}")
+        first = samples[0]
+        for name in zone_of:
+            if name == stopped:
+                continue
+            self.assertEqual(last["l"][name][:2], first["l"][name][:2], f"{name} keeps its published state and light")
+            self.assertEqual(last["l"][name][0], last["p"][name][2])
+        self.assertTrue(self.moved(samples) - {stopped}, "the other loaders keep moving")
+        self.assert_honest([sample for sample in samples if sample["run"] == "running"], glide_expected=True)
+
+    def test_hover_names_the_loader_and_a_click_selects_its_twin(self):
+        self.page.set_viewport(1920, 1080)
+        self.decision()
+        self.wait_loaded()
+        machine = self.js(f"""const s = {APP}.store.getState();
+          return (s.model.byKind.equipment || []).find((x) => x.attrs.zone === 'zone-d').name;""")
+        self.js(f"return {APP}.ctx.stage.focus({json.dumps(thing(machine))});")
+        self.wait_idle()
+        p = self.js(f"return {APP}.ctx.stage.screenOf({json.dumps(thing(machine))});")
+        self.assertTrue(p and p["visible"], p)
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": p["x"], "y": p["y"]})
+        self.page.wait_for("!document.querySelector('#stage-3d .s3__tip').hidden", timeout=3.0)
+        tip = self.page.evaluate("document.querySelector('#stage-3d .s3__tip').textContent")
+        label = self.js(f"return {APP}.store.getState().model.byName[{json.dumps(machine)}].label;")
+        self.assertIn(f"{label} · ", tip)
+        self.assertIn("· участок Г (данные модели)", tip)
+        self.assertIn("по публикации модели", tip)
+        self.click_at(p["x"], p["y"])
+        self.wait_selected(thing(machine))
+        card = self.page.evaluate("document.querySelector('.card').innerText")
+        self.assertIn("техника", card)
+        self.assertIn(label, card)
+        self.assertIn("Участок Г", card)
+        self.wait_idle()
+        selected = {entry["zone"]: entry for entry in self.info()["loaders"]}[machine]
+        self.assertTrue(selected["selected"], "the selected loader carries its ring on the floor")
+        self.assertEqual(list(self.page.console_errors), [])
+
+    def test_the_light_quality_keeps_its_budget_with_the_loaders_of_the_model(self):
+        for width, height in ((1920, 1080), (1280, 720)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport(width, height)
+                self.decision()
+                self.wait_loaded()
+                info = self.info()
+                self.assertTrue(info["actors"]["equipment"])
+                self.assertLessEqual(info["triangles"], 60000, f"{info['triangles']} triangles")
+                self.assertLessEqual(info["calls"], 90, f"{info['calls']} draw calls")
+                self.assertLessEqual(info["loader"]["calls"], 8)
+
+
+class EquipmentReducedMotionTest(EquipmentCase):
+    def setUp(self):
+        super().setUp()
+        self.page.send("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+
+    def test_loaders_jump_to_each_publication(self):
+        self.open("normal")
+        self.wait_loaded()
+        samples = self.machines(ms=4000, step=25)
+        self.assertTrue(self.moved(samples))
+        self.assert_honest(samples, glide_expected=False)
+
+
+class EquipmentFallbackTest(EquipmentCase):
+    """Without equipment twins (a stand that does not publish them) the loaders stay the static symbols of the zones."""
+
+    def test_without_equipment_twins_the_static_symbols_of_the_zones_stay(self):
+        self.page.add_init_script(STRIP_EQUIPMENT)
+        self.open("normal")
+        self.wait_loaded()
+        self.assertEqual(self.published(), {}, "the page sees no equipment twin")
+        info = self.info()
+        self.assertFalse(info["actors"]["equipment"])
+        self.assertEqual(info["actors"]["machines"], [])
+        self.assertEqual([entry["zone"] for entry in info["loaders"]], ["zone-a", "zone-b", "zone-c", "zone-d"])
+        self.assertTrue(all(entry["state"] == "working" and entry["light"] == 1 for entry in info["loaders"]))
+        caption = self.page.evaluate("document.querySelector('[data-testid=\"scene3d-gizmo\"]').textContent")
+        self.assertIn("ПДМ — символ работы участка, ×2,5", caption)
+        worlds = [entry["world"] for entry in info["loaders"]]
+        self.page.evaluate("window.__probe.raf = 0")
+        time.sleep(3.0)
+        self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "nothing moves")
+        self.assertEqual([entry["world"] for entry in self.info()["loaders"]], worlds)
+        self.assertEqual(list(self.page.console_errors), [])
+
+
+class MinerFigureTest(EquipmentCase):
+    """Close up, people are small miners under their markers (the markers keep the three axes); at the overview,
+    markers only. Figures move as their markers do, by published positions."""
+
+    def figures(self):
+        return self.info()["actors"]["figures"]
+
+    def test_markers_only_at_the_overview_figures_close_up_under_the_markers(self):
+        for width, height in ((1920, 1080), (1280, 720)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport(width, height)
+                self.open("normal")
+                self.wait_loaded()
+                figures = self.figures()
+                self.assertEqual(figures["shown"], 0, f"markers only at the overview: {figures}")
+                self.assertLess(figures["px"], figures["threshold"])
+                worker = thing("worker-11")
+                at_overview = self.js(f"return {APP}.ctx.stage.screenOf({json.dumps(worker)}).world;")
+                self.js(f"return {APP}.ctx.stage.focus({json.dumps(worker)});")
+                self.wait_idle()
+                self.focus_canvas()
+                for _ in range(2):
+                    self.page.press("+")
+                self.wait_idle()
+                figures = self.figures()
+                self.assertIn("worker-11", figures["at"], f"close up the person is a figure: {figures}")
+                self.assertGreaterEqual(figures["px"], figures["threshold"])
+                self.assertLessEqual(figures["triangles"], 400, "a low-poly figure")
+                close = self.js(f"return {APP}.ctx.stage.screenOf({json.dumps(worker)}).world;")
+                self.assertAlmostEqual(close[1] - at_overview[1], 1.8 * 2.5 + 3.5 - 6, places=1,
+                                       msg="the marker stands over the helmet of its figure")
+                # The marker keeps its state: its sprite and label are still there.
+                label = self.page.evaluate(f"!!document.querySelector('#stage-3d .s3-label[data-thing-id=\"{worker}\"]')")
+                self.assertTrue(label)
+                caption = self.page.evaluate("document.querySelector('[data-testid=\"scene3d-gizmo\"]').textContent")
+                self.assertIn("фигуры людей ×2,5", caption)
+
+    def test_figures_walk_with_their_markers_by_published_positions(self):
+        self.page.set_viewport(1920, 1080)
+        self.decision()
+        self.wait_loaded()
+        self.js(f"return {APP}.ctx.sendCommand('action.execute_option', 'option-stop-withdraw');")
+        self.page.wait_for("document.body.dataset.runState === 'running'", timeout=10.0)
+        walker = self.js(f"""const s = {APP}.store.getState();
+          return s.model.byKind.worker.filter((x) => x.values.status === 'moving_to_exit').map((x) => x.name).sort()[0] || null;""")
+        self.assertIsNotNone(walker)
+        self.js(f"return {APP}.ctx.stage.focus({json.dumps(thing(walker))});")
+        self.wait_idle()
+        samples = self.machines(ms=4000, step=25)
+        seen = [sample for sample in samples if walker in (sample["f"].get("at") or {})]
+        self.assertTrue(seen, "the walker is drawn as a figure close up")
+        before = None
+        between = 0
+        previous = None
+        for sample in seen:
+            published = tuple(sample["w"][walker])
+            if before is not None and published != before:
+                previous = before
+            before = published
+            working, offset, _ = sample["f"]["at"][walker]
+            if previous and previous[0] == published[0] == working:
+                low, high = sorted((previous[1], published[1]))
+                self.assertTrue(low - 0.05 <= offset <= high + 0.05, f"never beyond the published positions: {offset} {previous} {published}")
+                if low + 0.5 < offset < high - 0.5:
+                    between += 1
+        self.assertGreater(between, 0, "the figure glides with its marker between two publications")
+
+
+
+class BeautyTest(Stage3dStoryCase):
+    """The massif around the slabs, the light and the lamps (scene3d/environment.js): decoration that never covers the
+    mine, keeps the light quality within its budget and draws nothing while idle, and under which the states stay
+    distinguishable without colour."""
+
+    def environment(self):
+        return self.info()["environment"]
+
+    def test_the_far_walls_are_never_in_front_of_the_mine_from_any_azimuth(self):
+        # A model at rest (paused, heartbeat only): every frame here is one the camera asked for.
+        self.open("paused_heartbeat")
+        self.focus_canvas()
+        seen = set()
+        for turn in range(8):
+            env = self.environment()
+            box = env["box"]
+            camera = env["camera"]
+            walls = env["walls"]
+            self.assertEqual(len(walls), 2, f"two far walls at a time: {walls}")
+            self.assertEqual({wall[-1] for wall in walls}, {"X", "Z"}, "one per horizontal axis")
+            # A wall's plane separates nothing inside the box from the camera: the camera is on its inner side.
+            for wall in walls:
+                axis = 0 if wall.endswith("X") else 2
+                inward = 1 if wall.startswith("min") else -1
+                self.assertGreater((camera[axis] - box[wall]) * inward, 0, f"turn {turn}: the camera is outside the {wall} wall")
+            self.assertTrue(env["floor"], "the floor of the massif is under the camera")
+            # Every object of the mine lies inside the box, so the camera sees it before the walls.
+            points = self.js(f"""const app = {APP}; const s = app.store.getState();
+              const ids = [...s.model.byKind.worker, ...s.model.byKind.exit, ...s.model.byKind.sensor].map((t) => t.thingId);
+              return ids.map((id) => app.ctx.stage.screenOf(id)).filter(Boolean).map((p) => p.world);""")
+            self.assertGreater(len(points), 10)
+            for point in points:
+                self.assertTrue(box["minX"] < point[0] < box["maxX"] and box["minZ"] < point[2] < box["maxZ"]
+                                and box["floorY"] < point[1], f"{point} inside the massif box {box}")
+            seen.update(walls)
+            for _ in range(3):
+                self.page.press("ArrowLeft")
+                time.sleep(0.35)
+            self.wait_idle()
+        self.assertEqual(seen, {"minX", "maxX", "minZ", "maxZ"}, "turning the model round re-picks every wall")
+        # Picking the walls asks for no frame of its own: once the camera rests nothing is drawn.
+        self.page.evaluate("window.__probe.raf = 0")
+        time.sleep(2.5)
+        self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "no frame while idle after turning")
+
+    def test_the_light_quality_keeps_its_budget_at_both_sizes(self):
+        for width, height in ((1920, 1080), (1280, 720)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport(width, height)
+                stage = self.open("paused_heartbeat")
+                self.assertEqual(stage["quality"], "low")
+                info = self.info()
+                env = info["environment"]
+                self.assertLessEqual(info["triangles"], 60000, f"{info['triangles']} triangles")
+                self.assertLessEqual(info["calls"], 90, f"{info['calls']} draw calls")
+                self.assertGreater(env["lamps"], 10, "lamps along the workings")
+                self.assertLessEqual(env["calls"], 6, "the massif and the lamps are a few draw calls, whatever the size of the mine")
+                self.page.evaluate("window.__probe.raf = 0")
+                time.sleep(3.0)
+                self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "and no frame while idle")
+        self.page.set_viewport(1280, 720)
+
+    def clip_stats(self, point, size=10):
+        """Mean and standard deviation of the luminance (greyscale) of a small square of the page around a point."""
+        from browser_support import read_png
+        path = os.path.join(OUTPUT_DIR, "beauty-clip.png")
+        self.page.screenshot(path, clip=(int(point["x"]) - size // 2, int(point["y"]) - size // 2, size, size))
+        image = read_png(path)
+        values = [0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b, _ in (image.pixel(x, y) for y in range(image.height) for x in range(image.width))]
+        return statistics.mean(values), statistics.pstdev(values)
+
+    def floor_window(self, hazard, score, size=6, reach=70):
+        """Grey statistics of the best-scoring small square near the middles of the workings of a zone in that hazard
+        state: its floor found by colour (between the people and signs on it), then measured without colour."""
+        from browser_support import read_png
+        centre = self.js(f"""const app = {APP}; const s = app.store.getState();
+          const zone = s.model.byKind.zone.find((z) => z.hazard && z.hazard.state === {json.dumps(hazard)});
+          const mids = zone.attrs.workings.map((name) => app.ctx.stage.screenOf(s.model.byName[name].thingId)).filter(Boolean);
+          return [mids.reduce((a, p) => a + p.x, 0) / mids.length, mids.reduce((a, p) => a + p.y, 0) / mids.length];""")
+        path = os.path.join(OUTPUT_DIR, f"beauty-{hazard}.png")
+        self.page.screenshot(path, clip=(int(centre[0] - reach), int(centre[1] - reach), 2 * reach, 2 * reach))
+        image = read_png(path)
+        pixels = [[image.pixel(x, y)[:3] for x in range(image.width)] for y in range(image.height)]
+        best = None
+        for y in range(0, image.height - size, 2):
+            for x in range(0, image.width - size, 2):
+                window = [pixels[y + j][x + i] for j in range(size) for i in range(size)]
+                value = sum(score(*pixel) for pixel in window)
+                if best is None or value > best[0]:
+                    best = (value, window)
+        self.assertGreater(best[0], size * size * 0.6, f"the {hazard} floor is found by its colour")
+        values = [0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in best[1]]
+        return statistics.mean(values), statistics.pstdev(values)
+
+    def test_hazard_floors_stay_distinguishable_from_the_rock_in_greyscale(self):
+        self.decision()
+        # The labels are HTML over the scene: hidden here, so the pixels are the scene's own.
+        self.page.evaluate("document.querySelector('#stage-3d .s3__labels').style.visibility = 'hidden'")
+        self.assertTrue(self.info()["environment"]["walls"])
+        # The rock of the massif beside the model.
+        box = self.page.evaluate("(() => { const r = document.querySelector('#stage-3d').getBoundingClientRect(); return [r.left, r.top, r.height]; })()")
+        rock = self.clip_stats({"x": box[0] + 40, "y": box[1] + box[2] * 0.5}, size=12)
+        # Danger: red with its dark cross-hatch (found by the red); normal: the pale sawn floor (found by its paleness).
+        danger = self.floor_window("danger", lambda r, g, b: 1 if r > 140 and r > g + 60 else 0)
+        normal = self.floor_window("normal", lambda r, g, b: 1 if min(r, g, b) > 170 and max(r, g, b) - min(r, g, b) < 40 else 0)
+        stats = {"rock": rock, "danger": danger, "normal": normal}
+        self.assertGreater(danger[1], 14, f"the cross-hatch of danger survives without colour: {stats}")
+        self.assertGreater(danger[1], rock[1] + 6, f"the hatch of danger is busier than the rock: {stats}")
+        self.assertGreater(normal[0], rock[0] + 60, f"a normal floor is far paler than the rock: {stats}")
+        self.assertGreater(abs(danger[0] - normal[0]), 30, f"danger and normal differ in grey: {stats}")
+        self.assertLess(rock[0], 90, f"the massif stays dark behind the model: {stats}")
 
 
 if __name__ == "__main__":

@@ -58,3 +58,38 @@ export const TONE = {
   barricadeDark: '#24272B',
   collar: '#121315',
 };
+
+/**
+ * The surroundings of the model (environment.js): the rock massif the slabs are cut from, the light, the depth and
+ * the lamps of the workings. Stone and ink only, a little cooler and darker than the slabs, so the model stays in
+ * front; the ore veins are the dull tones of the copper minerals, thin and never on a floor, where the hazard
+ * colours live. Nothing here is a state.
+ */
+export const ENV = {
+  // The massif: strata of a cool grey rock, darker than the slabs, and its sawn cut edges.
+  rockA: '#46494C',
+  rockB: '#505255',
+  rockC: '#393C3F',
+  rockD: '#5A5957',
+  rockE: '#474D4B',        // a greenish bed (chloritic)
+  rockF: '#544F4A',        // a warmer bed (iron-stained)
+  rockParting: '#303336',  // thin partings between beds
+  rockSeam: '#6E6A62',
+  cutEdge: '#8F897E',
+  // Copper ore in the rock: chalcopyrite (dull brass), bornite (purple-bronze tarnish), malachite (green streaks).
+  chalcopyrite: '#9A8650',
+  bornite: '#6B5260',
+  malachite: '#4F7F66',
+  // The scene behind the model: a cool graphite with a soft vignette (high quality), or its plain tone (light quality).
+  backCentre: '#181B20',
+  backEdge: '#08090B',
+  back: '#121418',
+  // The light: a warm work light as the key, a cool sky over a dark ground, a cool rim from behind.
+  key: '#FFEBD8',
+  sky: '#CDD6E0',
+  ground: '#15181C',
+  rim: '#9FB4CA',
+  // The lamps of the workings: a dark steel post and a warm lit lens.
+  lampPost: '#2B2E33',
+  lampLens: '#FFD9A0',
+};

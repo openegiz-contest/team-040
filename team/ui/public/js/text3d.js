@@ -60,6 +60,8 @@ export const SCENE = {
   scaleAt: 'у центра вида',
   vertical: (factor) => (Math.abs(factor - 1) < 0.05 ? 'вертикаль в масштабе плана' : `вертикаль ×${num(factor, 1)}`),
   notToScale: 'толщина плит и ширина выработок условные',
+  /** The rock around the slabs (scene3d/environment.js) is decoration, not data. */
+  massifNote: 'массив — оформление',
   oldData: 'Показаны последние полученные данные, движение остановлено',
   grouped: (count) => `×${num(count)}`,
   /** The published number of people of a zone, after its state on its tag. */
@@ -77,8 +79,18 @@ export const SCENE = {
   loaderUnknown: 'работа участка не опубликована',
   /** The sign of a loader whose zone has no published work state. */
   loaderQuestion: 'работа: ?',
-  decorNote: (factor) => `ПДМ — символ работы участка, ×${num(factor, 1)}`,
+  decorNote: (factor, people) => `ПДМ — символ работы участка, ×${num(factor, 1)}${people ? `; фигуры людей ×${num(people, 1)}` : ''}`,
   /** People out at an exit, after its name on its label. */
   exitOut: (count) => `вышли ${num(count)}`,
   noPosition: (codes) => `Без опубликованного положения: ${codes}`,
+  /** A loader of the model (equipment twin): «ПДМ-Г · везёт руду · участок Г (данные модели)». */
+  machineTitle: (code, words, zone) => `${code} · ${words}${zone ? ` · участок ${zoneShort(zone)}` : ''} (данные модели)`,
+  machineStill: {parked: 'стоит', stopped: 'остановлена'},
+  machineWorking: 'работает',
+  machineUnknown: 'состояние не опубликовано',
+  machineLoad: (loaded) => (loaded ? 'в ковше руда' : 'ковш пуст'),
+  machineNote: (factor) => `Положение и состояние — по публикации модели · ПДМ показана увеличенной ×${num(factor, 1)}`,
+  /** The sign of a loader that does not work: stopped with its zone, or without a published state. */
+  machineSign: {stopped: 'остановлена', unknown: 'ПДМ: ?'},
+  decorEquipment: (factor, people) => `ПДМ — по данным модели, ×${num(factor, 1)}; фигуры людей ×${num(people, 1)}`,
 };

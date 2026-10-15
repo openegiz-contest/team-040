@@ -142,6 +142,7 @@ class Timeline:
         self.state = ""
         self.pubs_in_state = 0
         self.frame_index = 0
+        self.loop_index = 0           # element set of the state's "loop" shown now
         self.clock = 0                # model tick of the current publication
         self.warps: dict[str, list] = {}   # run -> [(nominal tick boundary, delta)]
         self.pending_goto: str | None = None
@@ -171,27 +172,40 @@ class Timeline:
     def frame(self) -> dict:
         return self.states[self.state]["frames"][self.frame_index]
 
+    def _loop_position(self) -> tuple | None:
+        """(phase of the element set shown now, loop length) of a looping state."""
+        loop = self.states[self.state].get("loop") if self.state else None
+        if not loop:
+            return None
+        return loop.get("phase", 0) + self.loop_index, len(loop["scene"])
+
     def _enter(self, name: str, prev: tuple | None):
         st = self.states[name]
         first = st["frames"][0]
         t0, run = value_of(first, "tick", 0), value_of(first, "idSimulationRun", "")
+        loop, position = st.get("loop"), None
         if prev is None or st.get("new_run"):
             self.clock = t0
             self.warps[run] = [(-math.inf, 0)]
         else:
-            prev_clock, prev_nominal, prev_run = prev
+            prev_clock, prev_nominal, prev_run, position = prev
             if prev_clock == "run":
                 self.clock += self.step
             boundary = prev_nominal + 1 if prev_run == run else -math.inf
             pivots = [p for p in self.warps.get(run, [(-math.inf, 0)]) if p[0] < boundary]
             self.warps[run] = pivots + [(boundary, self.clock - t0)]
         self.state, self.pubs_in_state, self.frame_index = name, 0, 0
+        # a loop entered from another loop of the same length continues its phase
+        self.loop_index = 0
+        if loop and position and position[1] == len(loop["scene"]):
+            self.loop_index = (position[0] + 1 - loop.get("phase", 0)) % position[1]
 
     def _step(self):
         self.n += 1
         st = self.states[self.state]
         frame = self.frame()
-        prev = (st["clock"], value_of(frame, "tick", 0), value_of(frame, "idSimulationRun", ""))
+        prev = (st["clock"], value_of(frame, "tick", 0), value_of(frame, "idSimulationRun", ""),
+                self._loop_position())
         if self.pending_goto is not None:
             target, self.pending_goto = self.pending_goto, None
             self._enter(target, prev)
@@ -202,6 +216,8 @@ class Timeline:
                 self._enter(st["next"], prev)
             else:
                 self.frame_index = min(self.pubs_in_state, len(st["frames"]) - 1)
+                if st.get("loop"):
+                    self.loop_index = (self.loop_index + 1) % len(st["loop"]["scene"])
                 if st["clock"] == "run":
                     self.clock += self.step
         for record in self.unstamped:
@@ -258,6 +274,11 @@ class Timeline:
             nominal = value_of(features, "tick", 0)
             surplus = self.clock - self._warp(run, nominal)
             scene = value_of(features, "scene", [])
+            loop = self.states[self.state].get("loop")
+            if loop:
+                # the recorded elements of this publication replace those with the same id
+                swap = {e["thingId"]: e for e in loop["scene"][self.loop_index]}
+                scene[:] = [copy.deepcopy(swap.get(e.get("thingId"), e)) for e in scene]
             self._retime(features, run, surplus)
             for element in scene:
                 self._retime(element.get("features", {}), run, surplus)
@@ -414,6 +435,7 @@ class Timeline:
         return {
             "state": self.state, "frame_index": self.frame_index,
             "frames_in_state": len(st["frames"]), "publications_in_state": self.pubs_in_state,
+            "loop_index": self.loop_index if st.get("loop") else None,
             "clock": st["clock"], "publication": self.n,
             "publication_seq": value_of(shift, "publication_seq"),
             "tick": value_of(shift, "tick"), "run": value_of(shift, "idSimulationRun"),

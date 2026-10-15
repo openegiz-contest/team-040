@@ -376,7 +376,11 @@ class FixtureFilesTest(unittest.TestCase):
                 mine = things[0]["attributes"]
                 ids = [t["thingId"] for t in things]
                 self.assertEqual(mine["manifest"], ids)
-                self.assertLessEqual(len(ids), 80)
+                # CONTRACT 1.5 targets up to 80 twins; the four proposed equipment twins
+                # (README, contract question 18) are counted on top of that target
+                equipment = sum(1 for t in things if t["attributes"]["kind"] == "equipment")
+                self.assertEqual(equipment, 4)
+                self.assertLessEqual(len(ids) - equipment, 80)
                 self.assertEqual(len(ids), len(set(ids)))
                 kinds = kinds_of(things)
                 self.assertTrue(set(mine["dynamic_ids"]) < set(ids))
@@ -401,7 +405,7 @@ class FixtureFilesTest(unittest.TestCase):
         counts = self.fixtures["normal"]["attribute_sets"]["t1"][0]["attributes"]["counts"]
         self.assertEqual(counts, {"mine": 1, "shift": 1, "level": 3, "working": 36, "zone": 4,
                                   "sensor": 10, "worker": 14, "exit": 3, "incident": 1,
-                                  "option": 3, "journal": 1})
+                                  "option": 3, "journal": 1, "equipment": 4})
         by_id = {t["thingId"].split(":")[1]: t["attributes"] for t in mine}
         self.assertEqual([by_id[f"level-{d}"]["elevation_m"] for d in (260, 320, 380)],
                          [-260, -320, -380])
@@ -1090,6 +1094,479 @@ class FixtureFilesTest(unittest.TestCase):
         done = states["observe_done"]["frames"][0]
         self.assertEqual((val(done, "workers_out"), val(done, "workers_in_danger")), (0, 3))
         self.assertEqual(val(element(done, "option-observe"), "actual_in_danger"), 3)
+
+
+# ---------------------------------------------------------------------------
+# Equipment twins (contract question 18): loaders that move only by published data
+# ---------------------------------------------------------------------------
+
+EQUIPMENT = ("lhd-a", "lhd-b", "lhd-c", "lhd-d")
+LHD_STEP_M = 25.0         # 2.5 m/s, the synthetic speed of fixtures/README.md
+LHD_SAFETY_M = 20.0
+LHD_CYCLE = 15
+LHD_ACTIVITIES = {"working": {"loading", "hauling", "dumping", "returning"},
+                  "parked": {"idle"}, "stopped": {"idle", "hauling", "returning"}}
+LHD_FEATURES = {"tick", "sim_time_s", "idSimulationRun", "state", "activity", "at_working",
+                "offset_m", "toward_node", "loaded"}
+_FIXTURE_CACHE = {}
+
+
+def fixture_cached(name):
+    if name not in _FIXTURE_CACHE:
+        _FIXTURE_CACHE[name] = load_fixture(name)
+    return _FIXTURE_CACHE[name]
+
+
+def published(state):
+    """The frames a state publishes in one pass, as the server builds them.
+
+    A state with a "loop" repeats its one frame; publication j swaps in the elements of
+    loop.scene[j mod len], so one pass is one element set after another.
+    """
+    loop = state.get("loop")
+    if not loop:
+        return list(state["frames"])
+    base = state["frames"][-1]
+    out = []
+    for elements in loop["scene"]:
+        swap = {e["thingId"]: e for e in elements}
+        frame = dict(base)
+        frame["scene"] = {"properties": {"value": [swap.get(e["thingId"], e)
+                                                  for e in scene_of(base)]}}
+        out.append(frame)
+    return out
+
+
+def last_published(state):
+    """(frame, loop position) of the last publication of a state that has a "next"."""
+    count = state.get("publications", len(state["frames"]))
+    loop = state.get("loop")
+    if loop:
+        i = (count - 1) % len(loop["scene"])
+        return published(state)[i], (loop["phase"] + i, len(loop["scene"]))
+    return state["frames"][min(count, len(state["frames"])) - 1], None
+
+
+def first_published(state, position):
+    """The first publication of a state entered by "next" (mock_server.Timeline._enter)."""
+    loop = state.get("loop")
+    if loop and position and position[1] == len(loop["scene"]):
+        return published(state)[(position[0] + 1 - loop["phase"]) % position[1]]
+    return published(state)[0]
+
+
+class Network:
+    """Positions and distances on the workings of one attribute set (test geometry)."""
+
+    def __init__(self, attributes):
+        self.a = attributes
+        self.nodes = attributes["mine"]["nodes"]
+        self.adjacent = {}
+        for wid, w in attributes.items():
+            if w.get("kind") == "working":
+                for n in (w["from"], w["to"]):
+                    self.adjacent.setdefault(n, []).append(wid)
+
+    def polyline(self, wid):
+        w = self.a[wid]
+        ends = [[self.nodes[w[k]][c] for c in "xyz"] for k in ("from", "to")]
+        return [ends[0]] + w["points"] + [ends[1]]
+
+    def point(self, wid, offset):
+        """offset_m / length_m along the 3D polyline, as the UI draws a position."""
+        pts = self.polyline(wid)
+        legs = [math.dist(p, q) for p, q in zip(pts, pts[1:])]
+        target = offset / self.a[wid]["length_m"] * sum(legs)
+        for i, (p, q, leg) in enumerate(zip(pts, pts[1:], legs)):
+            if target <= leg or i == len(legs) - 1:
+                t = min(target / leg, 1.0) if leg else 0.0
+                return [p[k] + (q[k] - p[k]) * t for k in range(3)]
+            target -= leg
+        return pts[-1]
+
+    def travel(self, a, b, is_open):
+        """Shortest way from position a to b ((working, offset)) over open workings."""
+        (wa, oa), (wb, ob) = a, b
+        if not (is_open(wa) and is_open(wb)):
+            return math.inf
+        if wa == wb:
+            return abs(oa - ob)
+        la, lb = self.a[wa]["length_m"], self.a[wb]["length_m"]
+        dist = {self.a[wa]["from"]: oa, self.a[wa]["to"]: la - oa}
+        queue = sorted((d, n) for n, d in dist.items())
+        while queue:
+            d, n = queue.pop(0)
+            if d > dist.get(n, math.inf):
+                continue
+            for wid in self.adjacent.get(n, []):
+                if not is_open(wid):
+                    continue
+                w = self.a[wid]
+                other = w["to"] if n == w["from"] else w["from"]
+                if d + w["length_m"] < dist.get(other, math.inf):
+                    dist[other] = d + w["length_m"]
+                    queue.append((dist[other], other))
+                    queue.sort()
+        w = self.a[wb]
+        return min(dist.get(w["from"], math.inf) + ob, dist.get(w["to"], math.inf) + lb - ob)
+
+    def on_route(self, place, worker):
+        """Is (working, offset) on the rest of the worker's published route?"""
+        route = val(worker, "route") or []
+        names = [seg["working"] if isinstance(seg, dict) else seg for seg in route]
+        if not names:
+            return False
+        wid, offset = place
+        if wid in names[1:]:
+            return True
+        if wid != names[0]:
+            return False
+        at = val(worker, "offset_m")
+        end = 0 if val(worker, "route_next_node") == self.a[wid]["from"] else self.a[wid]["length_m"]
+        return min(at, end) <= offset <= max(at, end)
+
+
+class EquipmentTest(unittest.TestCase):
+    """One loader per zone with workings, moved by the fixture only along open workings."""
+
+    def scenarios(self):
+        for name in SCENARIOS:
+            fx = fixture_cached(name)
+            if fx["states"]:
+                yield name, fx
+
+    def attributes_of(self, fx, state):
+        set_name = state.get("attributes", next(iter(fx["attribute_sets"])))
+        return {t["thingId"].split(":")[1]: t["attributes"] for t in fx["attribute_sets"][set_name]}
+
+    def place(self, f):
+        return val(f, "at_working"), val(f, "offset_m")
+
+    def test_equipment_twins_in_attributes_manifest_and_every_scene(self):
+        for name, fx in self.scenarios():
+            for set_name, things in fx["attribute_sets"].items():
+                mine = things[0]["attributes"]
+                by_id = {t["thingId"].split(":")[1]: t["attributes"] for t in things}
+                zones = [z for z, a in by_id.items() if a["kind"] == "zone" and a["workings"]]
+                equipment = [i for i, a in by_id.items() if a["kind"] == "equipment"]
+                self.assertEqual(equipment, list(EQUIPMENT), name)
+                self.assertEqual(sorted(by_id[i]["zone"] for i in equipment), sorted(zones))
+                for i, zone in zip(EQUIPMENT, ("zone-a", "zone-b", "zone-c", "zone-d")):
+                    letter = by_id[zone]["label"][-1]
+                    self.assertEqual(by_id[i], {
+                        "kind": "equipment", "equipment_kind": "lhd", "label": f"ПДМ-{letter}",
+                        "zone": zone, "_parents": tid(zone), "length_m": 10}, f"{name}/{i}")
+                    self.assertIn(tid(i), mine["manifest"])
+                    self.assertIn(tid(i), mine["dynamic_ids"])
+                self.assertEqual(mine["counts"]["equipment"], 4)
+            for state_name, state in fx["states"].items():
+                for frame in published(state):
+                    ids = [el["thingId"] for el in scene_of(frame)]
+                    for i in EQUIPMENT:
+                        self.assertEqual(ids.count(tid(i)), 1, f"{name}/{state_name} {i}")
+
+    def test_every_published_frame_places_loaders_by_the_rules(self):
+        """Per frame: schema, open working of the zone's level, 20 m from people, states."""
+        checked = 0
+        for name, fx in self.scenarios():
+            for state_name, state in fx["states"].items():
+                attributes = self.attributes_of(fx, state)
+                net = Network(attributes)
+                for i, frame in enumerate(published(state)):
+                    label = f"{name}/{state_name}[{i}]"
+                    people = [el["features"] for el in scene_of(frame)
+                              if attributes[el["thingId"].split(":")[1]]["kind"] == "worker"
+                              and "at_working" in el["features"]]
+                    for lid in EQUIPMENT:
+                        f = element(frame, lid)
+                        where = f"{label} {lid}"
+                        self.assertLessEqual(LHD_FEATURES, set(f), where)
+                        for k in ("tick", "sim_time_s", "idSimulationRun"):
+                            self.assertEqual(val(f, k), val(frame, k), where)
+                        self.assertEqual(f["offset_m"]["properties"].get("unit"), "m", where)
+                        state_value, activity = val(f, "state"), val(f, "activity")
+                        self.assertIn(activity, LHD_ACTIVITIES.get(state_value, ()), where)
+                        self.assertIsInstance(val(f, "loaded"), bool, where)
+                        zone = attributes[lid]["zone"]
+                        work = val(element(frame, zone), "work_state")
+                        self.assertEqual(state_value == "stopped", work == "stopped", where)
+                        wid, offset = self.place(f)
+                        w = attributes[wid]
+                        self.assertEqual(w["kind"], "working", where)
+                        # never across levels: a working of the zone's level, and not a
+                        # shaft, ramp or raise between levels
+                        self.assertEqual(w["level"], attributes[zone]["level"], where)
+                        self.assertNotIn(w["working_kind"], ("shaft", "ramp", "raise"), where)
+                        self.assertTrue(0 <= offset <= w["length_m"], where)
+                        self.assertIn(val(f, "toward_node"), (w["from"], w["to"]), where)
+                        self.assertEqual(val(element(frame, wid), "passability"), "open",
+                                         f"{where} stands on closed {wid}")
+                        here = net.point(wid, offset)
+                        for person in people:
+                            gap = math.dist(here, net.point(val(person, "at_working"),
+                                                            val(person, "offset_m")))
+                            self.assertGreaterEqual(gap, LHD_SAFETY_M, f"{where}: {gap:.1f} m")
+                        if state_value == "stopped" and activity == "idle":
+                            # the park position is on nobody's way out
+                            for person in people:
+                                self.assertFalse(net.on_route((wid, offset), person), where)
+                        checked += 1
+        self.assertGreater(checked, 3000)
+
+    def test_loaders_move_at_most_one_step_over_open_workings(self):
+        """Between publications: inside a state, across its loop and across "next"."""
+        pairs = 0
+        for name, fx in self.scenarios():
+            states = fx["states"]
+            for state_name, state in states.items():
+                attributes = self.attributes_of(fx, state)
+                net = Network(attributes)
+                frames = published(state)
+                sequence = list(zip(frames, frames[1:]))
+                if state.get("loop"):
+                    sequence.append((frames[-1], frames[0]))           # the loop closes
+                following = states.get(state.get("next"), {})
+                if following and not following.get("new_run"):
+                    last, position = last_published(state)
+                    sequence.append((last, first_published(following, position)))
+                for before, after in sequence:
+                    # the way is driven during the interval: a working closed at its end
+                    # (a story closing a passage) was still open on the way
+                    def is_open(wid, before=before):
+                        return val(element(before, wid), "passability") == "open"
+
+                    for lid in EQUIPMENT:
+                        a, b = element(before, lid), element(after, lid)
+                        where = f"{name}/{state_name} {lid} tick {val(after, 'tick')}"
+                        gap = net.travel(self.place(a), self.place(b), is_open)
+                        self.assertLessEqual(gap, LHD_STEP_M + 0.05, where)
+                        if gap > 0 and not (val(a, "state"), val(b, "state")) == ("working", "parked"):
+                            # (a loader parked by a closure stops at the end of the interval)
+                            self.assertIn(val(b, "activity"), ("hauling", "returning"), where)
+                        if val(a, "state") != "working":
+                            self.assertNotEqual(val(b, "state"), "working", f"{where}: resumed")
+                        pairs += 1
+        self.assertGreater(pairs, 2000)
+
+    def test_paused_states_freeze_and_running_repeats_loop(self):
+        long_running = 0
+        for name, fx in self.scenarios():
+            for state_name, state in fx["states"].items():
+                label = f"{name}/{state_name}"
+                loop = state.get("loop")
+                frame = state["frames"][-1]
+                if state["clock"] == "hold" or val(frame, "run_state") != "running":
+                    self.assertIsNone(loop, f"{label}: a paused model moves nothing")
+                    continue
+                repeats = "next" not in state or state.get("publications", 0) > len(state["frames"])
+                cycling = [lid for lid in EQUIPMENT if val(element(frame, lid), "state") == "working"]
+                if repeats and cycling:
+                    # a repeated frame of a running model: the loop keeps the loaders going
+                    self.assertIsNotNone(loop, f"{label}: working loaders frozen")
+                    long_running += 1
+                if not loop:
+                    continue
+                self.assertEqual(len(state["frames"]), 1, label)
+                self.assertEqual(len(loop["scene"]), LHD_CYCLE, label)
+                self.assertEqual(loop["phase"], val(frame, "tick") // 10 % LHD_CYCLE, label)
+                self.assertEqual(sorted(e["thingId"] for e in loop["scene"][0]),
+                                 sorted(tid(lid) for lid in cycling), label)
+                for e in loop["scene"][0]:      # the frame itself shows the first element set
+                    self.assertEqual(e["features"], element(frame, e["thingId"].split(":")[1]))
+                for elements in loop["scene"]:
+                    for e in elements:
+                        self.assertEqual(val(e["features"], "tick"), val(frame, "tick"), label)
+                        self.assertEqual(val(e["features"], "state"), "working", label)
+        self.assertGreaterEqual(long_running, 20)
+
+    def test_a_loop_is_a_full_cycle_loading_hauling_dumping_returning(self):
+        fx = fixture_cached("normal")
+        state = fx["states"]["initial"]
+        attributes = self.attributes_of(fx, state)
+        net = Network(attributes)
+        frames = published(state)
+        self.assertEqual(len(frames), LHD_CYCLE)
+        for lid in EQUIPMENT:
+            seq = [element(f, lid) for f in frames]
+            self.assertEqual({val(f, "state") for f in seq}, {"working"}, lid)
+            # rotate to the first loading publication and read the cycle once
+            start = next(i for i, f in enumerate(seq) if val(f, "activity") == "loading"
+                         and val(seq[i - 1], "activity") != "loading")
+            seq = seq[start:] + seq[:start]
+            runs = [val(seq[0], "activity")]
+            for f in seq[1:]:
+                if val(f, "activity") != runs[-1]:
+                    runs.append(val(f, "activity"))
+            self.assertEqual(runs, ["loading", "hauling", "dumping", "returning"], lid)
+            counts = {a: sum(1 for f in seq if val(f, "activity") == a) for a in runs}
+            self.assertEqual(counts, {"loading": 2, "hauling": 6, "dumping": 1, "returning": 6})
+            loading = [self.place(f) for f in seq if val(f, "activity") == "loading"]
+            self.assertEqual(len(set(loading)), 1, f"{lid} loads in one place")
+            self.assertEqual(self.place(seq[-1]), loading[0], f"{lid} returns to it")
+            self.assertTrue(all(val(f, "loaded") for f in seq if val(f, "activity") == "hauling"))
+            self.assertFalse(any(val(f, "loaded") for f in seq
+                                 if val(f, "activity") in ("dumping", "returning")))
+            dump = next(self.place(f) for f in seq if val(f, "activity") == "dumping")
+            way = net.travel(loading[0], dump, lambda wid: True)
+            self.assertEqual(way, LHD_STEP_M * 6, f"{lid}: 150 m from loading to the dump")
+            # the loading point is in the loader's zone, the dump in an access drift
+            self.assertEqual(attributes[loading[0][0]].get("zone"), attributes[lid]["zone"], lid)
+            self.assertNotIn("zone", attributes[dump[0]], lid)
+            # hauling faces the way it goes, returning faces back to the loading point
+            for f, g in zip(seq, seq[1:]):
+                if self.place(f) != self.place(g) and val(f, "at_working") == val(g, "at_working"):
+                    w = attributes[val(g, "at_working")]
+                    up = val(g, "offset_m") > val(f, "offset_m")
+                    self.assertEqual(val(g, "toward_node"), w["to"] if up else w["from"], lid)
+
+    def test_a_stopped_zone_parks_its_loader_and_the_others_keep_working(self):
+        states = fixture_cached("danger_zone")["states"]
+        decision = states["decision"]["frames"][0]
+        # at the decision zone D (danger) and zone C (unknown) are blocked: no new entry,
+        # their loaders stand where they were; zones A and B keep their loaders cycling
+        self.assertEqual([val(element(decision, lid), "state") for lid in EQUIPMENT],
+                         ["working", "working", "parked", "parked"])
+        frames = states["sw_exec"]["frames"] + published(states["sw_done"])
+        d = [element(f, "lhd-d") for f in frames]
+        self.assertEqual({val(f, "state") for f in d}, {"stopped"})
+        self.assertEqual(self.place(d[0]), self.place(element(decision, "lhd-d")))
+        moving = [i for i, (a, b) in enumerate(zip(d, d[1:])) if self.place(a) != self.place(b)]
+        self.assertTrue(moving and moving == list(range(len(moving))), "drives, then stands")
+        self.assertEqual(val(d[-1], "activity"), "idle")
+        self.assertEqual(self.place(d[-1]), ("w-06", 40))
+        for lid in ("lhd-a", "lhd-b"):
+            places = {self.place(element(f, lid)) for f in frames}
+            self.assertGreater(len(places), 5, f"{lid} keeps working")
+        self.assertEqual({val(element(f, "lhd-c"), "state") for f in frames}, {"parked"})
+        # withdraw all: every loader ends idle in its park bay
+        end = states["wa_done"]["frames"][0]
+        self.assertNotIn("loop", states["wa_done"])
+        self.assertEqual({(val(element(end, lid), "state"), val(element(end, lid), "activity"))
+                          for lid in EQUIPMENT}, {("stopped", "idle")})
+        self.assertEqual([self.place(element(end, lid)) for lid in EQUIPMENT],
+                         [("w-30", 75), ("w-19", 60), ("w-10", 22), ("w-06", 40)])
+
+    def test_a_closed_passage_parks_the_loader_that_needs_it(self):
+        for name, lid, place in (("detour", "lhd-b", ("w-19", 0)),
+                                 ("no_path", "lhd-c", ("w-10", 22))):
+            states = fixture_cached(name)["states"]
+            decision = states["decision"]["frames"][0]
+            f = element(decision, lid)
+            self.assertEqual((val(f, "state"), val(f, "activity"), self.place(f)),
+                             ("parked", "idle", place), name)
+            others = {val(element(decision, other), "state") for other in EQUIPMENT if other != lid}
+            self.assertEqual(others, {"working"}, name)
+            # it stays parked while its zone works (observe) and is stopped with its zone
+            observe = published(states["observe_exec"])
+            self.assertEqual({val(element(fr, lid), "state") for fr in observe}, {"parked"})
+            looped = [e["thingId"] for e in states["observe_exec"]["loop"]["scene"][0]]
+            self.assertNotIn(tid(lid), looped)
+            self.assertEqual(val(element(states["sw_done"]["frames"][0], lid), "state"), "stopped")
+            # the passage reopened: the contract resumes no work by itself
+            reopened = states["observe_done_open"]["frames"][0]
+            self.assertEqual(val(element(reopened, lid), "state"), "parked", name)
+        # the presets close the same passages at model second 60: no loader is on them then
+        for name, working in (("detour", "w-12"), ("no_path", "w-07")):
+            f = fixture_cached(name)["states"]["preset_decision"]["frames"][0]
+            self.assertNotIn(working, [val(element(f, lid), "at_working") for lid in EQUIPMENT])
+
+    def test_still_scenarios_keep_their_loaders_idle(self):
+        fx = fixture_cached("commands")
+        for state_name, state in fx["states"].items():
+            self.assertNotIn("loop", state)
+            f = state["frames"][0]
+            attributes = self.attributes_of(fx, state)
+            for lid in EQUIPMENT:
+                e = element(f, lid)
+                self.assertEqual(val(e, "activity"), "idle", f"{state_name} {lid}")
+                stopped = val(element(f, attributes[lid]["zone"]), "work_state") == "stopped"
+                self.assertEqual(val(e, "state"), "stopped" if stopped else "parked",
+                                 f"{state_name} {lid}")
+
+
+class EquipmentReplayTest(unittest.TestCase):
+    """The server swaps the loop's elements in, one set per publication, and keeps the phase."""
+
+    def fixture(self):
+        def frame(tick, x=0):
+            el = {"thingId": tid("lhd-a"), "features": {
+                "tick": {"properties": {"value": tick}},
+                "sim_time_s": {"properties": {"value": tick, "unit": "s"}},
+                "idSimulationRun": {"properties": {"value": "run-0001"}},
+                "offset_m": {"properties": {"value": x, "unit": "m"}}}}
+            return {"tick": {"properties": {"value": tick}},
+                    "idSimulationRun": {"properties": {"value": "run-0001"}},
+                    "commands": {"properties": {"value": []}},
+                    "scene": {"properties": {"value": [el]}}}
+
+        def loop(tick, phase, length=3):
+            # element set k puts the loader at 10 * ((phase + k) mod length)
+            return {"phase": phase, "scene": [
+                scene_of(frame(tick, 10 * ((phase + k) % length))) for k in range(length)]}
+
+        return {"format": 1, "namespace": NS, "clock": {"tick_step": 10}, "start": "a",
+                "attribute_sets": {"t1": []}, "archive": [], "publication": {},
+                "states": {
+                    "a": {"clock": "run", "frames": [frame(100)], "publications": 4, "next": "b",
+                          "loop": loop(100, 1)},
+                    "b": {"clock": "run", "frames": [frame(140)], "publications": 2, "next": "c",
+                          "loop": loop(140, 2)},
+                    "c": {"clock": "run", "frames": [frame(160)], "next": "d"},
+                    "d": {"clock": "run", "frames": [frame(170)], "loop": loop(170, 2)}}}
+
+    def test_loop_elements_replace_the_frame_elements_with_the_phase_carried(self):
+        timeline = mock_server.Timeline(self.fixture(), 1000)
+        seen = []
+        for _ in range(10):
+            shift = timeline.shift_features()
+            el = scene_of(shift)[0]["features"]
+            self.assertEqual(val(el, "tick"), val(shift, "tick"))     # re-timed like the rest
+            seen.append((timeline.state, timeline.summary()["loop_index"], val(el, "offset_m"),
+                         val(el, "tick")))
+            timeline._step()
+        self.assertEqual(seen, [
+            ("a", 0, 10, 100), ("a", 1, 20, 110), ("a", 2, 0, 120), ("a", 0, 10, 130),
+            # b continues the phase of a (a showed phase 1 + 0, so b shows phase 2 first)
+            ("b", 0, 20, 140), ("b", 1, 0, 150),
+            # c has no loop and shows its own frame; d starts with its first set
+            ("c", None, 0, 160), ("d", 0, 20, 170), ("d", 1, 0, 180), ("d", 2, 10, 190)])
+
+    def test_normal_loaders_move_on_the_wire_and_the_single_twin_mirrors_them(self):
+        fast = SERVERS["fast"].scenario("normal")
+        places = {}
+        deadline = time.monotonic() + 15
+        while len(places) < 16 and time.monotonic() < deadline:
+            features = fast.features()
+            places.setdefault(val(features, "tick"), {
+                lid: (val(element(features, lid), "at_working"),
+                      val(element(features, lid), "offset_m"),
+                      val(element(features, lid), "activity")) for lid in EQUIPMENT})
+            time.sleep(0.03)
+        self.assertGreaterEqual(len(places), 16)
+        for lid in EQUIPMENT:
+            # polling may miss a publication (dumping lasts one); the full cycle is checked
+            # on the files by EquipmentTest
+            self.assertLessEqual({"hauling", "returning"}, {p[lid][2] for p in places.values()}, lid)
+            self.assertGreaterEqual(len({p[lid][:2] for p in places.values()}), 5, lid)
+        for _ in range(20):
+            before = fast.state()["publication"]
+            thing = fast.get(f"{THINGS}/{tid('lhd-c')}").json()
+            features = fast.features()
+            if fast.state()["publication"] == before:
+                break
+        self.assertEqual(thing["attributes"]["kind"], "equipment")
+        self.assertEqual(thing["features"], element(features, "lhd-c"))
+        state = fast.state()
+        self.assertEqual(state["loop_index"], (state["publication"] - 1) % LHD_CYCLE)
+
+    def test_paused_heartbeat_keeps_loaders_still(self):
+        fast = SERVERS["fast"].scenario("paused_heartbeat")
+        first = fast.features()
+        fast.wait(lambda: fast.state()["publication"] >= 4, 10, "three more publications")
+        later = fast.features()
+        self.assertGreater(val(later, "publication_seq"), val(first, "publication_seq"))
+        for lid in EQUIPMENT:
+            self.assertEqual(element(first, lid), element(later, lid), lid)
 
 
 # ---------------------------------------------------------------------------

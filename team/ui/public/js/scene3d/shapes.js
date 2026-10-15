@@ -8,24 +8,31 @@ import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {area, carveSegments, contours, grid, nest, simplifyLoop, solidField} from './carve.js';
 import {DIMS} from './layout.js';
 
-/** Collects triangles; `build()` gives a non-indexed geometry with normals and uvs. */
+/**
+ * Collects triangles; `build()` gives a non-indexed geometry with normals, uvs and a grey vertex colour (1 unless
+ * given: ambient occlusion for a material that asks for vertex colours; the scene's own materials bake it into their
+ * textures instead, which costs no shader of its own). Every geometry of this module has the same attributes, so any
+ * of them can be merged with any other.
+ */
 class Mesher {
   constructor() {
     this.position = [];
     this.normal = [];
     this.uv = [];
+    this.color = [];
   }
 
-  vertex(p, n, uv) {
+  vertex(p, n, uv, shade = 1) {
     this.position.push(p[0], p[1], p[2]);
     this.normal.push(n[0], n[1], n[2]);
     this.uv.push(uv[0], uv[1]);
+    this.color.push(shade, shade, shade);
   }
 
-  /** A quad a-b-c-d (counter-clockwise seen from the side of `n`). */
-  quad(a, b, c, d, n, uvs) {
-    this.vertex(a, n, uvs[0]); this.vertex(b, n, uvs[1]); this.vertex(c, n, uvs[2]);
-    this.vertex(a, n, uvs[0]); this.vertex(c, n, uvs[2]); this.vertex(d, n, uvs[3]);
+  /** A quad a-b-c-d (counter-clockwise seen from the side of `n`); `shades` the grey of each corner. */
+  quad(a, b, c, d, n, uvs, shades = [1, 1, 1, 1]) {
+    this.vertex(a, n, uvs[0], shades[0]); this.vertex(b, n, uvs[1], shades[1]); this.vertex(c, n, uvs[2], shades[2]);
+    this.vertex(a, n, uvs[0], shades[0]); this.vertex(c, n, uvs[2], shades[2]); this.vertex(d, n, uvs[3], shades[3]);
   }
 
   build() {
@@ -34,9 +41,13 @@ class Mesher {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(this.position, 3));
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(this.normal, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(this.color, 3));
     return geometry;
   }
 }
+
+/** Baked ambient occlusion of the slabs: the grey at the foot of a channel wall, under a slab, under a ramp. */
+export const AO = {wallFoot: 0.5, wallTop: 1.05, underSlab: 0.42, cutTop: 1, rampFoot: 0.6};
 
 /** Merge geometries that may be null; null when nothing is left. */
 export function merge(list) {
@@ -133,7 +144,8 @@ export function slabGeometry(box, carved) {
       } else {
         const ua = run / 6;
         const ub = (run + length) / 6;
-        walls.quad([a[0], 0, a[1]], [b[0], 0, b[1]], [b[0], d, b[1]], [a[0], d, a[1]], n, [[ua, 0], [ub, 0], [ub, 1], [ua, 1]]);
+        walls.quad([a[0], 0, a[1]], [b[0], 0, b[1]], [b[0], d, b[1]], [a[0], d, a[1]], n, [[ua, 0], [ub, 0], [ub, 1], [ua, 1]],
+          [AO.wallFoot, AO.wallFoot, AO.wallTop, AO.wallTop]);
       }
       run += length;
     }
@@ -156,7 +168,7 @@ export function slabGeometry(box, carved) {
     const v0 = 0;
     const v1 = (0 - bottomY) / DIMS.thickness;
     sides.quad([a[0], bottomY, a[1]], [b[0], bottomY, b[1]], [b[0], 0, b[1]], [a[0], 0, a[1]], n,
-      [[ua, v0], [ub, v0], [ub, v1], [ua, v1]]);
+      [[ua, v0], [ub, v0], [ub, v1], [ua, v1]], [AO.underSlab, AO.underSlab, AO.cutTop, AO.cutTop]);
   }
 
   const floor = new Mesher();
@@ -389,7 +401,7 @@ export function rampBand(points, half, depth) {
       const v0 = 0;
       const v1 = depth / DIMS.thickness;
       sides.quad(edge(a, sign, -depth), edge(b, sign, -depth), edge(b, sign), edge(a, sign), outward,
-        [[u0 / 4, v0], [u1 / 4, v0], [u1 / 4, v1], [u0 / 4, v1]]);
+        [[u0 / 4, v0], [u1 / 4, v0], [u1 / 4, v1], [u0 / 4, v1]], [AO.rampFoot, AO.rampFoot, 1, 1]);
       steel.push(bar(edge(a, sign, 0.7), edge(b, sign, 0.7), 0.9));
     }
     run += seg.length;

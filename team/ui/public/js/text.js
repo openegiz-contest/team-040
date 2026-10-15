@@ -19,7 +19,7 @@ export const VOCAB = {
   kind: {
     mine: 'рудник', level: 'горизонт', working: 'выработка', zone: 'участок', sensor: 'датчик',
     worker: 'работник', exit: 'выход', shift: 'смена', incident: 'инцидент', option: 'вариант',
-    run: 'прогон', journal: 'журнал',
+    run: 'прогон', journal: 'журнал', equipment: 'техника',
   },
   kindPlural: {
     all: 'все объекты', level: 'горизонты', working: 'выработки', zone: 'участки', sensor: 'датчики',
@@ -38,6 +38,12 @@ export const VOCAB = {
     blocked: 'новый вход запрещён моделью', allowed: 'вход разрешён моделью', unknown: 'ограничение входа неизвестно',
   },
   workState: {working: 'работает', stopped: 'остановлен'},
+  // Equipment twins (contract question 18): a loader's published state and operation.
+  equipmentState: {working: 'работает', parked: 'стоит без работы', stopped: 'остановлена: участок остановлен'},
+  equipmentActivity: {
+    loading: 'грузит руду', hauling: 'везёт руду', dumping: 'разгружает', returning: 'возвращается порожняком', idle: 'без работы',
+  },
+  equipmentKind: {lhd: 'ПДМ (погрузочно-доставочная машина)'},
   withdrawal: {
     none: 'приказа о выводе нет', in_progress: 'вывод персонала идёт', done: 'вывод персонала завершён',
     incomplete: 'вывод не завершён',
@@ -159,7 +165,8 @@ const FIELD = {
   level: 'горизонт', points: 'промежуточные точки', elevation_m: 'отметка', order: 'порядок',
   sensor_kind: 'вид датчика', working: 'выработка', stale_after_s: 'допуск устаревания (модель)',
   lost_after_s: 'допуск потери (модель)', window_s: 'окно счёта событий', home_zone: 'участок приписки',
-  exit_kind: 'вид выхода', node: 'узел', option_kind: 'вид варианта', workings: 'выработки', sensors: 'датчики',
+  exit_kind: 'вид выхода', node: 'узел',
+  equipment_kind: 'вид техники', activity: 'операция', toward_node: 'направлена к узлу', loaded: 'руда в ковше', option_kind: 'вид варианта', workings: 'выработки', sensors: 'датчики',
 };
 
 /** Result metrics of CONTRACT.md, section 6: bare for a run, with forecast_ / actual_ for an option. */

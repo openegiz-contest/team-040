@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import time
 
-from browser_support import BrowserTestCase, MockServer, wait_until
+from browser_support import STRIP_EQUIPMENT, BrowserTestCase, MockServer, wait_until
 
 NS = "team040.mine"
 NBSP = " "
@@ -672,6 +672,9 @@ class StageV2Test(BrowserTestCase):
 
     def open(self, scenario, size):
         self.page.add_init_script("try { localStorage.removeItem('mine-ui.stage'); } catch (e) {}")
+        # The loaders as the static symbols of the zones' work: a model without equipment twins (their loaders that move
+        # by publications are tested in test_scene3d.EquipmentTest).
+        self.page.add_init_script(STRIP_EQUIPMENT)
         self.page.set_viewport(*size)
         self.mock.scenario(scenario)
         self.page.goto("about:blank")

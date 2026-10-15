@@ -29,8 +29,9 @@ const VOCAB_OF = {
   egress_status: 'egress', egress_reason: 'egressReason', egress_crosses: 'hazard', reason_code: 'reasonCode',
   run_state: 'runState', pause_reason: 'pauseReason', forecast_quality: 'forecastQuality', trigger: 'incidentTrigger',
   working_kind: 'workingKind', sensor_kind: 'sensorKind', exit_kind: 'exitKind',
+  activity: 'equipmentActivity', equipment_kind: 'equipmentKind',
 };
-const STATE_VOCAB = {exit: 'exitState', incident: 'incidentState', option: 'optionState'};
+const STATE_VOCAB = {exit: 'exitState', incident: 'incidentState', option: 'optionState', equipment: 'equipmentState'};
 /** Shown in the line of times, not as rows. */
 const TIME_FIELDS = new Set(['tick', 'sim_time_s', 'idSimulationRun']);
 const SKIPPED_ATTRS = new Set(['kind', 'label', '_parents', 'nodes', 'manifest', 'dynamic_ids', 'presets', 'thresholds',
@@ -372,6 +373,17 @@ export function mount(root, ctx) {
       say(text.placeText(placeOf(model, thing)));
     } else if (thing.kind === 'exit') {
       if (typeof values.workers_out === 'number') say(UI.scheme.out(values.workers_out));
+    } else if (thing.kind === 'equipment') {
+      // A loader of the model (contract question 18): its published state, operation, place and load.
+      say(text.label('equipmentState', values.state), null, true);
+      if (values.state === 'working' && values.activity !== undefined) say(text.label('equipmentActivity', values.activity));
+      const working = thingByName(model, values.at_working);
+      if (working) {
+        say(text.placeText({working, offsetM: typeof values.offset_m === 'number' ? values.offset_m : null,
+          fromNode: typeof working.attrs.from === 'string' ? working.attrs.from : null, zone: thingByName(model, attrs.zone),
+          level: null, exit: null, node: null}));
+      }
+      if (typeof values.loaded === 'boolean') say(`${text.fieldLabel('loaded')}: ${text.yesNo(values.loaded)}`);
     }
 
     // Related twins.
@@ -409,6 +421,9 @@ export function mount(root, ctx) {
       thingsOfKind(model, 'option').forEach(add);
     } else if (thing.kind === 'option') {
       (Array.isArray(values.scope) ? values.scope : []).forEach((zone) => add(thingByName(model, zone)));
+    } else if (thing.kind === 'equipment') {
+      add(thingByName(model, values.at_working));
+      add(thingByName(model, attrs.zone));
     }
     add(place.level);
     if (related.length > 0) view.sections.push({key: 'related', title: UI.card.related, links: related.map((other) => link(other))});

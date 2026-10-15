@@ -215,6 +215,10 @@ export function labelItems({model, view, layout, groups, anchors, arriving = new
   // a stopped one carries «остановлен», one without a published work state «?». The sign selects the zone.
   for (const {zone, look, lines: said} of loaders) {
     const thing = thingByName(model, zone);
+    if (thing && thing.kind === 'equipment') {
+      items.push(machineItem(thing, look, said, selected, anchors));
+      continue;
+    }
     if (!thing || look === 'working') continue;
     const word = look === 'stopped' ? text.label('workState', 'stopped') : SCENE.loaderQuestion;
     items.push({
@@ -229,6 +233,50 @@ export function labelItems({model, view, layout, groups, anchors, arriving = new
   }
 
   return items;
+}
+
+/**
+ * The label of a loader of the model (equipment twin, contract question 18). A working or parked one is named by
+ * its code close up, on hover or selected; a stopped one («остановлена») and one without a published state («?»)
+ * always carry a sign. The label is the loader's twin: Enter or a click selects it, the card shows its fields.
+ */
+function machineItem(thing, look, said, selected, anchors) {
+  const isSelected = thing.thingId === selected;
+  const sign = SCENE.machineSign[look];
+  const lines = sign && !isSelected ? [{text: sign, bold: look === 'stopped'}] : [{text: isSelected ? said[0] : thing.label, bold: true}];
+  return {
+    key: `loader:${thing.name}`, thingId: thing.thingId,
+    attrs: {'data-thing-id': thing.thingId, 'data-kind': 'equipment', 'data-state': look, 'aria-label': said.join('. '),
+      'aria-pressed': String(isSelected)},
+    lines, tip: said.map((line, index) => ({text: line, bold: index === 0})),
+    signs: look === 'stopped' ? ['stopped'] : [], rank: sign ? 2.5 : 6, always: Boolean(sign) || isSelected,
+    cls: ['s3-label--loader', 's3-label--machine', `s3-label--loader-${look}`, isSelected && 'is-selected'].filter(Boolean),
+    anchor: () => anchors.loader(thing.name), place: 'around', minScale: sign || isSelected ? 0 : 4,
+  };
+}
+
+/**
+ * The words of a loader of the model, from its published fields only: «ПДМ-Г · везёт руду · участок Г (данные
+ * модели)», then its place and its load, then what is drawn larger.
+ * @param {import('../store.js').Model} model
+ * @param {Object} machine describe().view.equipment[name]
+ * @param {string} look    the look drawn: working, parked, stopped or unknown
+ * @param {number} factor  how many times larger the machine is drawn
+ */
+export function machineLines(model, name, machine, look, factor) {
+  const thing = thingByName(model, name);
+  if (!thing || !machine) return [];
+  let words = SCENE.machineUnknown;
+  if (look === 'working') words = machine.activity ? text.label('equipmentActivity', machine.activity) : SCENE.machineWorking;
+  else if (SCENE.machineStill[look]) words = SCENE.machineStill[look];
+  const zone = machine.zone ? thingByName(model, machine.zone) : null;
+  const lines = [SCENE.machineTitle(thing.label, words, zone ? zone.label : null)];
+  const where = [];
+  if (machine.at) where.push(`${labelOf(model, machine.at)}, ${text.quantity(machine.offsetM, 'm')}`);
+  if (machine.loaded !== null) where.push(SCENE.machineLoad(machine.loaded));
+  if (where.length > 0) lines.push(where.join(' · '));
+  lines.push(SCENE.machineNote(factor));
+  return lines;
 }
 
 /** The text of the tooltip of a hovered object: all its words (the label may show fewer). */

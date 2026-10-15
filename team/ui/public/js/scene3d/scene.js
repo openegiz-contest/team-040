@@ -34,13 +34,15 @@ import * as geo from '../geometry.js';
 import {SCENE} from '../text3d.js';
 import * as text from '../text.js';
 import {createOrbit} from './camera.js';
-import {labelItems, tooltipLines} from './content.js';
+import {labelItems, machineLines, tooltipLines} from './content.js';
 import {changesBetween, describe, groupWorkers} from './describe.js';
 import {createLabels} from './labels.js';
+import {createEnvironment} from './environment.js';
 import {
   alongStep, buildLayout, DIMS, levelY, LOADER_SCALE, loaderPlaces as placesForLoaders, pointOnWorking, sceneBounds, sceneLine, silhouette, stepBetween,
   stepLength, toScene, verticalFactor, zoneEntrances,
 } from './layout.js';
+import {createActors, FIGURE_SCALE} from './actors.js';
 import {createLoaders} from './loaders.js';
 import {drawAtlas, spriteGeometry, spriteMaterials, writeSprites} from './markers.js';
 import {TOKEN, TONE} from './palette.js';
@@ -130,18 +132,13 @@ export function createScene(host, options) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(30, 1, 1, 10000);
   const orbit = createOrbit(camera, {reducedMotion: reduced});
-  // A cool sky over a warm key: the stone stays a cool grey, the few lamps of the high quality are the warm points.
-  const hemi = new THREE.HemisphereLight('#DDE1E6', '#1C2025', low ? 1.45 : 1.2);
-  const key = new THREE.DirectionalLight('#FFF4E8', low ? 2.0 : 1.9);
-  key.position.set(420, 900, 520);
-  const fill = new THREE.DirectionalLight('#B6C3D1', 0.55);
-  fill.position.set(-700, 300, -300);
-  scene.add(hemi, key, fill);
-  const lamps = [];
-  const baseLight = {hemi: hemi.intensity, key: key.intensity, fill: fill.intensity};
-
   const textures = makeTextures();
   const materials = makeMaterials(textures, low);
+  // The massif around the slabs, the light (warm key, cool sky, rim), background and lamps: environment.js.
+  const environment = createEnvironment(scene, {low, textures});
+  const {hemi, key, fill} = environment.lights;
+  const lamps = [];
+  const baseLight = {hemi: hemi.intensity, key: key.intensity, fill: fill.intensity};
   const world = new THREE.Group();
   scene.add(world);
 
@@ -163,6 +160,14 @@ export function createScene(host, options) {
   let loaderPlaces = new Map();      // zone -> {working, offsetM, facing, span}
   let loaderRun = null;              // the run (and topology) the places were chosen for
   let loaderFade = false;            // a change of a zone's work state is being shown
+  // S3b: the loaders of the model (equipment twins) and the figures of people close up (actors.js). With equipment
+  // twins, loaderPlaces holds the loaders by their local names, where the model publishes them.
+  const actors = createActors({low, source: {
+    get layout() { return layout; }, get k() { return k; }, get view() { return view; }, get groups() { return groups; },
+    camera, get height() { return height; }, position: (name, now) => currentPosition(name, now), tween: (name) => tweens.get(name),
+    tweenMs: TWEEN_MS,
+  }});
+  world.add(actors.group);
   let view = null;
   let signature = '';
   let groups = [];
@@ -341,6 +346,7 @@ export function createScene(host, options) {
       desk = null;
     }
     staticParts = {zoneFrames: new Map(), zoneSegments: new Map(), carved: []};
+    environment.build(layout, state && state.model ? state.model : null);
     if (!layout) return;
 
     for (const level of layout.levels) {
@@ -358,6 +364,7 @@ export function createScene(host, options) {
         part.userData.pickable = true;
         group.add(part);
       }
+      for (const part of environment.levelDetail(layout, level, carved)) group.add(part);
       // Mouths of workings that leave the level through its floor, downwards.
       const mouths = [];
       for (const line of layout.workings.values()) {
@@ -404,7 +411,8 @@ export function createScene(host, options) {
       });
     }
     buildDesk();
-    loaderCandidates = state && state.model ? candidatesOfLoaders() : new Map();
+    loaders.setMachines(actors.setModel(state && state.model));
+    loaderCandidates = state && state.model && !actors.equipment ? candidatesOfLoaders() : new Map();
     loaderPlaces = new Map();
     loaderRun = null;
     placeLoaders();
@@ -501,6 +509,7 @@ export function createScene(host, options) {
       group.updateMatrixWorld(true);
     });
     placeDesk();
+    environment.fit(k);
     placeLoaders();
     buildInter();
     buildInterOverlay();
@@ -816,6 +825,7 @@ export function createScene(host, options) {
     hemi.intensity = baseLight.hemi * dim;
     key.intensity = baseLight.key * dim;
     fill.intensity = baseLight.fill * dim;
+    if (actors.equipment) loaders.setSelected(view ? actors.selectedOf(view) : null, selectLevel);
   }
 
   function stepSelect(now) {
@@ -1046,6 +1056,7 @@ export function createScene(host, options) {
   }
 
   function snapMotion() {
+    if (actors.snap()) placeLoaders();
     if (tweens.size === 0) return;
     tweens.clear();
     spritesDirty = true;
@@ -1074,7 +1085,7 @@ export function createScene(host, options) {
     const points = group.members.map((name) => workerPoint(name, now)).filter(Boolean);
     if (points.length === 0) return null;
     const p = [0, 1, 2].map((i) => points.reduce((sum, q) => sum + q[i], 0) / points.length);
-    return [p[0], p[1] + 6, p[2]];
+    return [p[0], p[1] + actors.liftOf(group), p[2]];
   }
 
   // ---- sprites --------------------------------------------------------------------------
@@ -1180,7 +1191,7 @@ export function createScene(host, options) {
       const front = view.workers[group.front];
       const thingId = front.thingId;
       const members = group.members.map((member) => view.workers[member]);
-      pinPoints.push([p[0], p[1] - 6 + 0.3, p[2]], [p[0], p[1] - 1.8, p[2]]);
+      pinPoints.push([p[0], p[1] - actors.liftOf(group) + actors.pinFrom(group), p[2]], [p[0], p[1] - 1.8, p[2]]);
       if (members.some((member) => member.thingId === view.selected)) {
         list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 14, key: thingId, alpha: selectLevel});
       }
@@ -1213,7 +1224,7 @@ export function createScene(host, options) {
    */
   function chooseLoaderPlaces() {
     const run = `${view.run}|${signatureOfTopology()}`;
-    if (loaderRun === run || !view.hasSnapshot) return false;
+    if (actors.equipment || loaderRun === run || !view.hasSnapshot) return false;
     loaderRun = run;
     // A person is a marker drawn over everything and a route a tube along the floor: a short gap is enough.
     const margin = 1;
@@ -1249,6 +1260,7 @@ export function createScene(host, options) {
 
   /** The scene pose of each placed loader for the current spread of the slabs. */
   function placeLoaders() {
+    if (actors.equipment) loaderPlaces = actors.places();
     const poses = new Map();
     if (layout) {
       for (const [zone, place] of loaderPlaces) {
@@ -1271,7 +1283,9 @@ export function createScene(host, options) {
   /** The looks follow the published work states; a change seen while watching fades the lights once (400 ms). */
   function updateLoaderLooks(animate) {
     let started = false;
-    for (const name of loaderCandidates.keys()) started = loaders.setState(name, workLook(view.zones[name]), animate) || started;
+    const looks = actors.equipment ? actors.looks(view) : new Map([...loaderCandidates.keys()].map((name) => [name, workLook(view.zones[name])]));
+    for (const [name, look] of looks) started = loaders.setState(name, look, animate) || started;
+    if (actors.equipment) loaders.setLoaded(actors.loadedOf(view));
     if (started) {
       loaderFade = true;
       root.setAttribute('data-loader-fx-count', String(Number(root.getAttribute('data-loader-fx-count') || 0) + 1));
@@ -1303,6 +1317,7 @@ export function createScene(host, options) {
 
   /** The words of a loader's tooltip: the zone's published work state; the machine itself is not in the model. */
   function loaderLines(zoneName) {
+    if (actors.equipment) return machineLines(state.model, zoneName, view.equipment[zoneName], actors.looks(view).get(zoneName), LOADER_SCALE);
     const thing = thingByName(state.model, zoneName);
     if (!thing) return [];
     const rate = thing.values.production_rate;
@@ -1318,7 +1333,7 @@ export function createScene(host, options) {
       await loaders.load(new URL('../../models/lhd.glb', import.meta.url).href);
       if (disposed) return;
       root.setAttribute('data-decor', 'loaded');
-      gizmo.setDecor(true);
+      gizmo.setDecor(true, actors.equipment);
       placeLoaders();
       setLabels();
       invalidate();
@@ -1362,7 +1377,7 @@ export function createScene(host, options) {
   function setLabels() {
     if (!layout || !view || !state || !state.model) return labels.set([]);
     const arriving = new Set(fx ? [...fx.closed].map((name) => view.workings[name] && view.workings[name].thingId) : []);
-    const placed = loaders.loaded ? [...loaderPlaces.keys()].map((zone) => ({zone, look: workLook(view.zones[zone]), lines: loaderLines(zone)})) : [];
+    const placed = loaders.loaded ? [...loaderPlaces.keys()].map((zone) => ({zone, look: actors.equipment ? actors.looks(view).get(zone) : workLook(view.zones[zone]), lines: loaderLines(zone)})) : [];
     return labels.set(labelItems({model: state.model, view, layout, groups, anchors, arriving, loaders: placed}));
   }
 
@@ -1455,6 +1470,7 @@ export function createScene(host, options) {
       || (entry.group && entry.group.members.some((member) => view.workers[member].thingId === thingId))));
     if (sprite) return sprite.position;
     if (typeof thingId === 'string' && thingId.startsWith(LOADER)) return loaders.loaded ? loaderPoint(thingId.slice(LOADER.length)) : null;
+    if (thing && thing.kind === 'equipment') return loaders.loaded && loaderPlaces.has(thing.name) ? loaderPoint(thing.name) : null;
     if (thing && thing.kind === 'working' && layout.workings.has(thing.name)) {
       const line = layout.workings.get(thing.name);
       const mid = geo.pointAt(sceneLine(layout, line, k), line.cum, line.total / 2).point;
@@ -1503,7 +1519,7 @@ export function createScene(host, options) {
     thickness.textContent = SCENE.notToScale;
     // The caption of the loaders, from the start (the box keeps its size while the model loads); gone if it cannot load.
     const decor = document.createElement('span');
-    decor.textContent = SCENE.decorNote(LOADER_SCALE);
+    decor.textContent = SCENE.decorNote(LOADER_SCALE, FIGURE_SCALE);
     notes.append(vertical, thickness, decor);
     const col = document.createElement('div');
     col.className = 's3__gizmo-text';
@@ -1514,11 +1530,13 @@ export function createScene(host, options) {
     return {
       element,
       /** The caption of the loaders (what they mean, how much larger they are drawn), once they are loaded. */
-      setDecor(shown) {
+      setDecor(shown, machines = false) {
         decor.hidden = !shown;
+        decor.textContent = machines ? SCENE.decorEquipment(LOADER_SCALE, FIGURE_SCALE) : SCENE.decorNote(LOADER_SCALE, FIGURE_SCALE);
       },
       setVertical(factor) {
-        const value = SCENE.vertical(factor);
+        // The rock around the slabs is decoration (environment.js): said on the short line, the gizmo keeps its size.
+        const value = `${SCENE.vertical(factor)} · ${SCENE.massifNote}`;
         if (vertical.textContent !== value) vertical.textContent = value;
       },
       update() {
@@ -1568,6 +1586,9 @@ export function createScene(host, options) {
     active = orbit.step(now) || active;
     active = stepExplode(now) || active;
     active = stepTweens(now) || active;
+    const machines = actors.step(now);
+    if (machines.moved) placeLoaders();
+    active = machines.active || active;
     active = stepDrawIn(now) || active;
     active = stepFx(now) || active;
     active = stepSelect(now) || active;
@@ -1577,7 +1598,11 @@ export function createScene(host, options) {
       loaderFade = loaders.step(now, reduced());
       active = loaderFade || active;
     }
+    // The figures of people close up first: a marker over a figure stands over its helmet.
+    if (actors.drawFigures(now)) spritesDirty = true;
     if (spritesDirty) buildSprites();
+    // The far walls of the massif for this camera (no frame of its own).
+    environment.update(camera);
     const started = performance.now();
     renderer.render(scene, camera);
     renderMs.push(performance.now() - started);
@@ -2019,6 +2044,7 @@ export function createScene(host, options) {
     }
     const thing = model.things[id] || thingByName(model, id);
     if (!thing) return null;
+    if (thing.kind === 'equipment') return goalOf(`${LOADER}${thing.name}`, rects);
     if (thing.kind === 'zone') return zoneGoal(thing.name, rects);
     if (thing.kind === 'level') return goalOf(thing.name, rects);
     if (thing.kind === 'incident') {
@@ -2572,7 +2598,7 @@ export function createScene(host, options) {
     const linkNowOk = described.view.linkOk && !described.view.old;
     if (!linkNowOk && previousLinkOk) snapMotion();
     if (!rebuilt && described.signature === signature) {
-      if (!linkNowOk && tweens.size > 0) snapMotion();
+      if (!linkNowOk) snapMotion();
       // The age of a last known state («7 мин назад») follows the model time; a label that changed is placed anew.
       if (Object.values(view.zones).some((zone) => zone.lastKnown) || Object.values(view.workings).some((working) => working.lastKnown)) {
         if (setLabels()) invalidate();
@@ -2591,6 +2617,7 @@ export function createScene(host, options) {
     const animate = settled && calm(before) && calm(view) && !reduced();
     groups = groupWorkers(view.workers);
     updateMotion(previousRun);
+    if (actors.update(view, layout, motionAllowed() && previousRun === view.run)) placeLoaders();
     if (!linkNowOk) snapMotion();
     if (!animate) {
       finishFx(false);
@@ -2823,12 +2850,18 @@ export function createScene(host, options) {
         // The places each zone's loader may take (attributes only), best first: [working, offset, span].
         candidates: Object.fromEntries([...loaderCandidates].map(([zone, list]) => [zone,
           list.map((place) => [place.working, Math.round(place.offsetM * 10) / 10, place.span.map((v) => Math.round(v * 10) / 10)])]))},
+      // The loaders of the model (equipment twins) as drawn now, and the figures of people of the last frame.
+      actors: actors.info(),
+      // The massif (its far walls for the current camera) and the lamps: environment.js.
+      environment: environment.info(),
     };
   }
 
   function dispose() {
     disposed = true;
     loaders.dispose();
+    actors.dispose();
+    environment.dispose();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = 0;
     resizeObserver.disconnect();

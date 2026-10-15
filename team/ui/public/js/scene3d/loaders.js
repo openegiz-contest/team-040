@@ -1,11 +1,16 @@
-// The loaders of the zones: one copy of lhd.glb per zone that has workings, the
-// symbol of the zone's published work state. The machine itself is not in the
-// model (no position, no motion, no state of its own): it stands still where the
-// scene put it, and only its look follows the zone's `work_state` —
+// The loaders of the mine, drawn from lhd.glb. Two modes, chosen by the scene:
+// - without equipment twins, one copy per zone that has workings, the symbol of
+//   the zone's published work state: it stands still where the scene put it;
+// - with equipment twins (contract question 18), one copy per published loader,
+//   placed and turned by the scene from its published position (actors.js).
+// The look follows a published state —
 //   working  painted, the lenses of its lamps lit and a flat warm patch of light
 //            on the floor ahead of it (a decal: no glow, no bloom);
+//   parked   (a loader idle by the model) painted, the lamps dimmed;
 //   stopped  desaturated, the lenses dark, no light on the floor;
-//   unknown  (no published work state) a cold fog grey, lenses too.
+//   unknown  (no published state) a cold fog grey, lenses too.
+// A loader published `loaded` carries a low heap of rock in its bucket, and the
+// selected one a chalk double ring on the floor around it.
 // A change of the state fades from one look to the other once (LIGHT_MS); the
 // caller decides whether the change may be shown with motion (never on load,
 // over old data or under reduced motion).
@@ -23,11 +28,16 @@ export const LIGHT_MS = 400;
 
 /** The looks, as colours multiplied into white materials (instance colours). The light is additive: black adds nothing. */
 const LOOK = {
-  working: {paint: '#8A98A6', steel: '#B5AEA2', rubber: '#3A3D41', lens: '#FFF1D2', light: '#A08262'},
-  stopped: {paint: '#45474A', steel: '#5E5B57', rubber: '#26282A', lens: '#232528', light: '#000000'},
-  unknown: {paint: '#959AA0', steel: '#959AA0', rubber: '#7A7E84', lens: '#959AA0', light: '#000000'},
+  working: {paint: '#8A98A6', steel: '#B5AEA2', rubber: '#3A3D41', lens: '#FFF1D2', light: '#A08262', load: '#6B5B4B'},
+  parked: {paint: '#7D8995', steel: '#A39D93', rubber: '#3A3D41', lens: '#8C7E68', light: '#2E251C', load: '#6B5B4B'},
+  stopped: {paint: '#45474A', steel: '#5E5B57', rubber: '#26282A', lens: '#232528', light: '#000000', load: '#4A4744'},
+  unknown: {paint: '#959AA0', steel: '#959AA0', rubber: '#7A7E84', lens: '#959AA0', light: '#000000', load: '#959AA0'},
 };
+/** How far the lamps of a look are on, 0 dark … 1 lit (tests read it through info()). */
+const LIGHT_LEVEL = {working: 1, parked: 0.35, stopped: 0, unknown: 0};
 const PARTS = ['paint', 'steel', 'rubber', 'lens'];
+/** Parts painted by the look of their machine (instance colours). */
+const PAINTED = new Set([...PARTS, 'light', 'load']);
 /** The materials of lhd.glb by part; the two copper pin caps are painted as steel (copper is not a state here). */
 const PART_OF = {lhd_paint_graphite: 'paint', lhd_steel_worn: 'steel', lhd_rubber: 'rubber', lhd_lens: 'lens', lhd_copper: 'steel'};
 const easeOut = (t) => 1 - (1 - t) ** 3;
@@ -61,6 +71,59 @@ function lightTexture() {
   return texture;
 }
 
+/** The chalk double ring of a selected machine, drawn flat on the floor (selection, clarity spec A9). */
+function ringTexture() {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size * 2;
+  canvas.height = size;
+  const g = canvas.getContext('2d');
+  g.strokeStyle = '#F2EFE9';
+  const rounded = (inset, width) => {
+    g.lineWidth = width;
+    const w = size * 2 - 2 * inset;
+    const hh = size - 2 * inset;
+    const r = hh / 2;
+    g.beginPath();
+    g.moveTo(inset + r, inset);
+    g.lineTo(inset + w - r, inset);
+    g.arc(inset + w - r, inset + r, r, -Math.PI / 2, Math.PI / 2);
+    g.lineTo(inset + r, inset + hh);
+    g.arc(inset + r, inset + r, r, Math.PI / 2, (3 * Math.PI) / 2);
+    g.closePath();
+    g.stroke();
+  };
+  rounded(5, 6);
+  rounded(20, 4);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/**
+ * A low heap of broken rock in the bucket (the box of `lhd_bucket` in the model's frame): a squashed half sphere
+ * with its vertices pushed in and out by a fixed pattern, so every machine carries the same heap.
+ */
+function heapGeometry(bucket) {
+  const geometry = new THREE.SphereGeometry(1, 9, 4, 0, Math.PI * 2, 0, Math.PI / 2).toNonIndexed();
+  const position = geometry.attributes.position;
+  const length = bucket.max.x - bucket.min.x;
+  const width = bucket.max.z - bucket.min.z;
+  const height = bucket.max.y - bucket.min.y;
+  for (let i = 0; i < position.count; i += 1) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    // A fixed bumpiness: the same for the same direction, whatever triangle the vertex belongs to.
+    const bump = 1 + 0.16 * Math.sin(x * 7.1 + z * 3.3) * Math.cos(z * 5.7 - x * 2.1) * (y < 0.05 ? 0.3 : 1);
+    position.setXYZ(i, bucket.min.x + length * 0.42 + x * length * 0.36 * bump,
+      bucket.min.y + height * 0.66 + y * height * 0.6 * bump, (bucket.min.z + bucket.max.z) / 2 + z * width * 0.4 * bump);
+  }
+  geometry.deleteAttribute('uv');
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 /** A flat quad in the model's frame (y up), with u along +X and v across. */
 function quad(x0, x1, nearHalf, farHalf, y) {
   const geometry = new THREE.BufferGeometry();
@@ -89,6 +152,9 @@ export function createLoaders({low, shadow, scale}) {
   let order = [];                   // zone names, in instance order
   const poses = new Map();          // zone -> {position: [x, y, z], angle}
   const looks = new Map();          // zone -> {state, from, start, level}
+  const loaded = new Set();         // keys of the machines published with a load
+  let selected = null;              // the key of the selected machine (its ring on the floor)
+  let machines = false;             // drawn from equipment twins (not as the symbols of the zones)
   const lit = (params, standard = {}) => (low
     ? new THREE.MeshLambertMaterial(params)
     : new THREE.MeshStandardMaterial({roughness: 0.6, metalness: 0.1, ...params, ...standard}));
@@ -103,6 +169,9 @@ export function createLoaders({low, shadow, scale}) {
     light: new THREE.MeshBasicMaterial({color: '#ffffff', map: lightTexture(), transparent: true, depthWrite: false,
       blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -7, polygonOffsetUnits: -7}),
     outline: new THREE.MeshBasicMaterial({color: '#101215', side: THREE.BackSide}),
+    load: lit({color: '#ffffff', emissive: '#15120F', flatShading: true}, {roughness: 1, metalness: 0}),
+    ring: new THREE.MeshBasicMaterial({color: '#ffffff', map: ringTexture(), transparent: true, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8}),
   };
   const colour = new THREE.Color();
   const other = new THREE.Color();
@@ -116,9 +185,15 @@ export function createLoaders({low, shadow, scale}) {
     const gltf = await new GLTFLoader().loadAsync(url);
     const byPart = Object.fromEntries(PARTS.map((part) => [part, []]));
     const all = [];
+    let bucket = null;
     gltf.scene.updateMatrixWorld(true);
     gltf.scene.traverse((object) => {
       if (!object.isMesh) return;
+      if (/bucket/.test(object.name) || /bucket/.test(object.parent ? object.parent.name : '')) {
+        object.geometry.computeBoundingBox();
+        const own = object.geometry.boundingBox.clone().applyMatrix4(object.matrixWorld);
+        bucket = bucket ? bucket.union(own) : own;
+      }
       const source = Array.isArray(object.material) ? object.material[0] : object.material;
       const part = PART_OF[source && source.name] || 'paint';
       const geometry = new THREE.BufferGeometry();
@@ -159,6 +234,10 @@ export function createLoaders({low, shadow, scale}) {
       // The light on the floor ahead of the bucket, inside the channel (half its width is about 2 m of the model).
       light: quad(box.max.x + 0.1, box.max.x + 7.5, 1.1, 1.9, 0.03),
       outline,
+      // The load: in the bucket when the file names it, else in the front fifth of the machine.
+      load: heapGeometry(bucket || new THREE.Box3(new THREE.Vector3(box.max.x - (box.max.x - box.min.x) * 0.2, 0, box.min.z * 0.8),
+        new THREE.Vector3(box.max.x, (box.max.y - box.min.y) * 0.4, box.max.z * 0.8))),
+      ring: quad(box.min.x - 1.4, box.max.x + 1.4, halfWidth + 1.4, halfWidth + 1.4, 0.04),
     };
     rebuild();
   }
@@ -173,11 +252,18 @@ export function createLoaders({low, shadow, scale}) {
     return looks.get(zone) || {state: 'unknown', from: 'unknown', start: -1, level: 1};
   }
 
+  /** The heap of a machine without a load and the ring of a machine not selected are drawn at scale 0. */
+  function shown(part, key) {
+    if (part === 'load') return loaded.has(key);
+    if (part === 'ring') return key === selected;
+    return true;
+  }
+
   /** Write the colour of every instance for the current progress of its change of look. */
   function paint() {
     for (const mesh of meshes) {
       const part = mesh.userData.part;
-      if (!PARTS.includes(part) && part !== 'light') continue;
+      if (!PAINTED.has(part)) continue;
       order.forEach((zone, index) => {
         const look = lookOf(zone);
         colour.set(LOOK[look.state][part]);
@@ -193,7 +279,8 @@ export function createLoaders({low, shadow, scale}) {
       order.forEach((zone, index) => {
         const pose = poses.get(zone);
         rotation.setFromAxisAngle(up, pose.angle);
-        matrix.compose(new THREE.Vector3(...pose.position), rotation, new THREE.Vector3(scale, scale, scale));
+        const size = shown(mesh.userData.part, zone) ? scale : 0;
+        matrix.compose(new THREE.Vector3(...pose.position), rotation, new THREE.Vector3(size, size, size));
         mesh.setMatrixAt(index, matrix);
       });
       mesh.instanceMatrix.needsUpdate = true;
@@ -223,6 +310,12 @@ export function createLoaders({low, shadow, scale}) {
     add(extras.light, materials.light, 'light', 8);
     for (const part of PARTS) add(parts[part], materials[part], part);
     add(extras.outline, materials.outline, 'outline');
+    // The heap and the ring belong to machines of the model only (equipment twins): the symbols of the zones
+    // carry no load and are never selected, and keep their draw calls.
+    if (machines) {
+      add(extras.load, materials.load, 'load');
+      add(extras.ring, materials.ring, 'ring', 8);
+    }
     place();
     paint();
   }
@@ -258,6 +351,30 @@ export function createLoaders({low, shadow, scale}) {
       paint();
       return Boolean(look && animate);
     },
+    /** Draw machines of the model (equipment twins: a load and a selection ring) or the symbols of the zones. */
+    setMachines(on) {
+      if (machines === Boolean(on)) return;
+      machines = Boolean(on);
+      rebuild();
+    },
+    get machines() {
+      return machines;
+    },
+    /** The machines that carry a load (published `loaded`); a change of the set only rescales their heaps. */
+    setLoaded(keys) {
+      const next = [...keys].sort().join();
+      if ([...loaded].sort().join() === next) return;
+      loaded.clear();
+      for (const key of keys) loaded.add(key);
+      if (meshes.length > 0) place();
+    },
+    /** The selected machine (its ring on the floor) and how far the work light of the selection is in (0…1). */
+    setSelected(key, level = 1) {
+      materials.ring.opacity = level;
+      if (key === selected) return;
+      selected = key;
+      if (meshes.length > 0) place();
+    },
     /** Advance the fades; true while one runs. `instant` ends them (reduced motion, old data). */
     step(now, instant = false) {
       let active = false;
@@ -292,8 +409,8 @@ export function createLoaders({low, shadow, scale}) {
     info() {
       return [...poses.keys()].sort().map((zone) => {
         const look = lookOf(zone);
-        const lightOf = (state) => (state === 'working' ? 1 : 0);
-        return {zone, state: look.state, fading: look.start !== -1,
+        const lightOf = (state) => LIGHT_LEVEL[state] || 0;
+        return {zone, state: look.state, fading: look.start !== -1, loaded: loaded.has(zone), selected: zone === selected,
           light: Math.round((lightOf(look.from) + (lightOf(look.state) - lightOf(look.from)) * look.level) * 1000) / 1000};
       });
     },

@@ -47,6 +47,19 @@ PRESET_AT_S = 60      # model second at which a preset applies its condition
 FIRST_SEQ = 48211     # nominal publication_seq of the first publication
 FIRST_REVISION = 52140
 
+# Loaders (ПДМ), one per zone with workings. Invented for tests like everything else: a
+# synthetic speed of 2.5 m/s (25 m per publication at x10) and a cycle of 15 publications:
+# loading 2, hauling 6 (150 m), dumping 1, returning 6. A loader never comes within
+# LHD_SAFETY_M of a person (checked per frame by the tests).
+LHD_STEP_M = 25.0
+LHD_LOAD_PUBS = 2
+LHD_HAUL_PUBS = 6
+LHD_CYCLE = LHD_LOAD_PUBS + 2 * LHD_HAUL_PUBS + 1
+LHD_HAUL_M = LHD_STEP_M * LHD_HAUL_PUBS
+LHD_LENGTH_M = 10
+LHD_SAFETY_M = 20.0
+LHD_STATE = {"cycle": "working", "parked": "parked", "stopped": "stopped"}
+
 SCENARIOS = [
     "normal", "detour", "no_path", "sensor_lost_after_danger", "danger_zone",
     "paused_heartbeat", "frozen_seq", "frozen_seq_old", "invalid_missing_id", "invalid_duplicate_id",
@@ -265,6 +278,64 @@ class Mine:
         }
         self.exit_nodes = {node_id: ex for ex, (_, node_id, _) in self.exits.items()}
         self._route_cache: dict[frozenset, tuple[dict, dict]] = {}
+        # Loader paths: (working, offset at the start of the segment, offset at its end), from
+        # the loading point (s = 0) through the dump point (s = LHD_HAUL_M) to the park bay
+        # (s = bay). All on the zone's level, clear of every person of the base mine; the
+        # people stand in the zones' drifts, so each loader loads at the last point of its zone
+        # that keeps 20 m from them and dumps into an ore pass in the access drift.
+        # phase: the cycle index at model second 0, chosen so that no loader is on a working
+        # that a story closes at the moment it closes (w-12 at 1210 and 60, w-07 the same).
+        self.loaders = {
+            "lhd-a": {"zone": "zone-a", "label": "ПДМ-А", "phase": 2, "bay": 175.0,
+                      "path": [("w-32", 100, 0), ("w-30", 0, 75)]},
+            "lhd-b": {"zone": "zone-b", "label": "ПДМ-Б", "phase": 7, "bay": 210.0,
+                      "path": [("w-16", 30, 0), ("w-12", 120, 0), ("w-19", 0, 60)]},
+            "lhd-c": {"zone": "zone-c", "label": "ПДМ-В", "phase": 7, "bay": 150.0,
+                      "path": [("w-20", 38, 0), ("w-07", 90, 0), ("w-10", 0, 22)]},
+            "lhd-d": {"zone": "zone-d", "label": "ПДМ-Г", "phase": 11, "bay": 208.0,
+                      "path": [("w-23", 28, 0), ("w-22", 100, 0), ("w-06", 120, 40)]},
+        }
+        for lid, lhd in self.loaders.items():
+            node, total = None, 0.0
+            for wid, a, b in lhd["path"]:
+                w = self.workings[wid]
+                start = w["from"] if a == 0 else w["to"] if a == w["length_m"] else None
+                assert node is None or start == node, f"{lid}: the path breaks at {wid}"
+                assert w["level"] == self.zones[lhd["zone"]]["level"], f"{lid}: {wid} is on another level"
+                node = w["from"] if b == 0 else w["to"] if b == w["length_m"] else None
+                total += abs(b - a)
+            assert LHD_HAUL_M <= lhd["bay"] == total, lid
+
+    def lhd_at(self, lid: str, s: float, forward: bool) -> tuple[str, float, str]:
+        """(working, offset, node it faces) of a loader s metres along its path.
+
+        Moving forward (towards the dump and the bay) a point on a node belongs to the next
+        segment; moving back (towards the loading point) to the previous one.
+        """
+        path = self.loaders[lid]["path"]
+        run = 0.0
+        for i, (wid, a, b) in enumerate(path):
+            length = abs(b - a)
+            inside = (run <= s < run + length) if forward else (run < s <= run + length)
+            if inside or (forward and i == len(path) - 1) or (not forward and s <= 0):
+                d = min(max(s - run, 0.0), length)
+                w = self.workings[wid]
+                up = b > a
+                offset = a + d if up else a - d
+                ahead, behind = (w["to"], w["from"]) if up else (w["from"], w["to"])
+                return wid, offset, ahead if forward else behind
+            run += length
+        raise AssertionError((lid, s))
+
+    def lhd_workings(self, lid: str, s0: float, s1: float) -> list[str]:
+        """Workings of the path between s0 and s1 (s0 <= s1)."""
+        out, run = [], 0.0
+        for wid, a, b in self.loaders[lid]["path"]:
+            length = abs(b - a)
+            if run < s1 and run + length > s0:
+                out.append(wid)
+            run += length
+        return out
 
     @staticmethod
     def _helix(x, y, z0, z1, dx=60.0, dy=88.5):
@@ -372,6 +443,9 @@ class Mine:
         for zid, z in self.zones.items():
             add(zid, kind="zone", label=z["label"], _parents=tid(z["level"]), level=z["level"],
                 workings=self.zone_workings(zid), sensors=self.zone_sensors(zid))
+        for lid, lhd in self.loaders.items():
+            add(lid, kind="equipment", label=lhd["label"], _parents=tid(lhd["zone"]),
+                equipment_kind="lhd", zone=lhd["zone"], length_m=LHD_LENGTH_M)
         letters = {"extensometer": "Э", "convergence": "К", "geophone": "Г"}
         for sid, (kind, wid, off, zone, _, _, events) in self.sensors.items():
             attrs = {"kind": "sensor", "label": f"{letters[kind]}-{sid[-2:]}", "_parents": tid(zone),
@@ -470,6 +544,8 @@ class Sim:
             self.sensors[sid] = s
         self.workers = {wid: {"status": "working", "at": at, "offset": off}
                         for wid, (_, at, off) in mine.workers.items()}
+        # a cycling loader's place is a function of model time; the others keep their own
+        self.lhd = {lid: {"mode": "cycle"} for lid in mine.loaders}
         self.exits = {eid: {"state": "available", "workers_out": 0} for eid in mine.exits}
         self.incident: dict = {"state": "none"}
         self.option_state = {oid: "inactive" for oid in OPTIONS}
@@ -590,6 +666,7 @@ class Sim:
         before = {w: self.route_of(w)[0] for w in self.underground()}
         self.closed[working] = "scenario"
         self.conditions.append(f"working_closed:{working}")
+        self._sync_loaders()
         self.ev("condition.set", working, arg, command_id)
         self._route_events(before)
         self.open_incident("passage_closed", zone, working)
@@ -642,7 +719,86 @@ class Sim:
         for w in self.underground():
             if self.mine.workers[w][0] == zone and self.workers[w]["status"] == "working":
                 self.workers[w]["status"] = "waiting"
+        for lid, lhd in self.mine.loaders.items():
+            if lhd["zone"] == zone:
+                self._lhd_hold(lid, "stopped")
         self.ev("zone.stopped", zone)
+
+    # --- loaders (fixture consistency only, like the rest of this stepper) -------------
+
+    def _lhd_cycle(self, lid: str, tick: int) -> dict:
+        """Where the loader's cycle puts it at a model time: s along its path and activity."""
+        i = (tick // TICK_STEP + self.mine.loaders[lid]["phase"]) % LHD_CYCLE
+        haul_end = LHD_LOAD_PUBS + LHD_HAUL_PUBS
+        if i < LHD_LOAD_PUBS:                  # at the loading point, facing the stope
+            return {"s": 0.0, "activity": "loading", "loaded": i == LHD_LOAD_PUBS - 1,
+                    "forward": False}
+        if i < haul_end:
+            return {"s": LHD_STEP_M * (i - LHD_LOAD_PUBS + 1), "activity": "hauling",
+                    "loaded": True, "forward": True}
+        if i == haul_end:
+            return {"s": LHD_HAUL_M, "activity": "dumping", "loaded": False, "forward": True}
+        return {"s": LHD_HAUL_M - LHD_STEP_M * (i - haul_end), "activity": "returning",
+                "loaded": False, "forward": False}
+
+    def _lhd_hold(self, lid: str, mode: str):
+        """Takes the loader out of its cycle where it stands: parked or stopped."""
+        st = self.lhd[lid]
+        if st["mode"] == "cycle":
+            st.update(self._lhd_cycle(lid, self.tick))
+        st["mode"], st["activity"] = mode, "idle"
+        if mode == "stopped" and self._lhd_to_bay(lid):
+            # stopped with its zone: from now on on the way to the park bay
+            st["forward"] = True
+            st["activity"] = "hauling" if st["loaded"] else "returning"
+        here = self.mine.lhd_at(lid, st["s"], st["forward"])[0]
+        assert here not in self.closed, f"{lid} stands on closed {here}"
+
+    def _lhd_to_bay(self, lid: str) -> bool:
+        """Is the loader short of its park bay with the way there open?"""
+        s, bay = self.lhd[lid]["s"], self.mine.loaders[lid]["bay"]
+        return s < bay and not set(self.mine.lhd_workings(lid, s, bay)) & set(self.closed)
+
+    def _sync_loaders(self):
+        """The model sends no loader into a blocked zone or through a closed working."""
+        for lid, st in self.lhd.items():
+            if st["mode"] != "cycle":
+                continue
+            zone = self.mine.loaders[lid]["zone"]
+            blocked = self.zones[zone]["hazard"]["routing_restriction"] == "blocked"
+            closed = set(self.mine.lhd_workings(lid, 0.0, LHD_HAUL_M)) & set(self.closed)
+            if blocked or closed:
+                self._lhd_hold(lid, "parked")
+
+    def _move_loaders(self):
+        """One publication: a stopped loader drives on to its park bay, then stands."""
+        for lid, st in self.lhd.items():
+            if st["mode"] != "stopped":
+                continue
+            if self._lhd_to_bay(lid):
+                st["s"] = min(st["s"] + LHD_STEP_M, self.mine.loaders[lid]["bay"])
+                st["forward"] = True
+                st["activity"] = "hauling" if st["loaded"] else "returning"
+            else:
+                st["activity"] = "idle"
+
+    def park_at_bays(self):
+        """Every loader idle in its park bay (a scenario whose frame does not move)."""
+        for lid, st in self.lhd.items():
+            st.update(mode="parked", s=self.mine.loaders[lid]["bay"], activity="idle",
+                      loaded=False, forward=True)
+
+    def lhd_features(self, lid: str, tick: int | None = None) -> dict:
+        """Features of a loader; a cycling one is shown at model time `tick` (default now)."""
+        st = self.lhd[lid]
+        place = self._lhd_cycle(lid, self.tick if tick is None else tick) \
+            if st["mode"] == "cycle" else st
+        working, offset, toward = self.mine.lhd_at(lid, place["s"], place["forward"])
+        f = self.common()
+        f.update({"state": F(LHD_STATE[st["mode"]]), "activity": F(place["activity"]),
+                  "at_working": F(working), "offset_m": F(num(offset), "m"),
+                  "toward_node": F(toward), "loaded": F(place["loaded"])})
+        return f
 
     def withdraw_zone(self, zone):
         self.zones[zone]["withdrawal_state"] = "in_progress"
@@ -673,7 +829,9 @@ class Sim:
     # --- one publication of model time ----------------------------------------------
 
     def step(self):
+        self._sync_loaders()
         self.tick += TICK_STEP
+        self._move_loaders()
         for w in self.underground():
             if self.workers[w]["status"] == "moving_to_exit":
                 self._advance(w)
@@ -824,6 +982,8 @@ class Sim:
                  "downtime_s": F(z["downtime_s"], "s")}
             f.update(self.hazard_features(z["hazard"], self.tick, True))
             add(zid, f)
+        for lid in self.mine.loaders:
+            scene.append({"thingId": tid(lid), "features": self.lhd_features(lid)})
         for sid, s in self.sensors.items():
             measured = s.get("measured_at", self.tick)
             f = {"measured_at_tick": F(measured), "measured_at_sim_s": F(measured, "s"),
@@ -844,6 +1004,7 @@ class Sim:
         return scene
 
     def frame(self) -> dict:
+        self._sync_loaders()
         under = self.underground()
         f = self.common()
         f.update({
@@ -878,6 +1039,25 @@ def state(frames, clock, **extra) -> dict:
     s = {"clock": clock, "frames": frames}
     s.update({k: v for k, v in extra.items() if v is not None})
     return s
+
+
+def loop_of(sim: Sim) -> dict | None:
+    """The loop of a state that repeats one frame while model time runs.
+
+    The repeated frame would freeze the cycling loaders, so the state also lists, for each
+    publication of one cycle, the scene elements of those loaders; the mock server swaps them
+    into the frame (fixtures/README.md, "Формат файла"). Elements keep the frame's tick, which
+    the server re-times like every other element. None when nothing cycles.
+    """
+    sim._sync_loaders()
+    cycling = [lid for lid, st in sim.lhd.items() if st["mode"] == "cycle"]
+    if sim.run_state != "running" or not cycling:
+        return None
+    for lid, st in sim.lhd.items():
+        assert st["mode"] == "cycle" or st["activity"] == "idle", f"{lid} moves in a repeated frame"
+    scene = [[{"thingId": tid(lid), "features": sim.lhd_features(lid, sim.tick + k * TICK_STEP)}
+              for lid in cycling] for k in range(LHD_CYCLE)]
+    return {"phase": (sim.tick // TICK_STEP) % LHD_CYCLE, "scene": scene}
 
 
 def rule(ctype, target=None, *, decision_id=None, status="applied", reason="none",
@@ -1014,7 +1194,7 @@ def closure_story(working, zone, preset, literal=False):
     states["initial"] = state([base.frame()], "run", rules=[
         rule("condition.close_working", working, goto="decision", bind="close"),
         rule("run.start_preset", preset, goto="preset_resetting", bind="preset",
-             new_run="run-0006", ack_delay=2)])
+             new_run="run-0006", ack_delay=2)], loop=loop_of(base))
 
     d = base.clone()
     d.step()
@@ -1039,9 +1219,10 @@ def closure_story(working, zone, preset, literal=False):
         s = d.clone()
         s.execute(oid, c("exec"))
         frames = [s.frame()]
-        publications = None
+        publications = loop = None
         if kind == "observe":
-            # nothing changes until the horizon: one frame repeated, model time running
+            # nothing changes until the horizon but the loaders: one frame repeated
+            loop = loop_of(s)
             while s.executing:
                 s.step()
             publications = HORIZON_S // TICK_STEP
@@ -1052,13 +1233,14 @@ def closure_story(working, zone, preset, literal=False):
                     break
                 frames.append(s.frame())
         states[short + "_exec"] = state(frames, "run", publications=publications,
-                                        next=short + "_done")
+                                        next=short + "_done", loop=loop)
         states[short + "_done"] = state([s.frame()], "run", rules=[
-            rule("condition.open_working", working, goto=short + "_done_open", bind="open")])
+            rule("condition.open_working", working, goto=short + "_done_open", bind="open")],
+            loop=loop_of(s))
         after = s.clone()
         after.step()
         after.open(working, c("open"))
-        states[short + "_done_open"] = state([after.frame()], "run")
+        states[short + "_done_open"] = state([after.frame()], "run", loop=loop_of(after))
         sims[short + "_done"] = s
 
     old = base.clone()
@@ -1067,7 +1249,8 @@ def closure_story(working, zone, preset, literal=False):
     states["preset_resetting"] = state([old.frame()], "hold", publications=2, next="preset_run")
     new = old.successor("run-0006", c("preset"), preset)
     states["preset_run"] = state([new.frame()], "run", new_run=True,
-                                 publications=PRESET_AT_S // TICK_STEP, next="preset_decision")
+                                 publications=PRESET_AT_S // TICK_STEP, next="preset_decision",
+                                 loop=loop_of(new))
     for _ in range(PRESET_AT_S // TICK_STEP):
         new.step()
     new.close(working, None, zone, arg="preset:" + preset)
@@ -1076,8 +1259,14 @@ def closure_story(working, zone, preset, literal=False):
     return states, sims, archive
 
 
-def static(sim_or_frame, clock="run", **extra) -> dict:
-    frame = sim_or_frame.frame() if isinstance(sim_or_frame, Sim) else sim_or_frame
+def static(sim_or_frame, clock="run", loop_sim=None, **extra) -> dict:
+    """One repeated frame; a running one gets the loop of its cycling loaders."""
+    if isinstance(sim_or_frame, Sim):
+        frame, loop_sim = sim_or_frame.frame(), loop_sim or sim_or_frame
+    else:
+        frame = sim_or_frame
+    if clock == "run" and loop_sim is not None:
+        extra["loop"] = loop_of(loop_sim)
     return {"initial": state([frame], clock, **extra)}
 
 
@@ -1089,8 +1278,9 @@ def then_violated(mutate) -> dict:
         bad.step()
     frame = bad.frame()
     extra = mutate(frame) or {}
-    return {"initial": state([good.frame()], "run", publications=3, next="violated"),
-            "violated": state([frame], "run", **extra)}
+    return {"initial": state([good.frame()], "run", publications=3, next="violated",
+                             loop=loop_of(good)),
+            "violated": state([frame], "run", loop=loop_of(bad), **extra)}
 
 
 def danger_zone_story():
@@ -1140,9 +1330,10 @@ def danger_zone_story():
         e = d.clone()
         e.execute(oid, "@exec")
         out = [e.frame()]
-        publications = None
+        publications = loop = None
         if kind == "observe":
-            # nothing changes until the horizon: one frame repeated, model time running
+            # nothing changes until the horizon but the loaders: one frame repeated
+            loop = loop_of(e)
             while e.executing:
                 e.step()
             publications = HORIZON_S // TICK_STEP
@@ -1153,8 +1344,8 @@ def danger_zone_story():
                     break
                 out.append(e.frame())
         states[short + "_exec"] = state(out, "run", publications=publications,
-                                        next=short + "_done")
-        states[short + "_done"] = state([e.frame()], "run")
+                                        next=short + "_done", loop=loop)
+        states[short + "_done"] = state([e.frame()], "run", loop=loop_of(e))
         sims[short + "_done"] = e
     return states, sims
 
@@ -1224,7 +1415,7 @@ def build_all() -> dict[str, dict]:
                 rule("run.reset", goto="resetting", bind="reset", new_run="run-0006",
                      ack_delay=2)]),
             "resetting": state([resetting.frame()], "hold", publications=2, next="fresh"),
-            "fresh": state([fresh.frame()], "run", new_run=True),
+            "fresh": state([fresh.frame()], "run", new_run=True, loop=loop_of(fresh)),
         }, archive=base_archive() + [interrupted_run(decision)])
 
     # --- sensor lost after danger ---
@@ -1316,12 +1507,14 @@ def build_all() -> dict[str, dict]:
         second.step()
     put("topology_change", "После трёх публикаций shift переходит на топологию t2; с этого "
         "момента атрибуты отдаются набором t2: у В-19 другая геометрия, добавлена В-37.", {
-            "initial": state([Sim(MINE).frame()], "run", publications=3, next="t2"),
-            "t2": state([second.frame()], "run", attributes="t2"),
+            "initial": state([Sim(MINE).frame()], "run", publications=3, next="t2",
+                             loop=loop_of(Sim(MINE))),
+            "t2": state([second.frame()], "run", attributes="t2", loop=loop_of(second)),
         }, attribute_sets={"t1": MINE.things(), "t2": mine2.things()})
 
     # --- scripted command outcomes ---
     c0 = Sim(MINE, tick=380)
+    c0.park_at_bays()             # the frame of this scenario does not move
     rejected = cid("commands:resume")
     c0.ev("command.rejected", "zone-a", "not_allowed_in_state", rejected)
     c0.commands.append({"id": rejected, "type": "action.resume_zone", "target": "zone-a",
@@ -1401,7 +1594,8 @@ def build_all() -> dict[str, dict]:
         "option_kind"] = "shelter"
     put("unknown_enum", "Неизвестные значения перечислений: участок А hazard_state = "
         "elevated, Р-09 status = resting, вариант option_kind = shelter, событие журнала "
-        "с кодом ventilation.changed.", static(frame), attribute_sets={"t1": things})
+        "с кодом ventilation.changed.", static(frame, loop_sim=Sim(MINE)),
+        attribute_sets={"t1": things})
 
     put("empty", "Пустой стенд: двойник рудника и все остальные двойники не найдены, "
         "GET возвращает 404 с телом ошибки в стиле Ditto.", {},
