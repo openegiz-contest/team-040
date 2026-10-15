@@ -121,6 +121,8 @@ done
 if [ $ok = 1 ]; then pass "Ditto -> Telegraf -> InfluxDB stored the value"; else fail "value $value did not reach InfluxDB within 60 s"; fi
 
 echo "Grafana"
+check "Team 040 UI responds" curl -sf -o /dev/null "http://127.0.0.1:${TEAM_UI_PORT:-8088}/"
+check "Team 040 shift through UI proxy" curl -sf -o /dev/null "http://127.0.0.1:${TEAM_UI_PORT:-8088}/ditto/api/2/things/team040.mine:shift?fields=thingId,features,_modified,_revision"
 check "API healthy" curl -sf "$GRAFANA/api/health"
 check "OpenEgiz app plugin enabled" sh -c "curl -sf -u admin:$GRAFANA_ADMIN_PASSWORD $GRAFANA/api/plugins/ertis-opentwins-app/settings | grep -q '\"enabled\":true'"
 check "Unity panel plugin loaded" curl -sf -u "admin:$GRAFANA_ADMIN_PASSWORD" "$GRAFANA/api/plugins/ertis-unity-panel/settings"

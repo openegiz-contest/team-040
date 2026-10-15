@@ -1,0 +1,9 @@
+.git
+.claude
+**/.env
+**/__pycache__
+**/test-output
+**/.venv
+**/venv
+team/ui/fixtures
+team/ui/tests

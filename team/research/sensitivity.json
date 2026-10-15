@@ -1,0 +1,260 @@
+{
+  "synthetic": true,
+  "platform_verified": false,
+  "model_version": "0.1",
+  "scope_policy_version": 2,
+  "scenario": "p-instability",
+  "one_factor": "walking_speed_m_s",
+  "results": [
+    {
+      "walking_speed_m_s": 0.5,
+      "comparison_key": "38cce15ee74a0fd971f8c508cb42e6f3a4d96125d3f34c54fb53aae36b56fb18",
+      "forecast_horizon_s": 900,
+      "forecasts": {
+        "observe": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "38cce15ee74a0fd971f8c508cb42e6f3a4d96125d3f34c54fb53aae36b56fb18",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 0,
+          "forecast_all_out": false,
+          "forecast_in_danger": 3,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 2700,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 0
+        },
+        "stop_withdraw_zone": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "38cce15ee74a0fd971f8c508cb42e6f3a4d96125d3f34c54fb53aae36b56fb18",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 0,
+          "forecast_all_out": false,
+          "forecast_in_danger": 0,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 240,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 900
+        },
+        "withdraw_all": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "38cce15ee74a0fd971f8c508cb42e6f3a4d96125d3f34c54fb53aae36b56fb18",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 0,
+          "forecast_all_out": false,
+          "forecast_in_danger": 0,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 240,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 1800
+        }
+      },
+      "actual_withdraw_all": {
+        "out": 0,
+        "all_out": false,
+        "in_danger": 0,
+        "no_route": 0,
+        "unknown": 0,
+        "danger_exposure_person_s": 240,
+        "unknown_exposure_person_s": 0,
+        "downtime_s": 1800
+      }
+    },
+    {
+      "walking_speed_m_s": 0.75,
+      "comparison_key": "cb6f3860912ccbc6ebc20ae8f261c09782bd1f7a92b35830aec32b60812dfcc6",
+      "forecast_horizon_s": 900,
+      "forecasts": {
+        "observe": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "cb6f3860912ccbc6ebc20ae8f261c09782bd1f7a92b35830aec32b60812dfcc6",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 0,
+          "forecast_all_out": false,
+          "forecast_in_danger": 3,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 2700,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 0
+        },
+        "stop_withdraw_zone": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "cb6f3860912ccbc6ebc20ae8f261c09782bd1f7a92b35830aec32b60812dfcc6",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 2,
+          "forecast_all_out": false,
+          "forecast_in_danger": 0,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 161,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 900
+        },
+        "withdraw_all": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "cb6f3860912ccbc6ebc20ae8f261c09782bd1f7a92b35830aec32b60812dfcc6",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 2,
+          "forecast_all_out": false,
+          "forecast_in_danger": 0,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 161,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 1800
+        }
+      },
+      "actual_withdraw_all": {
+        "out": 2,
+        "all_out": false,
+        "in_danger": 0,
+        "no_route": 0,
+        "unknown": 0,
+        "danger_exposure_person_s": 161,
+        "unknown_exposure_person_s": 0,
+        "downtime_s": 1800
+      }
+    },
+    {
+      "walking_speed_m_s": 1.0,
+      "comparison_key": "0a9721e17b8107ce64c2247506680df923a20c32396d155801c8d69e70994bcd",
+      "forecast_horizon_s": 900,
+      "forecasts": {
+        "observe": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "0a9721e17b8107ce64c2247506680df923a20c32396d155801c8d69e70994bcd",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 0,
+          "forecast_all_out": false,
+          "forecast_in_danger": 3,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 2700,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 0
+        },
+        "stop_withdraw_zone": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "0a9721e17b8107ce64c2247506680df923a20c32396d155801c8d69e70994bcd",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 3,
+          "forecast_all_out": false,
+          "forecast_in_danger": 0,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 120,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 900
+        },
+        "withdraw_all": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "0a9721e17b8107ce64c2247506680df923a20c32396d155801c8d69e70994bcd",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 3,
+          "forecast_all_out": false,
+          "forecast_in_danger": 0,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 120,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 1800
+        }
+      },
+      "actual_withdraw_all": {
+        "out": 3,
+        "all_out": false,
+        "in_danger": 0,
+        "no_route": 0,
+        "unknown": 0,
+        "danger_exposure_person_s": 120,
+        "unknown_exposure_person_s": 0,
+        "downtime_s": 1800
+      }
+    },
+    {
+      "walking_speed_m_s": 1.25,
+      "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+      "forecast_horizon_s": 900,
+      "forecasts": {
+        "observe": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 0,
+          "forecast_all_out": false,
+          "forecast_in_danger": 3,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 2700,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 0
+        },
+        "stop_withdraw_zone": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 3,
+          "forecast_all_out": false,
+          "forecast_in_danger": 0,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 96,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 900
+        },
+        "withdraw_all": {
+          "decision_id": "run-0002-d1",
+          "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+          "forecast_tick": 60,
+          "forecast_horizon_s": 900,
+          "forecast_quality": "full",
+          "forecast_out": 6,
+          "forecast_all_out": true,
+          "forecast_in_danger": 0,
+          "forecast_no_route": 0,
+          "forecast_unknown": 0,
+          "forecast_danger_exposure_person_s": 96,
+          "forecast_unknown_exposure_person_s": 0,
+          "forecast_downtime_s": 1800,
+          "forecast_last_out_s": 850
+        }
+      },
+      "actual_withdraw_all": {
+        "out": 6,
+        "all_out": true,
+        "in_danger": 0,
+        "no_route": 0,
+        "unknown": 0,
+        "danger_exposure_person_s": 96,
+        "unknown_exposure_person_s": 0,
+        "downtime_s": 1800,
+        "last_out_s": 850
+      }
+    }
+  ]
+}
