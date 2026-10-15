@@ -11,7 +11,7 @@
 Requirements (Docker, `make`, Windows/WSL2 setup) are in [OPENEGIZ.md](OPENEGIZ.md) / [OPENEGIZ.ru.md](OPENEGIZ.ru.md).
 
 ```bash
-sudo apt install -y make   # if make is missing (clean Ubuntu)
+sudo apt update && sudo apt install -y git make curl  # prerequisites on clean Ubuntu
 make up            # OpenEgiz + симулятор команды + интерфейс
 ```
 
@@ -19,6 +19,16 @@ make up            # OpenEgiz + симулятор команды + интерф
 6 ГиБ памяти Docker. Пароли генерируются автоматически в `deploy/compose/.env`;
 не удаляйте этот файл отдельно от данных. Первое скачивание образов зависит от сети.
 Example Mine запускать не требуется. Внешние API-ключи и Blender для запуска не нужны.
+
+Для проверки перед сдачей выделяйте Docker 8 CPU. При лимите 4 CPU в изолированной
+проверке были задержки MQTT/Ditto и таймауты интерфейса; такое ограничение не
+считается проверенной конфигурацией команды. Подробный протокол:
+[чистый запуск 15 октября](team/research/clean-start.md).
+
+`make up` завершает запуск только после получения полного актуального снимка
+шахты через прокси и трёх последовательно растущих номеров публикации. Если
+платформа отвечает, но телеметрия не доходит, запуск завершится с понятной ошибкой
+готовности Team 040; смотрите `make logs S=team-simulator` и `make logs S=connectivity`.
 
 ## What to open
 

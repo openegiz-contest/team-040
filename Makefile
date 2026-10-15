@@ -21,6 +21,7 @@ up:
 	@test "$$(docker wait $$($(COMPOSE) ps -a -q init))" = 0 || { \
 	  echo "ERROR: the init job (policy + Ditto connections) failed:"; $(COMPOSE) logs init; exit 1; }
 	@bash scripts/compose-wait-ready.sh
+	@bash scripts/compose-team-ready.sh
 	@bash scripts/compose-urls.sh
 
 ## Stop the platform, keep data
