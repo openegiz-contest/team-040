@@ -16,13 +16,16 @@ import {TOKEN} from './palette.js';
 const CELL = 128;
 const DRAW = CELL / 64;
 const COLUMNS = 8;
-const ROWS = 4;
+const ROWS = 5;
 
 const CELLS = [
   'worker:ok', 'worker:none', 'worker:unknown', 'ring:danger', 'ring:selected', 'ring:hover',
   'sensor:fresh', 'sensor:stale', 'sensor:lost', 'sensor:unknown', 'exit:available', 'exit:unavailable', 'exit:unknown',
   'sign:attention', 'sign:danger', 'sign:unknown', 'sign:lastDanger', 'sign:pending', 'sign:blocked', 'sign:stopped',
   'sign:leaving', 'sign:question', 'ring:pending', 'ring:scope',
+  // The number of people of one marker (art mode: people at one place on the screen share a marker), drawn at the
+  // upper right of the marker's box; `count:many` above nine.
+  'count:2', 'count:3', 'count:4', 'count:5', 'count:6', 'count:7', 'count:8', 'count:9', 'count:many',
 ];
 
 export const CELL_INDEX = Object.fromEntries(CELLS.map((name, index) => [name, index]));
@@ -92,6 +95,18 @@ function line(g, x1, y1, x2, y2, colour, width) {
 
 function drawCell(g, name) {
   const [kind, state] = name.split(':');
+  if (kind === 'count') {
+    g.save();
+    g.translate(18, -18);
+    plate(g, 11);
+    g.fillStyle = TOKEN.dust1;
+    g.font = '700 15px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(state === 'many' ? '9+' : state, 0, 1);
+    g.restore();
+    return;
+  }
   if (kind === 'ring') {
     if (state === 'danger') {
       ring(g, 26, 'rgba(17, 19, 22, 0.95)', 9);

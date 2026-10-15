@@ -38,7 +38,9 @@ export function groupRuns(runs, order) {
     const key = typeof values.comparison_key === 'string' ? values.comparison_key : null;
     const group = groups.get(key) || {key, runs: [], comparable: 0, latest: 0};
     const interrupted = values.completion_reason === 'reset';
-    const completed = values.state === 'finished' && COMPLETED_REASONS.includes(values.completion_reason);
+    // The simulation writes `horizon` where the fixtures of the contract draft write `horizon_reached`.
+    const reason = values.completion_reason === 'horizon' ? 'horizon_reached' : values.completion_reason;
+    const completed = values.state === 'finished' && COMPLETED_REASONS.includes(reason);
     const takesPart = key !== null && completed && values.comparable !== false;
     group.runs.push({run, interrupted, unclassified: !interrupted && !completed, takesPart});
     group.comparable += takesPart ? 1 : 0;

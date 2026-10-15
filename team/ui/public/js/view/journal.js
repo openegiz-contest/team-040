@@ -36,6 +36,7 @@ export function eventText(text, state, event) {
     } else if (event.code === 'hazard.changed') detail = text.label('hazard', arg);
     else if (event.code === 'quality.changed') detail = text.label('quality', arg);
     else if (event.code === 'command.applied') detail = text.codeLabel('commandType', arg);
+    else if (event.code === 'decision.selected') detail = text.codeLabel('optionKind', arg);
     else if (event.code === 'command.rejected' && text.isKnown('ackReason', arg)) detail = `${VOCAB.ackReason[arg]} (${arg})`;
     else if (event.code === 'worker.route_changed' || event.code === 'worker.out') detail = `${VOCAB.kind.exit} ${name(arg)}`;
   }
@@ -106,7 +107,8 @@ export function mount(root, ctx) {
     setText(time, typeof event.sim_time_s === 'number' ? text.clockAgoLine(event.sim_time_s, now) : text.tickTime(null, event.tick));
     setAttrs(time, {title: text.tickWords(event.tick) || null});
     setText(words, eventText(text, state, event));
-    command.hidden = typeof event.command_id !== 'string';
+    // The simulation writes an empty command_id for an event that no command caused.
+    command.hidden = typeof event.command_id !== 'string' || event.command_id === '';
     setText(command, command.hidden ? '' : `${UI.journal.command} ${text.shortCommandId(event.command_id)}`);
     setAttrs(command, {title: command.hidden ? null : event.command_id});
     run.hidden = typeof event.run !== 'string' || !state.snapshot || event.run === state.snapshot.run;

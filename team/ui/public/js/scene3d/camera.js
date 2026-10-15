@@ -14,6 +14,42 @@ const DAMP_MS = 140;
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2);
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 
+/** The opening of the perspective camera; an orthographic camera of art mode carries the same `fov` (see placeCamera). */
+export const FOV = 30;
+
+/**
+ * Place a camera (the stage's or a probe) at `dist` from `target`, seen from azimuth `az` and elevation `el`.
+ * A perspective camera stands at that distance. An orthographic camera (art mode) carries the custom field `fov`
+ * (FOV) so that `dist` means the same in both: its half height is dist·tan(fov/2), the height a perspective camera
+ * at that distance sees at its target. Every pixel and fit formula of the scene written with `dist` and `fov` then
+ * holds for both. It stands `reach` metres back along its view axis, beyond everything of the model.
+ */
+export function placeCamera(cam, target, dist, az, el, aspect = cam.aspect, reach = 4000) {
+  const dir = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
+  if (cam.isOrthographicCamera) {
+    const halfH = dist * Math.tan((cam.fov * DEG) / 2);
+    const halfW = halfH * (aspect || 1);
+    cam.aspect = aspect;
+    cam.left = -halfW;
+    cam.right = halfW;
+    cam.top = halfH;
+    cam.bottom = -halfH;
+    cam.zoom = 1;
+    cam.position.set(target.x + reach * dir[0], target.y + reach * dir[1], target.z + reach * dir[2]);
+    cam.near = 1;
+    cam.far = reach * 2;
+  } else {
+    if (aspect) cam.aspect = aspect;
+    cam.position.set(target.x + dist * dir[0], target.y + dist * dir[1], target.z + dist * dir[2]);
+    cam.near = Math.max(dist / 200, 0.5);
+    cam.far = dist * 6 + 4000;
+  }
+  cam.up.set(0, 1, 0);
+  cam.lookAt(target);
+  cam.updateProjectionMatrix();
+  cam.updateMatrixWorld();
+}
+
 /**
  * @param {THREE.PerspectiveCamera} camera
  * @param {{reducedMotion: () => boolean}} options
@@ -238,7 +274,7 @@ export function createOrbit(camera, options) {
   }
 
   return {
-    state, limits, apply, set, glideTo, retarget, drag, release, zoom, rotate, pan, step, fit, stop,
+    art: false, state, limits, apply, set, glideTo, retarget, drag, release, zoom, rotate, pan, step, fit, stop,
     get gliding() {
       return glide !== null;
     },

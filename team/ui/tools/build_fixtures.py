@@ -1658,7 +1658,7 @@ def main(argv=None) -> int:
             if not path.exists() or path.read_bytes().replace(b"\r\n", b"\n") != fresh:
                 differing.append(path.name)
         extra = sorted(p.name for p in args.out.glob("*.json")
-                       if p.stem not in SCENARIOS)
+                       if p.stem not in SCENARIOS and not p.stem.startswith("sim_"))
         if differing or extra:
             print("fixtures differ:", ", ".join(differing + ["unexpected " + e for e in extra]))
             return 1

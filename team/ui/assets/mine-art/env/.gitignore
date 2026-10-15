@@ -1,0 +1,6 @@
+build/*.exr
+build/*_beauty.png
+build/*.blend1
+build/rebuild.log
+__pycache__/
+build/*.blend

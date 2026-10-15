@@ -3,7 +3,7 @@
 // display rule lives in displayedHazard(). No drawing and no geometry here.
 
 import {MINE_ID, NAMESPACE, SHIFT_ID} from './config.js';
-import {localName} from './validate.js';
+import {localName, normalizeCause} from './validate.js';
 
 /** @typedef {import('./store.js').Attributes} Attributes */
 /** @typedef {import('./store.js').Snapshot} Snapshot */
@@ -124,13 +124,14 @@ export function latestAcks(commands) {
 }
 
 /**
- * The causes of an incident that can be read: objects only. A cause of
- * another form is skipped, never dereferenced.
+ * The causes of an incident that can be read: records {trigger, subject, tick} and the texts
+ * "trigger:subject" of the simulation (the snapshot already holds them as records; see
+ * normalizeCause). A cause of another form is skipped, never dereferenced.
  * @param {Object<string, *>} values features of the incident
  * @returns {Array<{trigger: *, subject: *, tick: *}>}
  */
 export function causesOf(values) {
-  return Array.isArray(values.causes) ? values.causes.filter(isObject) : [];
+  return Array.isArray(values.causes) ? values.causes.map(normalizeCause).filter(isObject) : [];
 }
 
 /**

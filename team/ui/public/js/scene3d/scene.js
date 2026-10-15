@@ -39,16 +39,19 @@ import {situationOf} from '../situation.js';
 import * as geo from '../geometry.js';
 import {SCENE} from '../text3d.js';
 import * as text from '../text.js';
-import {createOrbit} from './camera.js';
+import {createOrbit, FOV, placeCamera} from './camera.js';
+import {ART_ZOOM_MAX, createArtRig} from './artcamera.js';
+import {createWalk} from './walk.js';
+import {artSignature, loadArtEnv, loadArtMachine, readGlbHeader} from './artenv.js';
 import {labelItems, machineLines, tooltipLines} from './content.js';
 import {changesBetween, describe, groupWorkers} from './describe.js';
 import {createLabels} from './labels.js';
 import {createEnvironment} from './environment.js';
 import {
-  alongStep, buildLayout, DIMS, levelY, LOADER_SCALE, loaderPlaces as placesForLoaders, pointOnWorking, sceneBounds, sceneLine, silhouette, stepBetween,
-  stepLength, toScene, verticalFactor, zoneEntrances,
+  buildLayout, DIMS, levelY, LOADER_SCALE, loaderPlaces as placesForLoaders, pointOnWorking, sceneBounds, sceneLine, silhouette,
+  toScene, verticalFactor, zoneEntrances,
 } from './layout.js';
-import {createActors, FIGURE_SCALE} from './actors.js';
+import {createActors, FIGURE_PX, FIGURE_PX_ART, FIGURE_SCALE} from './actors.js';
 import {createLoaders} from './loaders.js';
 import {drawAtlas, spriteGeometry, spriteMaterials, writeSprites} from './markers.js';
 import {TOKEN, TONE} from './palette.js';
@@ -60,10 +63,33 @@ import {makeTextures} from './textures.js';
 
 const DEG = Math.PI / 180;
 export const DEFAULT_VIEW = {az: 30 * DEG, el: 23 * DEG};
-const TWEEN_MS = 900;
+/**
+ * Art mode (mine-art SPEC §3–4): the stage seen by one orthographic camera from a fixed direction, pan and zoom only
+ * (artcamera.js), the vertical factor fixed by the art. Defaults of the spec until the art's GLB gives its MainView:
+ * from the south, azimuth 12°, elevation 28°, k = 1.6.
+ */
+export const ART_DEFAULT = {az: 12 * DEG, el: 28 * DEG, k: 1.6};
+/** The art of the mine (mine-art SPEC §5–6), next to the other models. */
+const ART_URL = (name) => new URL(`../../models/mine-art/${name}`, import.meta.url).href;
+/** «Показать» a zone or a person in art mode frames it at most this many times the overview. */
+const ART_FRAME_ZOOM = 3;
+/** The intro of the art: from about 0.85× to the overview, this long. */
+const ART_INTRO = {from: 0.85, ms: 1100};
+/** The lamps of a zone's loader fade once in this time when the zone's published work state changes. */
+const ART_LAMP_MS = 300;
+/** The art's worker is 5 m tall for a person of about 1.8 m; its machines are 1.5× real (actors README). */
+const ART_FIGURE_FACTOR = 5 / 1.8;
+const ART_MACHINE_FACTOR = 1.5;
+/** The walk cycle of the art's worker plays at most this many cycles a second (above it the feet slide a little). */
+const ART_MAX_CYCLES = 2.4;
+/** Art mode: the markers of people at the overview (of the poster size), and their pins over the figures close up. */
+const ART_MARK = 0.62;
+const ART_PIN = 0.4;
+/** Art mode, a withdrawal: the stretch of the walkers' routes ahead that is framed with them (m), the glide of a re-frame. */
+const ART_WALK_AHEAD_M = 90;
+const ART_FOLLOW_MS = 900;
 const DRAW_IN_MS = 550;
 const EXPLODE_MS = 600;
-const MAX_STEP_M = 80;
 /** The key of a zone's loader in picking, hover and labels: `loader:<zone>`; a click on it selects the zone. */
 const LOADER = 'loader:';
 /** The loader of lhd.glb is 10 m long; it is drawn LOADER_SCALE times larger. */
@@ -117,6 +143,8 @@ const median = (values) => {
  * @param {number} options.explode             0 compact … 1 spread
  * @param {() => boolean} options.reducedMotion
  * @param {(type: string, detail?: *) => void} options.onEvent   'frame', 'context-lost', 'context-restored', 'explode-key', 'status'
+ * @param {{az?: number, el?: number, k?: number}|null} [options.art]  art mode from the start (`?art=ortho`); see setArt
+ * @param {boolean} [options.artEnv]           false: never the art of the mine (env.glb), even for its topology
  */
 export function createScene(host, options) {
   const {ctx} = options;
@@ -158,8 +186,12 @@ export function createScene(host, options) {
   const rendererName = String(gl.getParameter(debugInfo ? debugInfo.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(30, 1, 1, 10000);
-  const orbit = createOrbit(camera, {reducedMotion: reduced});
+  // The perspective orbit of the procedural scene, or the orthographic camera of art mode (setArt): `camera`, `orbit`
+  // and `probe` are swapped together; everything reads them when it runs.
+  let camera = new THREE.PerspectiveCamera(FOV, 1, 1, 10000);
+  let orbit = createOrbit(camera, {reducedMotion: reduced});
+  /** Art mode: {az, el, k} of its one view, or null (the perspective orbit of variant 3). */
+  let art = null;
   const textures = makeTextures();
   // A software renderer pays for every texel fetch: the light quality samples one mip level, without anisotropy
   // (about a third of the frame at 1920×1080 on SwiftShader).
@@ -198,10 +230,10 @@ export function createScene(host, options) {
   let loaderFade = false;            // a change of a zone's work state is being shown
   // S3b: the loaders of the model (equipment twins) and the figures of people close up (actors.js). With equipment
   // twins, loaderPlaces holds the loaders by their local names, where the model publishes them.
-  const actors = createActors({low, source: {
+  const actors = createActors({low, reducedMotion: reduced, source: {
     get layout() { return layout; }, get k() { return k; }, get view() { return view; }, get groups() { return groups; },
-    camera, get height() { return height; }, position: (name, now) => currentPosition(name, now), tween: (name) => tweens.get(name),
-    tweenMs: TWEEN_MS,
+    get camera() { return camera; }, get height() { return height; }, position: (name) => currentPosition(name),
+    viewDistance: (point) => viewDistance(point), get figurePx() { return art ? FIGURE_PX_ART : FIGURE_PX; },
   }});
   world.add(actors.group);
   let view = null;
@@ -223,8 +255,25 @@ export function createScene(host, options) {
   let pointer = null;
   let selected = null;
   let state = null;
-  const drawn = new Map();          // worker name -> {working, offsetM} on the screen
-  const tweens = new Map();         // worker name -> {pieces, length, start}
+  // The illustrated mine (artenv.js): the header of env.glb (undefined while it is read, null when there is none),
+  // the environment once a topology matched, and whether it is shown now (artOn: art mode with the art).
+  let artHeader;
+  let artEnv = null;
+  let artEnvLoading = null;
+  let artOn = false;
+  let artMachines = null;          // {group, zone: [...], decor: [...]} once loaded
+  let artMachinesLoading = null;
+  // Art mode, a withdrawal: who walks out of which zone (person -> zone), and the walk the camera follows.
+  const walkOrigins = new Map();
+  let walkFollow = null;
+  const artGroup = new THREE.Group();
+  artGroup.name = 'art';
+  artGroup.visible = false;
+  scene.add(artGroup);
+  // People: the playback buffer of their published places (walk.js), and the publication last given to it.
+  const walk = createWalk();
+  let walkSnapshot = null;
+  let walking = false;
   const drawIn = new Map();         // route key -> {start, progress}
   let routeMeshes = [];
   let spriteList = [];
@@ -466,7 +515,9 @@ export function createScene(host, options) {
     loaderCandidates = state && state.model && !actors.equipment ? candidatesOfLoaders() : new Map();
     loaderPlaces = new Map();
     loaderRun = null;
+    if (artOn) loaderCandidates = new Map();
     placeLoaders();
+    applyArtVisibility();
   }
 
   /** Places for the loader of each zone that has horizontal workings, from the attributes only. */
@@ -571,7 +622,13 @@ export function createScene(host, options) {
     const pad = 200;
     orbit.limits.box = {minX: bounds.minX - pad, maxX: bounds.maxX + pad, minY: bounds.minY - pad, maxY: bounds.maxY + pad,
       minZ: bounds.minZ - pad, maxZ: bounds.maxZ + pad};
-    orbit.limits.distMax = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ, 400) * 5;
+    if (orbit.art) {
+      // Art mode: the target stays over the mine (its silhouette on the view plane); the camera stands beyond it.
+      orbit.setBounds(artFrame() || silhouette(layout, k));
+      orbit.limits.reach = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, bounds.maxZ - bounds.minZ, 400) * 2 + 1000;
+    } else {
+      orbit.limits.distMax = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ, 400) * 5;
+    }
     gizmo.setVertical(k);
   }
 
@@ -639,14 +696,18 @@ export function createScene(host, options) {
       overlayGroups[index].add(mesh);
       return mesh;
     };
-    const d = DIMS.depth;
+    // Over the art there is no slab: what stands on the top face of a slab lies on the drawn floor instead, inside it
+    // (the floors of the art are 15 m wide or more: the outlines keep within ARTSIDE of the centre line).
+    const d = artOn ? 0.1 : DIMS.depth;
+    const ARTSIDE = DIMS.half - 0.4;
+    const sideOf = (offset) => (artOn ? Math.min(ARTSIDE, ARTSIDE - (offset - DIMS.half - 1.2) * 0.45) : offset);
     const sideRibbons = (plan, offset, width, y, dash) => {
       const out = [];
       for (const sign of [-1, 1]) {
         if (dash) {
-          for (const piece of dashes(plan, dash[0], dash[1])) out.push(ribbon(piece, width, y, {offset: sign * offset}));
+          for (const piece of dashes(plan, dash[0], dash[1])) out.push(ribbon(piece, width, y, {offset: sign * sideOf(offset)}));
         } else {
-          out.push(ribbon(plan, width, y, {offset: sign * offset}));
+          out.push(ribbon(plan, width, y, {offset: sign * sideOf(offset)}));
         }
       }
       return out;
@@ -662,6 +723,8 @@ export function createScene(host, options) {
       if (!bare && view.hasSnapshot) {
         material = {normal: materials.zone, attention: materials.attention, danger: materials.danger, unknown: materials.unknown}[working.hazard];
       }
+      // The art paints its floors: a decal only where the published hazard is not normal (no colour of hazard in the art).
+      if (artOn && working.hazard === 'normal') material = null;
       // A floor whose hazard has just changed: its hatch fades in (M6, M9).
       if (material && fx && fx.workings.has(name)) material = fadeMaterial(material);
       const width = DIMS.half * 2 - 1.2;
@@ -695,8 +758,12 @@ export function createScene(host, options) {
       }
       if (working.zone && scopeZones.has(working.zone)) add(line.level, materials.scopeWash, ribbon(line.plan, width, 0.13), 6);
     }
+    // The outlines of a zone: around its channels on the slab, or on the drawn floor of the art (reach relative to
+    // the outline of variant 3, DIMS.zoneReach).
+    const zoneLoops = (name, extra) => (artOn ? zoneFrame(name, -DIMS.zoneReach - 1.2 - Math.max(extra, 0) * 0.35) : zoneFrame(name, extra));
     for (const [name, zone] of Object.entries(view.zones)) {
-      const frame = staticParts.zoneFrames.get(name);
+      const base = staticParts.zoneFrames.get(name);
+      const frame = base && artOn ? zoneLoops(name, 0) : base;
       if (!frame) continue;
       const style = view.hasSnapshot ? frameStyle(zone) : {material: materials.frame.unknown, width: 1.4, dash: [5, 4]};
       const parts = [];
@@ -714,7 +781,7 @@ export function createScene(host, options) {
       const isSelected = zone.thingId === view.selected;
       if (isSelected) {
         for (const reach of [2.6, 5]) {
-          for (const loop of zoneFrame(name, reach).loops) add(frame.level, materials.frame.select, ribbon(loop, 1, d + 0.1, {closed: true}), 7);
+          for (const loop of zoneLoops(name, reach).loops) add(frame.level, materials.frame.select, ribbon(loop, 1, d + 0.1, {closed: true}), 7);
         }
         for (const local of zone.workings) {
           const line = layout.workings.get(local);
@@ -722,12 +789,12 @@ export function createScene(host, options) {
         }
       }
       if (zone.pending) {
-        for (const loop of zoneFrame(name, 7.5).loops) {
+        for (const loop of zoneLoops(name, 7.5).loops) {
           for (const piece of dashes(loop, 6, 5, true)) add(frame.level, materials.frame.pending, ribbon(piece, 1.3, d + 0.1), 7);
         }
       }
       if (scopeZones.has(name)) {
-        for (const loop of zoneFrame(name, isSelected ? 9 : 3.6).loops) add(frame.level, materials.frame.scope, ribbon(loop, 3, d + 0.11, {closed: true}), 7);
+        for (const loop of zoneLoops(name, isSelected ? 9 : 3.6).loops) add(frame.level, materials.frame.scope, ribbon(loop, 3, d + 0.11, {closed: true}), 7);
       }
     }
     perLevel.forEach((map, index) => {
@@ -953,15 +1020,35 @@ export function createScene(host, options) {
     applyIntro(0);
   }
 
+  /**
+   * The held intro starts once the first state has come and the stage knows whether the art of the mine is shown
+   * (its header read; on a match, its environment loaded), so it plays once in the right picture.
+   */
+  function maybeStartIntro() {
+    if (!intro || !intro.hold || !view) return;
+    const calmNow = view.linkOk && !view.old;
+    if (!view.hasSnapshot && calmNow) return;
+    // The art decides first: its header is still read, or it matches and its environment is still loading.
+    if (artHeader === undefined || (artHeader && !artOn && artMatches())) return;
+    if (view.hasSnapshot && calmNow && !reduced() && !view.selected) startIntro();
+    else finishIntro();
+  }
+
   /** Start the intro at the first picture of a mine (the camera is at the overview): see INTRO_MS. */
   function startIntro() {
     introSpent = true;
     if (intro) clearTimeout(intro.timer);
     const goal = {target: orbit.state.target.clone(), az: orbit.state.az, el: orbit.state.el, dist: orbit.state.dist};
-    intro = {start: null, goal, routes: false};
-    // The camera comes in from a little farther and higher, turning a few degrees onto the overview.
-    orbit.set({target: goal.target, dist: goal.dist * 1.28, az: goal.az - 9 * DEG, el: goal.el + 7 * DEG});
-    orbit.glideTo(goal, INTRO_MS);
+    intro = {start: null, goal, routes: false, art: artOn};
+    if (artOn) {
+      // The art: a short ease from a little farther (ART_INTRO.from of the overview) onto the overview.
+      orbit.set({target: goal.target, dist: goal.dist / ART_INTRO.from}, true);
+      orbit.glideTo(goal, ART_INTRO.ms);
+    } else {
+      // The camera comes in from a little farther and higher, turning a few degrees onto the overview.
+      orbit.set({target: goal.target, dist: goal.dist * 1.28, az: goal.az - 9 * DEG, el: goal.el + 7 * DEG});
+      orbit.glideTo(goal, INTRO_MS);
+    }
     root.setAttribute('data-intro', 'running');
     applyIntro(0);
   }
@@ -972,12 +1059,13 @@ export function createScene(host, options) {
     introLight = 0.12 + 0.88 * easeOut(phase(t, 120, 1100));
     applySelectLevel();
     levelGroups.forEach((group, index) => {
-      const p = easeOut(phase(t, 150 + index * 150, 850 + index * 150));
+      // The art does not rise: only its camera eases in (and the markers and labels come).
+      const p = artOn ? 1 : easeOut(phase(t, 150 + index * 150, 850 + index * 150));
       group.position.y = levelY(layout, group.userData.level, k) - (1 - p) * INTRO_RISE * k;
       group.updateMatrixWorld(true);
     });
     // The ways between the horizons are drilled down from the upper one.
-    const drill = Math.max(easeOut(phase(t, 750, 1300)), 0.001);
+    const drill = artOn ? 1 : Math.max(easeOut(phase(t, 750, 1300)), 0.001);
     for (const group of [interGroup, interOverlay]) {
       group.scale.y = drill;
       group.updateMatrixWorld(true);
@@ -985,7 +1073,7 @@ export function createScene(host, options) {
     materials.edge.uniforms.uProgress.value = easeOut(phase(t, 800, 1450));
     materials.edge.uniforms.uGlow.value = 1 - phase(t, 1250, INTRO_MS);
     const landed = t >= 1050;
-    loaders.group.visible = landed;
+    loaders.group.visible = landed && !artOn;
     actors.group.visible = landed;
     routeGroup.visible = t >= 1250;
     if (routeGroup.visible && !intro.routes) {
@@ -1045,7 +1133,7 @@ export function createScene(host, options) {
     }
     materials.edge.uniforms.uProgress.value = 1;
     materials.edge.uniforms.uGlow.value = 0;
-    loaders.group.visible = true;
+    loaders.group.visible = !artOn;
     actors.group.visible = true;
     routeGroup.visible = true;
     if (jump || !done.routes) for (const mesh of routeMeshes) drawIn.set(mesh.userData.key, {start: -1});
@@ -1054,7 +1142,7 @@ export function createScene(host, options) {
     if (jump && orbit.gliding) orbit.set(orbit.goal);
     if (!done.hold && overviewMode && layout && width && !orbit.gliding) {
       const fitted = fitAll();
-      orbit.set({target: fitted.target, dist: fitted.dist, az: nearestAngle(orbit.state.az, DEFAULT_VIEW.az), el: DEFAULT_VIEW.el});
+      orbit.set({target: fitted.target, dist: fitted.dist, az: nearestAngle(orbit.state.az, mainView().az), el: mainView().el});
     }
     spritesDirty = true;
     root.setAttribute('data-intro', jump ? 'cut' : 'done');
@@ -1187,74 +1275,82 @@ export function createScene(host, options) {
   // ---- workers: honest motion -------------------------------------------------------------
 
   function motionAllowed() {
-    return Boolean(state) && view.linkOk && !view.old && view.runState === 'running' && !reduced();
+    return Boolean(state) && view.linkOk && !view.old && view.runState === 'running' && !reduced() && !document.hidden;
   }
 
-  /** New published positions: glide between two published positions, or jump. */
-  function updateMotion(previousRun) {
-    const allow = motionAllowed() && previousRun === view.run;
-    const now = performance.now();
-    const seen = new Set();
+  /** The published route of a person as segments with their offsets: {working, from, to, fromOffsetM, toOffsetM}. */
+  function routeSegments(thing) {
+    const raw = Array.isArray(thing.values.route) ? thing.values.route : [];
+    const segments = routeOf(state.model, thing);
+    const objects = raw.filter((item) => item && typeof item === 'object' && typeof item.working === 'string');
+    return segments.map((segment, index) => {
+      const item = objects.length === raw.length ? objects[index] : null;
+      return {...segment,
+        fromOffsetM: item && Number.isFinite(item.from_offset_m) ? item.from_offset_m : null,
+        toOffsetM: item && Number.isFinite(item.to_offset_m) ? item.to_offset_m : null};
+    });
+  }
+
+  /**
+   * A new publication (a new snapshot sequence or run): the published places and routes of the people go into the
+   * playback buffer (walk.js). A new run or topology clears it; with motion not allowed everyone stands where
+   * published. True while someone walks.
+   */
+  function publishPlaces(previousRun) {
+    const snapshot = state && state.snapshot;
+    if (!snapshot || !view || !view.hasSnapshot) return false;
+    const key = `${snapshot.run}|${snapshot.seq}`;
+    if (walkSnapshot === key) return false;
+    const newRun = walkSnapshot !== null && !walkSnapshot.startsWith(`${snapshot.run}|`);
+    walkSnapshot = key;
+    if (newRun || previousRun !== view.run) walk.clear();
+    const places = new Map();
+    const routes = new Map();
     for (const [name, worker] of Object.entries(view.workers)) {
       if (!worker.at) continue;
-      seen.add(name);
-      const target = {working: worker.at, offsetM: worker.offsetM};
-      const current = currentPosition(name, now);
-      tweens.delete(name);
-      if (current && allow && (current.working !== target.working || Math.abs(current.offsetM - target.offsetM) > 0.05)) {
-        const pieces = stepBetween(layout, current, target);
-        const length = pieces ? stepLength(pieces) : Infinity;
-        if (pieces && length <= MAX_STEP_M && length > 0.05) tweens.set(name, {pieces, length, start: null});
-      }
-      drawn.set(name, target);
+      places.set(name, {working: worker.at, offsetM: worker.offsetM});
+      const thing = thingByName(state.model, name);
+      if (thing) routes.set(name, routeSegments(thing));
     }
-    for (const name of [...drawn.keys()]) {
-      if (!seen.has(name)) {
-        drawn.delete(name);
-        tweens.delete(name);
-      }
-    }
+    walking = walk.publish(layout, {at: performance.now(), places, routes}, motionAllowed() && previousRun === view.run && !newRun);
     spritesDirty = true;
+    return walking;
   }
 
-  function currentPosition(name, now) {
-    const tween = tweens.get(name);
-    if (tween && tween.start !== null) {
-      const t = Math.min((now - tween.start) / TWEEN_MS, 1);
-      return alongStep(tween.pieces, tween.length * t);
-    }
-    if (tween) return alongStep(tween.pieces, 0);
-    return drawn.get(name) || null;
+  /** Where a person is drawn now: the playback buffer, else the published place. */
+  function currentPosition(name) {
+    const place = walk.place(name);
+    if (place) return place;
+    const worker = view && view.workers[name];
+    return worker && worker.at ? {working: worker.at, offsetM: worker.offsetM, facing: 1, moving: false} : null;
   }
 
+  /** Every walk and glide ends at once at the newest published place (a failed read, old data, a pause). */
   function snapMotion() {
     if (actors.snap()) placeLoaders();
-    if (tweens.size === 0) return;
-    tweens.clear();
+    if (!walk.snap()) return;
+    walking = false;
     spritesDirty = true;
+    invalidate();
   }
 
-  function stepTweens(now) {
-    if (tweens.size === 0) return false;
-    let active = false;
-    for (const [name, tween] of tweens) {
-      if (tween.start === null) tween.start = now;
-      if (now - tween.start >= TWEEN_MS) tweens.delete(name);
-      else active = true;
-    }
-    spritesDirty = true;
-    return active;
+  /** Advance the people's playback clock; true while someone walks. */
+  function stepWalk(now) {
+    const before = walking;
+    walking = walk.step(now);
+    if (walking || before) spritesDirty = true;
+    return walking;
   }
 
-  function workerPoint(name, now = performance.now()) {
-    const position = currentPosition(name, now);
+  function workerPoint(name) {
+    const position = currentPosition(name);
     if (!position) return null;
     const at = pointOnWorking(layout, position.working, position.offsetM, k);
     return at ? at.point : null;
   }
 
-  function groupPoint(group, now = performance.now()) {
-    const points = group.members.map((name) => workerPoint(name, now)).filter(Boolean);
+  function groupPoint(group) {
+    const points = group.members.map((name) => workerPoint(name)).filter(Boolean);
     if (points.length === 0) return null;
     const p = [0, 1, 2].map((i) => points.reduce((sum, q) => sum + q[i], 0) / points.length);
     return [p[0], p[1] + actors.liftOf(group), p[2]];
@@ -1357,9 +1453,12 @@ export function createScene(host, options) {
     // People last: on top of every other sprite.
     const scopeWorkers = new Set(scopeDrawn.workers);
     const rank = (group) => ({ok: 0, none: 2}[view.workers[group.front].egress] ?? 1);
-    for (const group of [...groups].sort((a, b) => rank(a) - rank(b))) {
-      const at = groupPoint(group, now);
+    for (const group of [...(artOn ? artGroups() : groups)].sort((a, b) => rank(a) - rank(b))) {
+      const at = groupPoint(group);
       if (!at) continue;
+      // Art mode: a person drawn as a figure (the worker of the art) is the figure; its marker is a small pin over the
+      // helmet. Below the figure's size the markers are smaller than the poster markers of variant 3.
+      const k0 = artOn ? (actors.figured(group) ? ART_PIN : ART_MARK) : 1;
       // The intro drops the marker onto its published place from above (only its height moves).
       const p = introPins < 1 ? [at[0], at[1] + (1 - introPins) * INTRO_DROP, at[2]] : at;
       const front = view.workers[group.front];
@@ -1367,15 +1466,19 @@ export function createScene(host, options) {
       const members = group.members.map((member) => view.workers[member]);
       pinPoints.push([at[0], at[1] - actors.liftOf(group) + actors.pinFrom(group), at[2]], [p[0], p[1] - 1.8, p[2]]);
       if (members.some((member) => member.thingId === view.selected)) {
-        list.push({position: p, cell: 'ring:selected', size: SPRITE_PX.ring + 24, key: thingId, alpha: selectLevel});
+        list.push({position: p, cell: 'ring:selected', size: (SPRITE_PX.ring + 24) * k0, key: thingId, alpha: selectLevel});
       }
       if (group.members.some((member) => scopeWorkers.has(member))) {
-        list.push({position: p, cell: 'ring:scope', size: SPRITE_PX.ring + 18, key: thingId, alpha: scopeLevel});
+        list.push({position: p, cell: 'ring:scope', size: (SPRITE_PX.ring + 18) * k0, key: thingId, alpha: scopeLevel});
       }
-      if (members.some((member) => member.thingId === hovered)) list.push({position: p, cell: 'ring:hover', size: SPRITE_PX.ring + 8, key: thingId});
-      if (members.some((member) => member.locationHazard === 'danger')) list.push({position: p, cell: 'ring:danger', size: SPRITE_PX.ring, key: thingId});
+      if (members.some((member) => member.thingId === hovered)) list.push({position: p, cell: 'ring:hover', size: (SPRITE_PX.ring + 8) * k0, key: thingId});
+      if (members.some((member) => member.locationHazard === 'danger')) list.push({position: p, cell: 'ring:danger', size: SPRITE_PX.ring * k0, key: thingId});
       const cell = front.egress === 'ok' ? 'worker:ok' : (front.egress === 'none' ? 'worker:none' : 'worker:unknown');
-      list.push({position: p, cell, size: SPRITE_PX.worker, key: thingId, group});
+      list.push({position: p, cell, size: SPRITE_PX.worker * k0, key: thingId, group});
+      // Art mode: the people of one marker are counted on it (as the scheme does), never a stack of discs.
+      if (artOn && group.members.length > 1) {
+        list.push({position: p, cell: group.members.length > 9 ? 'count:many' : `count:${group.members.length}`, size: SPRITE_PX.worker * k0, key: thingId});
+      }
     }
     if (introPins < 1) for (const item of list) item.alpha = (item.alpha ?? 1) * introPins;
     // Poster scale on a tall stage, smaller on a short one (the 1280×720 desk): the markers follow the stage height.
@@ -1390,6 +1493,40 @@ export function createScene(host, options) {
     pins.geometry.dispose();
     pins.geometry = new THREE.BufferGeometry();
     pins.geometry.setAttribute('position', new THREE.BufferAttribute(pinArray, 3));
+  }
+
+  /**
+   * Art mode: the groups of people as markers on the screen. Groups not drawn as figures whose markers would overlap
+   * (a working that runs towards the viewer, people close together at the overview) share one marker that counts
+   * them; the front of a shared marker is the person with the worst reachability, as in a group.
+   */
+  function artGroups() {
+    const radius = SPRITE_PX.worker * ART_MARK * spriteScale * 0.8;
+    const placed = [];
+    const out = [];
+    for (const group of groups) {
+      const at = groupPoint(group);
+      const p = at ? project(at) : null;
+      if (!p || actors.figured(group)) {
+        out.push(group);
+        continue;
+      }
+      const near = placed.find((entry) => Math.hypot(entry.x - p.x, entry.y - p.y) < radius);
+      if (near) near.parts.push(group);
+      else placed.push({x: p.x, y: p.y, parts: [group]});
+    }
+    const rank = (name) => ({ok: 0, none: 2}[view.workers[name].egress] ?? 1);
+    for (const {parts} of placed) {
+      if (parts.length === 1) {
+        out.push(parts[0]);
+        continue;
+      }
+      const members = parts.flatMap((group) => group.members).sort();
+      const worst = Math.max(...members.map(rank));
+      out.push({key: `shared:${parts.map((group) => group.key).join('+')}`, working: parts[0].working, members,
+        front: members.find((name) => rank(name) === worst), parts});
+    }
+    return out;
   }
 
   // ---- loaders: the published work state of each zone ---------------------------------------
@@ -1546,6 +1683,7 @@ export function createScene(host, options) {
 
   const anchors = {
     level(level) {
+      if (artOn) return artLevelPoint(level);
       const y = levelY(layout, level, k) + DIMS.depth;
       const b = level.box;
       const corners = [[b.minX, y, b.minZ], [b.maxX, y, b.minZ], [b.maxX, y, b.maxZ], [b.minX, y, b.maxZ]];
@@ -1572,6 +1710,19 @@ export function createScene(host, options) {
     loader: (zone) => loaderPoint(zone, 2.6),
   };
 
+  /**
+   * The art: a horizon's label stands on the rock left of everything drawn (the ramps' galleries included), at the
+   * height of the horizon, in the plane of its galleries; placed to the left of that point.
+   */
+  function artLevelPoint(level) {
+    let minX = Infinity;
+    for (const line of layout.workings.values()) for (const p of sceneLine(layout, line, k)) minX = Math.min(minX, p[0]);
+    const nodes = [...layout.nodes].filter(([node]) => layout.nodeLevel.get(node) === level.name).map(([, point]) => toScene(layout, point, k));
+    if (!Number.isFinite(minX) || nodes.length === 0) return null;
+    const z = median(nodes.map((p) => p[2]));
+    return [minX - 18, levelY(layout, level, k) + 4, z];
+  }
+
   function setLabels() {
     if (!layout || !view || !state || !state.model) return labels.set([]);
     const arriving = new Set(fx ? [...fx.closed].map((name) => view.workings[name] && view.workings[name].thingId) : []);
@@ -1586,10 +1737,26 @@ export function createScene(host, options) {
     const visible = v3.z > -1 && v3.z < 1 && Math.abs(v3.x) < 1.2 && Math.abs(v3.y) < 1.2;
     const x = ((v3.x + 1) / 2) * width;
     const y = ((1 - v3.y) / 2) * height;
-    // Pixels per metre at the point, from the distance to the camera.
-    const distance = camera.position.distanceTo(new THREE.Vector3(point[0], point[1], point[2]));
-    const scale = height / (2 * distance * Math.tan((camera.fov * DEG) / 2));
+    // Pixels per metre at the point, from the distance to the camera (art mode: one scale for the whole view).
+    const scale = height / (2 * viewDistance(point) * Math.tan((camera.fov * DEG) / 2));
     return {x, y, visible, scale};
+  }
+
+  /**
+   * The distance that sets the scale at a scene point: from the camera in perspective; in art mode the distance of
+   * the rig, the same for every point (an orthographic camera carries `fov`, camera.js placeCamera).
+   */
+  function viewDistance(point) {
+    if (camera.isOrthographicCamera) return orbit.state.dist;
+    return camera.position.distanceTo(new THREE.Vector3(point[0], point[1], point[2]));
+  }
+
+  /** How far a point lies in front of the camera, along the ray through it: for comparing depths (picking). */
+  function viewDepth(point) {
+    if (!camera.isOrthographicCamera) return camera.position.distanceTo(point);
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    return point.clone().sub(camera.position).dot(forward);
   }
 
   function refreshObstacles() {
@@ -1726,17 +1893,41 @@ export function createScene(host, options) {
     element.append(compass, col);
     let lastAngle = null;
     let lastBar = null;
+    let artNotes = null;            // {machine, people}: the notes of the illustrated mine, or null
+    let decorShown = true;
+    let decorMachines = false;
+    let lastFactor = null;
+    const writeNotes = () => {
+      if (artNotes) {
+        vertical.textContent = SCENE.artVertical(lastFactor);
+        thickness.textContent = SCENE.artDecor;
+        decor.textContent = SCENE.artFigures(artNotes.machine, artNotes.people);
+        decor.hidden = false;
+        return;
+      }
+      // The rock around the slabs is decoration (environment.js): said on the short line, the gizmo keeps its size.
+      const value = `${SCENE.vertical(lastFactor)} · ${SCENE.massifNote}`;
+      if (vertical.textContent !== value) vertical.textContent = value;
+      thickness.textContent = SCENE.notToScale;
+      decor.hidden = !decorShown;
+      decor.textContent = decorMachines ? SCENE.decorEquipment(LOADER_SCALE, FIGURE_SCALE) : SCENE.decorNote(LOADER_SCALE, FIGURE_SCALE);
+    };
     return {
       element,
       /** The caption of the loaders (what they mean, how much larger they are drawn), once they are loaded. */
       setDecor(shown, machines = false) {
-        decor.hidden = !shown;
-        decor.textContent = machines ? SCENE.decorEquipment(LOADER_SCALE, FIGURE_SCALE) : SCENE.decorNote(LOADER_SCALE, FIGURE_SCALE);
+        decorShown = shown;
+        decorMachines = machines;
+        writeNotes();
       },
       setVertical(factor) {
-        // The rock around the slabs is decoration (environment.js): said on the short line, the gizmo keeps its size.
-        const value = `${SCENE.vertical(factor)} · ${SCENE.massifNote}`;
-        if (vertical.textContent !== value) vertical.textContent = value;
+        lastFactor = factor;
+        writeNotes();
+      },
+      /** The notes of the illustrated mine ({machine, people}: how much larger machines and figures are), or null. */
+      setArtNotes(notesOf) {
+        artNotes = notesOf;
+        writeNotes();
       },
       update() {
         if (!width) return;
@@ -1769,10 +1960,18 @@ export function createScene(host, options) {
 
   // ---- frames -------------------------------------------------------------------------
 
-  function invalidate() {
-    if (disposed || lost || rafId || !width) return;
-    rafId = requestAnimationFrame(frame);
-    if (root.getAttribute('data-rendering') !== 'active') {
+  /**
+   * Ask for one frame. `people`: only for the people walking between publications (or their walk cycle fading):
+   * frames of their own that leave data-rendering 'idle' (the camera, the transitions and the refits are at rest),
+   * counted by data-tweens.
+   */
+  function invalidate(people = false) {
+    // A hidden page spends nothing; it is drawn again when shown (onVisibility).
+    if (disposed || lost || !width || document.hidden) return;
+    // A frame already asked for by the walk alone becomes a frame of the stage when something else asks for it.
+    if (rafId && (people || root.getAttribute('data-rendering') === 'active')) return;
+    if (!rafId) rafId = requestAnimationFrame(frame);
+    if (!people && root.getAttribute('data-rendering') !== 'active') {
       root.setAttribute('data-rendering', 'active');
       options.onEvent('frame', {frames});
     }
@@ -1783,9 +1982,11 @@ export function createScene(host, options) {
     if (disposed || lost) return;
     let active = false;
     active = stepIntro(now) || active;
-    active = orbit.step(now) || active;
+    const cameraMoving = orbit.step(now);
+    if (cameraMoving && artOn) spritesDirty = true;
+    active = cameraMoving || active;
     active = stepExplode(now) || active;
-    active = stepTweens(now) || active;
+    const people = stepWalk(now);
     const machines = actors.step(now);
     if (machines.moved) placeLoaders();
     active = machines.active || active;
@@ -1794,6 +1995,7 @@ export function createScene(host, options) {
     active = stepSelect(now) || active;
     active = stepScope(now) || active;
     active = stepGhosts(now) || active;
+    active = stepArtLamps(now) || active;
     if (loaderFade) {
       loaderFade = loaders.step(now, reduced());
       active = loaderFade || active;
@@ -1802,9 +2004,12 @@ export function createScene(host, options) {
     if (loaders.loaded) loaders.setDetail(loaderDetail());
     // The figures of people close up first: a marker over a figure stands over its helmet.
     if (actors.drawFigures(now)) spritesDirty = true;
+    // A walk cycle fading in or out after a person started or stopped (actors.js, FADE_MS).
+    const cycles = actors.animating;
     if (spritesDirty) buildSprites();
     // The far walls of the massif for this camera (no frame of its own).
-    environment.update(camera);
+    // Art mode: the walls are picked for the viewing direction (a far point along it), never for a panned target.
+    environment.update(orbit.art ? {position: camera.position.clone().sub(orbit.state.target).multiplyScalar(100).add(orbit.state.target)} : camera);
     const started = performance.now();
     renderer.render(scene, camera);
     renderMs.push(performance.now() - started);
@@ -1819,10 +2024,15 @@ export function createScene(host, options) {
     gizmo.update();
     mirrorCamera();
     root.setAttribute('data-frames', String(frames));
-    root.setAttribute('data-tweens', String(tweens.size));
-    if (active) invalidate();
-    // A refit waits for the stage to settle: the stage stays busy until it has run.
-    else if (!settleTimer) root.setAttribute('data-rendering', 'idle');
+    root.setAttribute('data-tweens', String(walking ? walk.moving().length : 0));
+    // A hidden page asks for no frame (onVisibility draws again when it is shown). People walking between
+    // publications ask for frames of their own: the stage is 'idle' for what waits on the camera and transitions.
+    if (active && !document.hidden) invalidate();
+    else {
+      if ((people || cycles) && !document.hidden) invalidate(true);
+      // A refit waits for the stage to settle: the stage stays busy until it has run.
+      if (!settleTimer) root.setAttribute('data-rendering', 'idle');
+    }
     options.onEvent('frame', {frames});
     if (firstWithContent) options.onEvent('ready');
   }
@@ -1836,8 +2046,14 @@ export function createScene(host, options) {
   // ---- explode ----------------------------------------------------------------------------
 
   function setExplode(value, animate = true) {
-    finishIntro();
     const target = Math.min(Math.max(value, 0), 1);
+    // Art mode: the vertical factor is the art's (SPEC §3); the spread of the slabs changes no geometry.
+    if (art) {
+      explode = target;
+      root.setAttribute('data-explode', explode.toFixed(2));
+      return;
+    }
+    finishIntro();
     if (Math.abs(target - explode) < 1e-4 && !explodeTween) return;
     if (!layout || !animate || reduced()) {
       explodeTween = null;
@@ -1883,7 +2099,11 @@ export function createScene(host, options) {
   const levelLabelPx = () => (height < 820 ? 110 : 160);
   /** Around a focused object: it stays well inside the free part of the stage. */
   const PAD_FOCUS = {left: 120, right: 120, top: 90, bottom: 80};
-  const probe = camera.clone();
+  let probe = camera.clone();
+  /** The azimuth and elevation of the overview: the main view of the art, or DEFAULT_VIEW. */
+  const mainView = () => (art ? {az: art.az, el: art.el} : DEFAULT_VIEW);
+  /** What the overview of art mode frames and the pan keeps over: the art's own frame (setArt), else the model's silhouette. */
+  const artFrame = () => (art && Array.isArray(art.frame) && art.frame.length >= 2 ? art.frame : null);
 
   /**
    * Rectangles over the stage that the picture keeps clear of, in pixels of the stage: the HUD, the tabs,
@@ -1926,14 +2146,7 @@ export function createScene(host, options) {
 
   function placeProbe(target, dist, az, el) {
     probe.fov = camera.fov;
-    probe.aspect = width / Math.max(height, 1);
-    probe.position.set(target.x + dist * Math.sin(az) * Math.cos(el), target.y + dist * Math.sin(el), target.z + dist * Math.cos(az) * Math.cos(el));
-    probe.up.set(0, 1, 0);
-    probe.lookAt(target);
-    probe.near = Math.max(dist / 200, 0.5);
-    probe.far = dist * 6 + 4000;
-    probe.updateProjectionMatrix();
-    probe.updateMatrixWorld();
+    placeCamera(probe, target, dist, az, el, width / Math.max(height, 1), orbit.limits.reach);
   }
 
   /** Pixels of points seen from the probe. */
@@ -2052,7 +2265,14 @@ export function createScene(host, options) {
       const b = level.box;
       return [[b.minX, y, b.minZ], [b.maxX, y, b.minZ], [b.minX, y, b.maxZ], [b.maxX, y, b.maxZ]];
     });
-    return frameView(silhouette(layout, factor), DEFAULT_VIEW.az, DEFAULT_VIEW.el, PAD, rects, corners);
+    const frame = factor === k ? artFrame() : null;
+    const fitted = frameView(frame || silhouette(layout, factor), mainView().az, mainView().el, PAD, rects, frame ? [] : corners);
+    // Art mode: the overview is the zoom of 1×, a quarter of its distance the closest (ART_ZOOM_MAX).
+    if (orbit.art && factor === k) {
+      orbit.limits.distMax = fitted.dist;
+      orbit.limits.distMin = fitted.dist / ART_ZOOM_MAX;
+    }
+    return fitted;
   }
 
   function overview(animate = true) {
@@ -2061,7 +2281,7 @@ export function createScene(host, options) {
     overviewMode = true;
     focusId = null;
     const fitted = fitAll();
-    const goal = {target: fitted.target, dist: fitted.dist, az: nearestAngle(orbit.state.az, DEFAULT_VIEW.az), el: DEFAULT_VIEW.el};
+    const goal = {target: fitted.target, dist: fitted.dist, az: nearestAngle(orbit.state.az, mainView().az), el: mainView().el};
     if (animate) orbit.glideTo(goal);
     else orbit.set(goal);
     invalidate();
@@ -2227,6 +2447,7 @@ export function createScene(host, options) {
    * routes leave its level are framed instead: never the whole mine shrunk into a strip.
    */
   function zoneGoal(zoneName, rects = coverRects(), walkers = null) {
+    if (art) return artZoneGoal(zoneName, rects, walkers);
     const area = zoneArea(zoneName, walkers);
     if (!area) return null;
     const label = area.level ? [levelLabelPoint(area.level, orbit.state.az)] : [];
@@ -2243,6 +2464,140 @@ export function createScene(host, options) {
     }
     root.setAttribute('data-framing', `${zoneName} min:${Math.round(minDist)} ${tried.join(' ')}`);
     return fitted;
+  }
+
+  /**
+   * Art mode: a zone is framed close (no rule of one horizon width here): its workings, its tag, the people in it
+   * (and those walking out of it) and its face chamber (36 m on the west side of a dead end, mine-art README), at most
+   * ART_FRAME_ZOOM times the overview, in the part of the stage the panel, the headline and the rail leave free.
+   */
+  function artZoneGoal(zoneName, rects, walkers) {
+    // During a withdrawal the people walking out of the zone are framed with it.
+    const area = zoneArea(zoneName, walkers || new Set(walkersOf(zoneName)));
+    if (!area) return null;
+    const points = [...area.core];
+    const nodesAttr = state.attributes && state.attributes.mine ? state.attributes.mine.nodes || {} : {};
+    for (const local of view.zones[zoneName].workings) {
+      const line = layout.workings.get(local);
+      for (const node of [line.from, line.to]) {
+        const at = layout.nodes.get(node);
+        if (!at || !nodesAttr[node] || nodesAttr[node].node_kind !== 'dead_end') continue;
+        const p = toScene(layout, at, k);
+        for (const [dx, dz] of [[-44, -16], [-44, 18], [16, -16], [16, 18]]) points.push([p[0] + dx, p[1], p[2] + dz], [p[0] + dx, p[1] + 14, p[2] + dz]);
+      }
+    }
+    const fitted = artFit(points, rects);
+    root.setAttribute('data-framing', `${zoneName} art:${Math.round((orbit.limits.distMax / fitted.dist) * 100) / 100}`);
+    return fitted;
+  }
+
+  /** Art mode: the view of `points` in the free stage, at most ART_FRAME_ZOOM times the overview, centred when it fits. */
+  function artFit(points, rects) {
+    const minDist = orbit.limits.distMax / ART_FRAME_ZOOM;
+    let fitted = frameView(points, orbit.state.az, orbit.state.el, focusPad(rects), rects);
+    {
+      // The middle of what is framed in the middle of the free stage (below the headline, beside the panel and the
+      // rail), at the distance found, never closer than ART_FRAME_ZOOM.
+      const {right, up, forward} = orbit.axes;
+      const vectors = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+      const range = (axis) => [Math.min(...vectors.map((v) => v.dot(axis))), Math.max(...vectors.map((v) => v.dot(axis)))];
+      const [u0, u1] = range(right);
+      const [v0, v1] = range(up);
+      const w = vectors.reduce((sum, v) => sum + v.dot(forward), 0) / vectors.length;
+      const mid = new THREE.Vector3().addScaledVector(right, (u0 + u1) / 2).addScaledVector(up, (v0 + v1) / 2).addScaledVector(forward, w);
+      fitted = centreIn(mid.toArray(), Math.max(fitted.dist, minDist), rects);
+    }
+    return fitted;
+  }
+
+  /**
+   * Art mode, a withdrawal: the people walking out of `zoneName` (walkOrigins) and the next stretch of their published
+   * routes (ART_WALK_AHEAD_M), centred in the free stage.
+   */
+  function artWalkGoal(zoneName, rects = coverRects()) {
+    const names = walkersOf(zoneName);
+    if (names.length === 0) return null;
+    const points = [];
+    for (const name of names) {
+      const at = workerPoint(name);
+      if (!at) continue;
+      points.push([at[0], at[1], at[2]], [at[0], at[1] + 8, at[2]]);
+      const thing = thingByName(state.model, name);
+      const worker = view.workers[name];
+      const pieces = thing ? geo.routePieces(routeOf(state.model, thing), {working: worker.at, offsetM: worker.offsetM}, (local) => {
+        const line = layout.workings.get(local);
+        return line ? {from: line.from, to: line.to, lengthM: line.lengthM, total: line.total} : null;
+      }) : [];
+      let left = ART_WALK_AHEAD_M;
+      for (const piece of pieces) {
+        if (left <= 0) break;
+        const line = layout.workings.get(piece.working);
+        const span = Math.abs(piece.end - piece.start);
+        const end = piece.start + Math.sign(piece.end - piece.start) * Math.min(span, left);
+        const scenePoints = sceneLine(layout, line, k);
+        for (let i = 0; i <= 4; i += 1) points.push(geo.pointAt(scenePoints, line.cum, piece.start + ((end - piece.start) * i) / 4).point);
+        left -= span;
+      }
+    }
+    if (points.length === 0) return null;
+    const fitted = artFit(points, rects);
+    root.setAttribute('data-framing', `walk:${zoneName} art:${Math.round((orbit.limits.distMax / fitted.dist) * 100) / 100}`);
+    return fitted;
+  }
+
+  /** The people still walking out who were in `zoneName` when their walk began. */
+  function walkersOf(zoneName) {
+    return [...walkOrigins].filter(([name, zone]) => zone === zoneName && view.workers[name] && view.workers[name].at
+      && view.workers[name].status === 'moving_to_exit').map(([name]) => name).sort();
+  }
+
+  /** The zone with the most people still walking out of it, or null. */
+  function busiestWalk() {
+    const counts = new Map();
+    for (const zone of new Set(walkOrigins.values())) counts.set(zone, walkersOf(zone).length);
+    const best = [...counts].filter(([, count]) => count > 0).sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1))[0];
+    return best ? best[0] : null;
+  }
+
+  /** Who walks out of which zone: a person is counted for the zone it stood in when it began to walk out. */
+  function trackWalkOrigins(previousRun) {
+    if (!view || previousRun !== view.run) walkOrigins.clear();
+    if (!view) return;
+    const zoneOf = new Map();
+    for (const [name, zone] of Object.entries(view.zones)) for (const local of zone.workings) zoneOf.set(local, name);
+    for (const [name, worker] of Object.entries(view.workers)) {
+      if (walkOrigins.has(name) || worker.status !== 'moving_to_exit' || !worker.at || !zoneOf.has(worker.at)) continue;
+      walkOrigins.set(name, zoneOf.get(worker.at));
+    }
+  }
+
+  /**
+   * Art mode, while a withdrawal is followed: the camera frames the walk again, once, when one of its people has left
+   * the free stage (never a continuous follow); the zone with the most people still walking when that one is empty.
+   */
+  function followWalk() {
+    if (!artOn || !walkFollow || !view || !width || orbit.gliding) return;
+    if (performance.now() - lastTouch < HANDS_OFF_MS || focusId !== walkFollow.focusId) {
+      walkFollow = null;
+      return;
+    }
+    let zone = walkFollow.zone;
+    if (walkersOf(zone).length === 0) zone = busiestWalk();
+    if (!zone) {
+      walkFollow = null;
+      return;
+    }
+    const rects = coverRects();
+    const free = freeRect(rects);
+    const points = walkersOf(zone).map((name) => workerPoint(name)).filter(Boolean);
+    const out = projectGoal(points).some((p) => !p.front || p.x < free.x || p.x > free.x + free.w || p.y < free.y || p.y > free.y + free.h);
+    if (!out && zone === walkFollow.zone) return;
+    const goal = artWalkGoal(zone, rects);
+    if (!goal) return;
+    walkFollow.zone = zone;
+    orbit.glideTo({target: goal.target, dist: goal.dist}, ART_FOLLOW_MS);
+    root.setAttribute('data-walk-reframes', String(Number(root.getAttribute('data-walk-reframes') || 0) + 1));
+    invalidate();
   }
 
   /** The view that frames an object (full thingId) or a level (local name); null when it is not drawn. */
@@ -2288,8 +2643,9 @@ export function createScene(host, options) {
       points = [exitPoint(thing.name)];
     }
     if (points.length === 0) return null;
-    // One mark (a person, a sensor, an exit): in the middle of the free stage at the smallest distance of its kind.
-    if (points.length === 1) return centreIn(points[0], minDist, rects);
+    // One mark (a person, a sensor, an exit): in the middle of the free stage at the smallest distance of its kind; in
+    // art mode with a small surrounding, at ART_FRAME_ZOOM times the overview.
+    if (points.length === 1) return centreIn(points[0], art ? orbit.limits.distMax / ART_FRAME_ZOOM : minDist, rects);
     return fitPoints(points, minDist, rects);
   }
 
@@ -2507,8 +2863,10 @@ export function createScene(host, options) {
     if (near) return `${LOADER}${near.zone}`;
     const machine = overLoader(x, y);
     if (machine) return `${LOADER}${machine}`;
+    // The art: its invisible pick meshes of the workings (the drawn floors), nearest first.
+    if (artOn && artEnv) return pickArtWorking(x, y);
     const hit = stoneDistance(x, y);
-    const stoneAt = hit ? hit.distance : Infinity;
+    const stoneAt = hit ? viewDepth(hit.point) : Infinity;
     // The floor of a channel lies under the top face: stone in front of it by up to the channel's width,
     // seen at the camera's elevation, still lets the channel be picked.
     const tolerance = DIMS.half * 1.6 + DIMS.depth / Math.tan(Math.max(orbit.state.el, 0.12)) + 8;
@@ -2527,7 +2885,7 @@ export function createScene(host, options) {
         const reach = Math.max(DIMS.half * scale + 2, 6);
         if (d > reach) continue;
         const point = new THREE.Vector3(...a3.map((v, j) => v + (b3[j] - v) * t));
-        const distance = camera.position.distanceTo(point);
+        const distance = viewDepth(point);
         if (stoneAt + tolerance < distance) continue;
         if (!chosen || d < chosen.d) chosen = {d, thingId: view.workings[name].thingId};
       }
@@ -2568,6 +2926,9 @@ export function createScene(host, options) {
   // ---- input ----------------------------------------------------------------------------
 
   let dragging = null;
+  // Art mode: the pointers down on the canvas (two of them pinch: zoom about their middle, pan with it).
+  const touches = new Map();
+  let pinch = null;
   const local = (event) => {
     const rect = canvas.getBoundingClientRect();
     return {x: event.clientX - rect.left, y: event.clientY - rect.top};
@@ -2578,15 +2939,38 @@ export function createScene(host, options) {
     finishIntro();
     canvas.focus({preventScroll: true});
     const at = local(event);
+    touches.set(event.pointerId, at);
+    canvas.setPointerCapture(event.pointerId);
+    if (orbit.art && touches.size === 2) {
+      // A second finger: the drag becomes a pinch.
+      const [p, q] = [...touches.values()];
+      pinch = {d: Math.hypot(p.x - q.x, p.y - q.y), x: (p.x + q.x) / 2, y: (p.y + q.y) / 2};
+      dragging = null;
+      return;
+    }
+    if (touches.size > 1) return;
     dragging = {
       id: event.pointerId, x: at.x, y: at.y, startX: at.x, startY: at.y, moved: false, t: performance.now(),
-      kind: event.button === 2 || event.shiftKey ? 'pan' : 'rotate',
+      // Art mode has no rotation: every drag pans.
+      kind: orbit.art || event.button === 2 || event.shiftKey ? 'pan' : 'rotate',
     };
-    canvas.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener('pointermove', (event) => {
     const at = local(event);
     pointer = at;
+    if (touches.has(event.pointerId)) touches.set(event.pointerId, at);
+    if (pinch && touches.size === 2) {
+      const [p, q] = [...touches.values()];
+      const d = Math.hypot(p.x - q.x, p.y - q.y);
+      const mid = {x: (p.x + q.x) / 2, y: (p.y + q.y) / 2};
+      if (pinch.d > 0 && d > 0) orbit.zoom(pinch.d / d, true, {x: mid.x, y: mid.y, width, height});
+      orbit.drag('pan', mid.x - pinch.x, mid.y - pinch.y, height, 0);
+      pinch = {d, x: mid.x, y: mid.y};
+      userMoved();
+      hideTip();
+      invalidate();
+      return;
+    }
     if (dragging && dragging.id === event.pointerId) {
       const dx = at.x - dragging.x;
       const dy = at.y - dragging.y;
@@ -2605,6 +2989,8 @@ export function createScene(host, options) {
     updateHover(at.x, at.y);
   });
   const endDrag = (event) => {
+    touches.delete(event.pointerId);
+    if (touches.size < 2) pinch = null;
     if (!dragging || dragging.id !== event.pointerId) return;
     const wasMoved = dragging.moved;
     dragging = null;
@@ -2639,7 +3025,9 @@ export function createScene(host, options) {
     event.preventDefault();
     finishIntro();
     const factor = Math.exp(Math.max(Math.min(event.deltaY, 200), -200) * 0.0015);
-    orbit.zoom(factor, false);
+    // Art mode: smoothed, towards the pointer (a pinch of a touchpad comes as a wheel with Ctrl).
+    if (orbit.art) orbit.zoom(factor, true, {...local(event), width, height});
+    else orbit.zoom(factor, false);
     userMoved();
     invalidate();
   }, {passive: false});
@@ -2648,6 +3036,17 @@ export function createScene(host, options) {
     const step = 15 * DEG;
     const panBy = orbit.state.dist * 0.12;
     let handled = true;
+    // Art mode: the arrows pan along the screen (with or without Shift); there is no rotation.
+    if (orbit.art && event.key.startsWith('Arrow')) {
+      const move = {ArrowLeft: [-panBy, 0], ArrowRight: [panBy, 0], ArrowUp: [0, panBy], ArrowDown: [0, -panBy]}[event.key];
+      if (move) {
+        event.preventDefault();
+        orbit.pan(move[0], move[1]);
+        userMoved();
+        invalidate();
+        return;
+      }
+    }
     switch (event.key) {
       case 'ArrowLeft': if (event.shiftKey) orbit.pan(-panBy, 0); else orbit.rotate(step, 0); break;
       case 'ArrowRight': if (event.shiftKey) orbit.pan(panBy, 0); else orbit.rotate(-step, 0); break;
@@ -2742,7 +3141,8 @@ export function createScene(host, options) {
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     camera.aspect = width / height;
-    camera.updateProjectionMatrix();
+    if (orbit.art) orbit.apply();
+    else camera.updateProjectionMatrix();
     obstaclesAt = 0;
     if (pendingFocus && layout) {
       const id = pendingFocus;
@@ -2766,6 +3166,292 @@ export function createScene(host, options) {
   // Panels that unfold over the stage change no size of the stage: the body names them.
   const coverObserver = new MutationObserver(() => settleSoon('panel'));
   coverObserver.observe(document.body, {attributes: true, attributeFilter: ['data-stand', 'data-panel', 'data-sheet', 'data-rail', 'data-situation']});
+
+  // ---- a hidden page -----------------------------------------------------------------------
+
+  /** Shown again: the newest published state at once (no queue of publications is replayed), then one frame. */
+  const onVisibility = () => {
+    if (document.hidden || disposed) return;
+    snapMotion();
+    if (orbit.gliding) orbit.set(orbit.goal);
+    spritesDirty = true;
+    invalidate();
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+
+  // ---- art mode ----------------------------------------------------------------------------
+
+  /**
+   * Art mode on (`spec`: {az, el, k, frame} of the art's main view; az and el in radians, missing fields from
+   * ART_DEFAULT) or off (null): the camera becomes the orthographic rig of artcamera.js (pan and zoom only) or the
+   * perspective orbit again, the vertical factor the art's k or the spread of the slabs, and the stage returns to the
+   * overview. `frame` (optional): scene points [x, y, z] that the overview (1×) frames and the pan stays over instead
+   * of the model's silhouette, e.g. the corners of the MainView's rectangle at its target. Phase II calls it when the
+   * art's GLB matches the topology, with the values read from the GLB (scene.extras.k, the MainView camera node).
+   */
+  function setArt(spec) {
+    // A running intro ends; one still held (waiting for the first state or the art) starts in the new picture.
+    if (intro && !intro.hold) finishIntro();
+    const next = spec ? {
+      az: Number.isFinite(spec.az) ? spec.az : ART_DEFAULT.az,
+      el: Number.isFinite(spec.el) ? spec.el : ART_DEFAULT.el,
+      k: Number.isFinite(spec.k) && spec.k > 0 ? spec.k : ART_DEFAULT.k,
+      frame: Array.isArray(spec.frame) ? spec.frame.filter((p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)) : null,
+    } : null;
+    if (!next && !art) return;
+    art = next;
+    explodeTween = null;
+    const aspect = width && height ? width / height : 1;
+    if (art) {
+      camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 10000);
+      // The custom fields of placeCamera: dist means the same as for the perspective orbit.
+      camera.fov = FOV;
+      camera.aspect = aspect;
+      orbit = createArtRig(camera, {reducedMotion: reduced, az: art.az, el: art.el});
+      k = art.k;
+    } else {
+      camera = new THREE.PerspectiveCamera(FOV, aspect, 1, 10000);
+      orbit = createOrbit(camera, {reducedMotion: reduced});
+      k = verticalFactor(explode);
+    }
+    probe = camera.clone();
+    root.toggleAttribute('data-art', Boolean(art));
+    gizmo.setVertical(k);
+    if (layout) {
+      applyK();
+      overview(false);
+      if (view && state && state.model) canvas.setAttribute('aria-label', summary());
+    }
+    spritesDirty = true;
+    invalidate();
+  }
+
+  // ---- the illustrated mine (env.glb of the art) ------------------------------------------------
+
+  /** True when the art's topology signature equals the one of the live twins (the art was built for this mine). */
+  function artMatches(next = state) {
+    if (!artHeader || !next || !next.model || !next.attributes || !next.attributes.mine) return false;
+    if (artHeader.extras.mineArt !== 1) return false;
+    const signature = artSignature(thingsOfKind(next.model, 'working'), next.attributes.mine.nodes || {});
+    return Boolean(signature) && signature.sha1 === artHeader.extras.topology;
+  }
+
+  /** The origin of the art (its GLB's cx, cy, zTop), for a layout of the topology it was built for. */
+  function artOrigin() {
+    const extras = artHeader ? artHeader.extras : {};
+    return {cx: extras.cx, cy: extras.cy, zTop: Number.isFinite(extras.zTop) ? extras.zTop : 0};
+  }
+
+  /** Show the art when it was built for this topology, else the procedural scene of variant 3 (async: loads once). */
+  async function checkArt() {
+    if (disposed || !layout || artHeader === undefined) {
+      maybeStartIntro();
+      return;
+    }
+    const match = artMatches();
+    if (!match) {
+      if (artOn) disableArtEnv();
+      root.setAttribute('data-art-env', 'off');
+      maybeStartIntro();
+      return;
+    }
+    if (artOn) {
+      applyArtVisibility();
+      return;
+    }
+    root.setAttribute('data-art-env', 'loading');
+    if (!artEnv) {
+      if (!artEnvLoading) {
+        const anisotropy = low ? 1 : Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        artEnvLoading = loadArtEnv(artHeader, {anisotropy, edgeColor: TOKEN.ink0, light: low}).then((env) => {
+          artEnv = env;
+        }).catch(() => {
+          artHeader = null;
+        });
+      }
+      await artEnvLoading;
+      if (disposed) return;
+      if (!artEnv || !artMatches() || artOn || !layout) {
+        if (!artEnv) root.setAttribute('data-art-env', 'off');
+        maybeStartIntro();
+        return;
+      }
+    }
+    enableArtEnv();
+  }
+
+  /** The art on: its camera (MainView), its k and origin, its environment instead of the slabs, its actors. */
+  function enableArtEnv() {
+    const origin = artOrigin();
+    if ([['cx', layout.cx], ['cy', layout.cy], ['zTop', layout.zTop]].some(([key, value]) => Math.abs(origin[key] - value) > 1e-6)) {
+      layout = buildLayout(state.model, state.attributes.mine, origin);
+      buildStatic();
+    }
+    artOn = true;
+    if (!artGroup.children.includes(artEnv.group)) artGroup.add(artEnv.group);
+    loaderCandidates = new Map();
+    loaderPlaces = new Map();
+    loaderRun = null;
+    setArt({az: artEnv.view.az, el: artEnv.view.el, k: artEnv.extras.k, frame: artEnv.view.frame});
+    applyArtVisibility();
+    placeLoaders();
+    gizmo.setArtNotes({machine: ART_MACHINE_FACTOR, people: Math.round(ART_FIGURE_FACTOR * 10) / 10});
+    root.setAttribute('data-art-env', 'on');
+    actors.loadFigure(ART_URL('actors/worker.glb'), {scale: 1, maxCycles: ART_MAX_CYCLES}).then((taken) => {
+      if (disposed) return;
+      if (!artOn) actors.clearRig();
+      root.setAttribute('data-art-figure', taken && actors.rigged ? 'worker.glb' : 'none');
+      spritesDirty = true;
+      invalidate();
+    });
+    loadArtMachines();
+    if (view) buildOverlays();
+    setLabels();
+    spritesDirty = true;
+    invalidate();
+    maybeStartIntro();
+  }
+
+  /** Back to the procedural scene of variant 3 (another topology). */
+  function disableArtEnv() {
+    artOn = false;
+    setArt(options.art || null);
+    actors.clearRig();
+    gizmo.setArtNotes(null);
+    loaderCandidates = state && state.model && !actors.equipment ? candidatesOfLoaders() : new Map();
+    loaderPlaces = new Map();
+    loaderRun = null;
+    applyArtVisibility();
+    placeLoaders();
+    if (view) {
+      chooseLoaderPlaces();
+      buildOverlays();
+    }
+    setLabels();
+    invalidate();
+  }
+
+  /** What the art replaces is hidden while it is shown: the slabs, the ramps, the desk, the massif, the zone loaders. */
+  function applyArtVisibility() {
+    const on = artOn;
+    for (const group of levelGroups) {
+      for (const child of group.children) if (!overlayGroups.includes(child)) child.visible = !on;
+    }
+    interGroup.visible = !on;
+    if (desk) desk.visible = !on;
+    if (on) loaders.group.visible = false;
+    else if (!intro) loaders.group.visible = true;
+    environment.group.visible = !on && Boolean(layout);
+    artGroup.visible = on;
+  }
+
+  /** The machines of the art at their anchors: the loaders of the zones (lamps by work state), the parked truck and drill. */
+  function loadArtMachines() {
+    if (artMachines) return;
+    if (artMachinesLoading || !artEnv) return;
+    const kinds = ['lhd', 'truck', 'drill'];
+    artMachinesLoading = Promise.all(kinds.map((kind) => loadArtMachine(ART_URL(`actors/${kind}.glb`)).catch(() => null))).then((loaded) => {
+      if (disposed) return;
+      const byKind = Object.fromEntries(kinds.map((kind, i) => [kind, loaded[i]]));
+      const group = new THREE.Group();
+      group.name = 'art-machines';
+      const zone = [];
+      const decor = [];
+      for (const [name, anchor] of artEnv.anchors) {
+        const kind = anchor.extras.kind || name.split('_')[0];
+        const source = byKind[kind];
+        if (!source) continue;
+        const made = source.make();
+        made.group.position.copy(anchor.position);
+        made.group.quaternion.copy(anchor.quaternion);
+        made.group.updateMatrixWorld(true);
+        group.add(made.group);
+        const entry = {name, kind, zone: anchor.extras.zone || null, made, light: 0, fade: null};
+        if (entry.zone) zone.push(entry);
+        else decor.push(entry);
+      }
+      artGroup.add(group);
+      artMachines = {group, zone, decor};
+      updateArtLamps(false);
+      root.setAttribute('data-art-machines', String(zone.length + decor.length));
+      invalidate();
+    });
+  }
+
+  /** The lamps of a zone's loader: lit while the zone's published work state is `working`, dark otherwise. */
+  function updateArtLamps(animate) {
+    if (!artMachines) return;
+    for (const entry of artMachines.zone) {
+      const zone = view && view.hasSnapshot ? view.zones[entry.zone] : null;
+      const lit = zone && zone.workState === 'working' ? 1 : 0;
+      const goal = entry.fade ? entry.fade.to : entry.light;
+      if (goal === lit) continue;
+      if (animate && !reduced()) entry.fade = {from: entry.light, to: lit, start: null};
+      else {
+        entry.fade = null;
+        entry.light = lit;
+      }
+    }
+    applyArtLamps();
+  }
+
+  function applyArtLamps() {
+    if (!artMachines) return;
+    for (const entry of [...artMachines.zone, ...artMachines.decor]) {
+      const {lampMaterial, lampOn, lampOff} = entry.made;
+      if (lampMaterial) lampMaterial.color.copy(lampOff).lerp(lampOn, entry.light);
+    }
+  }
+
+  /** One frame of the lamps' fades (ART_LAMP_MS, once per change); true while one runs. */
+  function stepArtLamps(now) {
+    if (!artMachines) return false;
+    let active = false;
+    for (const entry of artMachines.zone) {
+      if (!entry.fade) continue;
+      if (entry.fade.start === null) entry.fade.start = now;
+      const t = Math.min((now - entry.fade.start) / ART_LAMP_MS, 1);
+      entry.light = entry.fade.from + (entry.fade.to - entry.fade.from) * t;
+      if (t >= 1) entry.fade = null;
+      else active = true;
+    }
+    applyArtLamps();
+    return active;
+  }
+
+  /** The working whose pick mesh of the art lies under a screen point, if any. */
+  function pickArtWorking(x, y) {
+    raycaster.setFromCamera(new THREE.Vector2((x / width) * 2 - 1, 1 - (y / height) * 2), camera);
+    for (const hit of raycaster.intersectObjects(artEnv.picks, false)) {
+      const working = view.workings[hit.object.userData.working];
+      if (working) return working.thingId;
+    }
+    return null;
+  }
+
+  /** For tests: the height of the art's floor under each drawn figure, minus the height of its feet (metres). */
+  function floorGaps() {
+    if (!artOn || !artEnv) return null;
+    const figures = actors.info().figures;
+    const out = {};
+    const ray = new THREE.Raycaster();
+    for (const [name, feet] of Object.entries(figures.feet || {})) {
+      ray.set(new THREE.Vector3(feet[0], feet[1] + 4, feet[2]), new THREE.Vector3(0, -1, 0));
+      ray.far = 12;
+      const hit = ray.intersectObjects(artEnv.group.children, false)[0];
+      out[name] = hit ? Math.round((hit.point.y - feet[1]) * 100) / 100 : null;
+    }
+    return out;
+  }
+
+  // Read the header of the art at once: the stage decides between the art and the procedural scene when it knows it.
+  (options.artEnv === false ? Promise.reject(new Error('art off')) : readGlbHeader(ART_URL('env.glb'))).then((header) => {
+    artHeader = header;
+  }).catch(() => {
+    artHeader = null;
+  }).then(() => {
+    if (!disposed) checkArt();
+  });
 
   // ---- context loss ----------------------------------------------------------------------
 
@@ -2812,9 +3498,10 @@ export function createScene(host, options) {
       // Another mine (or the first one) under a running intro: it ends first.
       finishIntro();
       attributesRef = next.attributes;
-      layout = buildLayout(next.model, next.attributes.mine);
-      drawn.clear();
-      tweens.clear();
+      // A topology the art was built for is laid out in the art's origin (its GLB's cx, cy, zTop).
+      layout = buildLayout(next.model, next.attributes.mine, artMatches(next) ? artOrigin() : null);
+      walk.clear();
+      walkSnapshot = null;
       buildStatic();
       rebuilt = true;
       root.setAttribute('data-levels', String(layout ? layout.levels.length : 0));
@@ -2822,6 +3509,7 @@ export function createScene(host, options) {
       if (layout) {
         applyK();
         if (overviewMode || !width) overview(false);
+        checkArt();
         if (!root.hasAttribute('data-decor')) {
           root.setAttribute('data-decor', 'loading');
           loadLoaders();
@@ -2833,6 +3521,8 @@ export function createScene(host, options) {
     const linkNowOk = described.view.linkOk && !described.view.old;
     if (!linkNowOk && previousLinkOk) snapMotion();
     if (!rebuilt && described.signature === signature) {
+      // A publication that moved nobody still tells the walk when it came (the interval of the playback).
+      if (publishPlaces(previousRun)) invalidate();
       if (!linkNowOk) snapMotion();
       // The age of a last known state («7 мин назад») follows the model time; a label that changed is placed anew.
       if (Object.values(view.zones).some((zone) => zone.lastKnown) || Object.values(view.workings).some((working) => working.lastKnown)) {
@@ -2851,7 +3541,8 @@ export function createScene(host, options) {
     const calm = (v) => v.linkOk && !v.old;
     const animate = settled && calm(before) && calm(view) && !reduced();
     groups = groupWorkers(view.workers);
-    updateMotion(previousRun);
+    publishPlaces(previousRun);
+    trackWalkOrigins(previousRun);
     if (actors.update(view, layout, motionAllowed() && previousRun === view.run)) placeLoaders();
     if (!linkNowOk) snapMotion();
     if (!animate) {
@@ -2877,8 +3568,9 @@ export function createScene(host, options) {
     buildOverlays();
     buildRoutes(animate);
     // The loaders take their places once per run and then show the published work state of their zones.
-    chooseLoaderPlaces();
+    if (!artOn) chooseLoaderPlaces();
     updateLoaderLooks(animate);
+    updateArtLamps(animate);
     setLabels();
     old.hidden = !view.old;
     root.toggleAttribute('data-old', view.old);
@@ -2895,13 +3587,11 @@ export function createScene(host, options) {
       focus(id);
     }
     choreograph(Boolean(before) && before.hasSnapshot && !rebuilt);
+    queueMicrotask(followWalk);
     // The first picture of the mine on this page: the intro, unless motion is reduced or the data are old.
     if (introWanted && !introSpent) {
       if (!intro && rebuilt && width && !reduced()) holdIntro();
-      if (intro && intro.hold && (view.hasSnapshot || !calm(view))) {
-        if (view.hasSnapshot && calm(view) && !reduced() && !view.selected) startIntro();
-        else finishIntro();
-      }
+      maybeStartIntro();
     }
     spritesDirty = true;
     invalidate();
@@ -2958,6 +3648,20 @@ export function createScene(host, options) {
         root.setAttribute('data-auto-framed', now.incident);
         log(zone.name);
       }
+    } else if (now.situation === 'executing' && artOn && busiestWalk()) {
+      // Art mode: the people walking out of the zone with the most of them, close, and their way ahead.
+      const zone = busiestWalk();
+      const goal = width ? artWalkGoal(zone) : null;
+      if (goal) {
+        overviewMode = false;
+        focusId = thingByName(state.model, zone).thingId;
+        walkFollow = {zone, focusId};
+        orbit.glideTo({target: goal.target, dist: goal.dist});
+        invalidate();
+        log(`walk:${zone}`);
+      } else if (overview(true)) {
+        log('overview');
+      }
     } else if (now.situation === 'executing') {
       const zones = walkZones();
       const walkers = new Set(Object.keys(view.workers).filter((name) => view.workers[name].status === 'moving_to_exit'));
@@ -2986,7 +3690,7 @@ export function createScene(host, options) {
     } else {
       parts.push(SCENE.noState);
     }
-    return SCENE.canvas(parts);
+    return art ? SCENE.canvasArt(parts) : SCENE.canvas(parts);
   }
 
   // ---- lamps of the high quality ------------------------------------------------------------
@@ -3126,6 +3830,31 @@ export function createScene(host, options) {
       actors: actors.info(),
       // The massif (its far walls for the current camera) and the lamps: environment.js.
       environment: environment.info(),
+      // The camera: perspective (the orbit of variant 3) or orthographic (art mode), where it is and where it goes.
+      camera: {
+        type: camera.isOrthographicCamera ? 'orthographic' : 'perspective', gliding: orbit.gliding,
+        dist: orbit.state.dist, goalDist: orbit.goal.dist, target: ['x', 'y', 'z'].map((axis) => orbit.state.target[axis]),
+        goal: ['x', 'y', 'z'].map((axis) => orbit.goal.target[axis]), az: orbit.state.az / DEG, el: orbit.state.el / DEG,
+      },
+      // Art mode: its view, its vertical factor, the zoom now (1 at the overview … ART_ZOOM_MAX) and the pan bounds.
+      art: art ? {az: art.az / DEG, el: art.el / DEG, k, zoom: orbit.zoomFactor, zoomMax: ART_ZOOM_MAX, distMax: orbit.limits.distMax,
+        distMin: orbit.limits.distMin, pan: orbit.where(),
+        // The illustrated mine: shown, its origin, its machines and their lamps (0 dark … 1 lit), the floor under each figure.
+        env: artOn, origin: artOn ? {cx: layout.cx, cy: layout.cy, zTop: layout.zTop} : null,
+        machines: artMachines ? [...artMachines.zone, ...artMachines.decor].map((entry) => ({name: entry.name, kind: entry.kind, zone: entry.zone,
+          light: Math.round(entry.light * 1000) / 1000, world: entry.made.group.position.toArray().map((v) => Math.round(v * 10) / 10)})) : [],
+        floorGaps: floorGaps(),
+        // The state drawn over the floors: the materials of the overlay meshes (hazard decals, outlines, routes).
+        overlays: [...overlayGroups.flatMap((group) => group.children), ...interOverlay.children, ...routeMeshes].map((mesh) => {
+          const named = Object.entries(materials).find(([, value]) => value === mesh.material)
+            || Object.entries(materials.frame).map(([key, value]) => [`frame.${key}`, value]).find(([, value]) => value === mesh.material);
+          return {material: named ? named[0] : 'transition', polygonOffset: Boolean(mesh.material.polygonOffset), order: mesh.renderOrder};
+        })} : null,
+      // The people's playback buffer (walk.js) and where each person is drawn now: [working, offset, facing, moving].
+      walk: {...walk.info(), at: view ? Object.fromEntries(Object.keys(view.workers).filter((name) => view.workers[name].at).map((name) => {
+        const place = currentPosition(name);
+        return [name, place ? [place.working, Math.round(place.offsetM * 1000) / 1000, place.facing, place.moving] : null];
+      })) : {}},
     };
   }
 
@@ -3135,11 +3864,13 @@ export function createScene(host, options) {
     intro = null;
     loaders.dispose();
     actors.dispose();
+    if (artEnv) artEnv.dispose();
     environment.dispose();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = 0;
     resizeObserver.disconnect();
     coverObserver.disconnect();
+    document.removeEventListener('visibilitychange', onVisibility);
     clearTimeout(settleTimer);
     settleTimer = 0;
     canvas.removeEventListener('webglcontextlost', onLost);
@@ -3157,6 +3888,7 @@ export function createScene(host, options) {
   root.setAttribute('data-quality', low ? 'low' : 'high');
   root.setAttribute('data-explode', explode.toFixed(2));
   root.setAttribute('data-rendering', 'idle');
+  if (options.art) setArt(options.art);
   gizmo.setVertical(k);
   resize();
 
@@ -3166,7 +3898,11 @@ export function createScene(host, options) {
       update(next);
       placeLamps();
     },
-    focus, overview, setExplode, measure, info, dispose,
+    focus, overview, setExplode, setArt, measure, info, dispose,
+    /** Art mode is on: the orthographic camera, pan and zoom only. */
+    get art() {
+      return Boolean(art);
+    },
     get explode() {
       return explode;
     },

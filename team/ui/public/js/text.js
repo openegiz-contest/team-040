@@ -88,7 +88,7 @@ export const VOCAB = {
   optionState: {inactive: 'не предложен', offered: 'предложен', executing: 'исполняется', done: 'исполнен', unavailable: 'недоступен'},
   forecastQuality: {full: 'по полным данным', partial: 'по неполным данным'},
   archiveRunState: {running: 'идёт', finished: 'завершён'},
-  completionReason: {withdrawal_done: 'вывод завершён', horizon_reached: 'достигнут горизонт расчёта', reset: 'прерван сбросом'},
+  completionReason: {withdrawal_done: 'вывод завершён', horizon_reached: 'достигнут горизонт расчёта', horizon: 'достигнут горизонт расчёта', reset: 'прерван сбросом'},
   incomparableReason: {condition_changed_after_decision: 'условие изменено после решения'},
   presetExpect: {detour: 'обход есть', no_path: 'пути нет'},
   conditionKind: {working_closed: 'закрыта', sensor_lost: 'без связи', instability: 'рост нестабильности'},
@@ -115,6 +115,12 @@ export const VOCAB = {
     'withdrawal.started': 'начат вывод персонала', 'withdrawal.finished': 'вывод персонала окончен',
     'worker.route_changed': 'изменён расчётный маршрут', 'worker.no_route': 'нет расчётного маршрута',
     'worker.out': 'работник вышел',
+    // the codes the simulation writes (team/sim/model.py, journal.py)
+    'run.finished': 'прогон завершён', 'decision.opened': 'решение открыто', 'decision.selected': 'вариант выбран',
+    'sensor.state_changed': 'изменилось состояние датчика', 'hazard.transition': 'изменилась опасность',
+    'work.changed': 'изменилась работа участка', 'withdrawal.changed': 'изменился вывод персонала',
+    'worker.exited': 'работник вышел', 'route.changed': 'изменён расчётный маршрут',
+    'worker.state_changed': 'изменилось состояние работника',
   },
   linkStatus: {ok: 'связь есть', degraded: 'связь ухудшилась', stale: 'данные устарели', unavailable: 'недоступна'},
   publications: {alive: 'публикации идут', stopped: 'публикации остановились', unknown: 'публикации: неизвестно'},
@@ -423,7 +429,8 @@ export function hazardCodeText(code) {
 }
 
 /**
- * "последнее известное: опасно в 00:13:30 (7 мин назад)", or an empty string when nothing is kept.
+ * "последнее известное: опасно в 00:13:30 (7 мин назад)", or an empty string when nothing is kept
+ * or the data are fresh (then the current state is the last known one).
  * The moment is the tick of the last assessment read as model time; its age is counted from `nowS`,
  * the model time of the shown snapshot (without it, the clock alone). The tick itself goes into a title
  * (lastKnownTitle).
@@ -432,6 +439,8 @@ export function hazardCodeText(code) {
  */
 export function lastKnownText(values, nowS) {
   if (typeof values.last_known_hazard_state !== 'string') return '';
+  // The simulation publishes the last assessment always; with fresh data it is the current state, said already.
+  if (values.data_quality === 'fresh') return '';
   const state = hazardCodeText(values.last_known_hazard_state);
   const at = tickSeconds(values.last_known_hazard_tick);
   return `последнее известное: ${state}${at === null ? '' : ` в ${clockAgo(at, nowS)}`}`;
@@ -504,9 +513,11 @@ export function egressText(values, labelOf) {
   return parts.length > 0 ? `${VOCAB.egress.ok}: ${parts.join(', ')}` : VOCAB.egress.ok;
 }
 
-/** "маршрут проходит через участок «опасно»", or an empty string. */
+/** "маршрут проходит через участок «опасно»", "…через места с неизвестным состоянием", or an empty string. */
 export function crossesText(values) {
   if (typeof values.egress_crosses !== 'string' || values.egress_crosses === 'normal') return '';
+  // `unknown` is also what the simulation publishes for a working without sensors: not necessarily a zone.
+  if (values.egress_crosses === 'unknown') return 'маршрут проходит через места с неизвестным состоянием';
   return `маршрут проходит через участок «${hazardCodeText(values.egress_crosses)}»`;
 }
 

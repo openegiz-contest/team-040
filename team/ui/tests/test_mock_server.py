@@ -322,7 +322,9 @@ class FixtureFilesTest(unittest.TestCase):
                     yield f"{name}/{state_name}[{i}]", fx, state, attributes, frame
 
     def test_generator_reproduces_committed_files(self):
-        self.assertEqual(sorted(p.stem for p in FIXTURES.glob("*.json")), sorted(SCENARIOS))
+        # sim_*.json are recorded from the simulation by tools/sim_fixtures.py (tests/test_sim_fixtures.py)
+        self.assertEqual(sorted(p.stem for p in FIXTURES.glob("*.json") if not p.stem.startswith("sim_")),
+                         sorted(SCENARIOS))
         with tempfile.TemporaryDirectory() as tmp:
             # another process with another hash seed must write the same bytes
             env = dict(os.environ, PYTHONHASHSEED="12345")
@@ -2442,7 +2444,8 @@ class ServerSurfaceTest(unittest.TestCase):
     def test_control_api_and_page(self):
         fast = SERVERS["fast"].scenario("detour")
         listing = fast.get("/__mock__/scenarios").json()
-        self.assertEqual(sorted(s["name"] for s in listing["scenarios"]), sorted(SCENARIOS))
+        self.assertEqual(sorted(s["name"] for s in listing["scenarios"] if not s["name"].startswith("sim_")),
+                         sorted(SCENARIOS))
         self.assertTrue(all(s["description"] for s in listing["scenarios"]))
         self.assertEqual(listing["current"], "detour")
         state = fast.state()

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import gzip
 import json
 import math
 import random
@@ -306,9 +307,13 @@ class Timeline:
         attributes = self.attribute_sets.get(self.attribute_set_name(), {}).get(thing_id)
         shift = self.shift_features()
         if attributes is None:
-            archived = self.archive.get(thing_id)
+            # a state may list run twins of its own (a finished run that differs per story);
+            # shift.runs holds local names or full thingIds, both are read
+            own = {t["thingId"]: t for t in self.states[self.state].get("archive", [])}
+            archived = own.get(thing_id) or self.archive.get(thing_id)
             local = thing_id.split(":", 1)[-1]
-            if archived is None or local not in value_of(shift, "runs", []):
+            runs = [r.split(":", 1)[-1] for r in value_of(shift, "runs", []) if isinstance(r, str)]
+            if archived is None or local not in runs:
                 return None
             thing = copy.deepcopy(archived)
             thing.update(policyId="default:basic_policy", _revision=2,
@@ -448,6 +453,20 @@ class Timeline:
         }
 
 
+
+def fixture_name(path: Path) -> str:
+    """The scenario name of a fixture file: name.json or name.json.gz."""
+    return path.name[:-len(".json.gz")] if path.name.endswith(".json.gz") else path.stem
+
+
+def read_fixture_bytes(path: Path, limit: int | None = None) -> bytes:
+    """The JSON bytes of a fixture file, gunzipped when it is name.json.gz; at most `limit` bytes when given."""
+    if path.name.endswith(".gz"):
+        with gzip.open(path, "rb") as f:
+            return f.read(limit) if limit else f.read()
+    data = path.read_bytes()
+    return data[:limit] if limit else data
+
 class App:
     def __init__(self, fixtures_dir: Path, public_dir: Path, interval_ms: int):
         self.fixtures_dir = fixtures_dir
@@ -465,15 +484,17 @@ class App:
     def scenarios(self) -> list[dict]:
         out = []
         decoder = json.JSONDecoder()
-        for path in sorted(self.fixtures_dir.glob("*.json")):
+        # Recorded fixtures (tools/sim_fixtures.py) are large and kept gzipped: name.json.gz.
+        paths = sorted([*self.fixtures_dir.glob("*.json"), *self.fixtures_dir.glob("*.json.gz")], key=fixture_name)
+        for path in paths:
             description = ""
             try:
-                head = path.read_bytes()[:4096].decode("utf-8", "ignore")
+                head = read_fixture_bytes(path, 4096).decode("utf-8", "ignore")
                 start = head.index('"_fixture":') + len('"_fixture":')
                 description = decoder.raw_decode(head[start:].lstrip())[0].get("description", "")
             except (ValueError, OSError):
                 pass
-            out.append({"name": path.stem, "description": description})
+            out.append({"name": fixture_name(path), "description": description})
         return out
 
     def load(self, name: str):
@@ -481,8 +502,10 @@ class App:
             raise KeyError(name)
         path = self.fixtures_dir / f"{name}.json"
         if not path.is_file():
+            path = self.fixtures_dir / f"{name}.json.gz"
+        if not path.is_file():
             raise KeyError(name)
-        fx = check_format(json.loads(path.read_text(encoding="utf-8")))
+        fx = check_format(json.loads(read_fixture_bytes(path).decode("utf-8")))
         with self.lock:
             self.scenario = name
             self.description = fx.get("_fixture", {}).get("description", "")

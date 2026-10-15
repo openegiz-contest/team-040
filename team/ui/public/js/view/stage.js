@@ -9,10 +9,12 @@
 // own choices (mode, quality, spread of the slabs) persist in localStorage.
 //
 // Mirrored on the stage element for tests, read-only: data-stage-mode,
-// data-quality, data-renderer, data-explode, data-rendering, data-levels,
+// data-quality, data-renderer, data-explode, data-rendering (active while the camera, a transition or a refit
+// runs; people walking between publications draw frames of their own, counted by data-tweens), data-levels,
 // data-workings, data-workers-drawn, data-camera, data-fallback, data-frames, data-hud-fold (the HUD folded to
 // icons beside the gizmo), data-loaders (the loaders of
-// the zones drawn), data-choreo (the last camera move that followed the situation of the shift).
+// the zones drawn), data-choreo (the last camera move that followed the situation of the shift), data-art (art mode:
+// one orthographic view, pan and zoom only; forced with `?art=ortho` in the address for development and tests).
 
 import {h, s, setAttrs, setText} from '../dom.js';
 import {STAGE} from '../text3d.js';
@@ -23,7 +25,19 @@ export const SLOW_FRAME_MS = 200;
 const SOFTWARE = /swiftshader|llvmpipe|softpipe|software|basic render/i;
 const EXPLODE_DEFAULT = 0.8;
 const MIRRORED = ['data-rendering', 'data-levels', 'data-workings', 'data-workers-drawn', 'data-camera', 'data-frames',
-  'data-tweens', 'data-routes', 'data-first-frame-ms', 'data-decor', 'data-loaders', 'data-choreo', 'data-intro'];
+  'data-tweens', 'data-routes', 'data-first-frame-ms', 'data-decor', 'data-loaders', 'data-choreo', 'data-intro', 'data-art'];
+
+/**
+ * Art mode asked for in the address: `?art=ortho` starts the scene with the orthographic camera of the art (the
+ * procedural scene); `?art=off` never shows the art of the mine (for comparisons). Else: the art when it matches.
+ */
+function artRequested() {
+  try {
+    return new URLSearchParams(window.location.search).get('art');
+  } catch (error) {
+    return null;
+  }
+}
 
 /** Icons of the HUD (16 px, stroked): the row folds to them while the dock is unfolded over a small stage. */
 const ICONS = {
@@ -124,11 +138,14 @@ export function mount(root, ctx) {
     setUi({quality: value});
   });
   const qualityField = h('label', {class: 'hud__field', for: 'stage-quality'}, h('span', {class: 'hud__caption', text: STAGE.quality}), qualitySelect);
+  const keyTerms = (list) => list.map(([keyName, what]) => [h('dt', {text: keyName}), h('dd', {text: what})]).flat();
+  const keyListEl = h('dl', null, keyTerms(STAGE.keyList));
+  let keysArt = false;
   const keys = h('details', {class: 'hud__keys', 'data-testid': 'stage-settings'},
     h('summary', {class: 'hud__btn', title: STAGE.settings, 'aria-label': STAGE.settings}, icon('settings'),
       h('span', {class: 'hud__text', text: STAGE.settings})),
     h('div', {class: 'hud__keys-body'}, qualityField, explodeField, h('p', {class: 'hud__keys-title', text: STAGE.keysTitle}),
-      h('dl', null, STAGE.keyList.map(([keyName, what]) => [h('dt', {text: keyName}), h('dd', {text: what})]))));
+      keyListEl));
   // Variant 3: the horizons are chosen on the rail of the stage (view/horizons.js); the HUD keeps 3D/Схема, the overview
   // and the settings (quality, the spread of the slabs, the keys).
   const tools = h('div', {class: 'hud__tools'}, explodeToggle, overviewButton, keys);
@@ -225,7 +242,9 @@ export function mount(root, ctx) {
   function onEvent(type) {
     if (type === 'frame') mirror();
     else if (type === 'ready') measureOnce();
-    else if (type === 'explode-key') toggleExplode();
+    else if (type === 'explode-key') {
+      if (!(instance && instance.art)) toggleExplode();
+    }
     else if (type === 'context-lost') {
       fallback = 'context-lost';
       apply();
@@ -245,6 +264,7 @@ export function mount(root, ctx) {
       if (loading !== token || mode !== '3d') return;
       instance = module.createScene(stage3d, {
         ctx, quality: wanted, explode: explodeValue(), reducedMotion, onEvent, intro: introAllowed,
+        art: artRequested() === 'ortho' ? {} : null, artEnv: artRequested() !== 'off',
       });
       introAllowed = false;
       builtQuality = wanted;
@@ -320,9 +340,17 @@ export function mount(root, ctx) {
   function mirror() {
     const source = instance ? instance.root : null;
     const attrs = {};
-    for (const name of MIRRORED) attrs[name] = source ? source.getAttribute(name) : null;
+    for (const name of MIRRORED) attrs[name] = source ? (source.hasAttribute(name) ? source.getAttribute(name) : null) : null;
     if (source) attrs['data-explode'] = source.getAttribute('data-explode');
     setAttrs(root, attrs);
+    // Art mode: the vertical factor is the art's (no spread of the slabs) and the keys pan instead of turning.
+    const art = Boolean(instance && instance.art);
+    explodeField.hidden = art;
+    explodeToggle.hidden = art;
+    if (art !== keysArt) {
+      keysArt = art;
+      keyListEl.replaceChildren(...keyTerms(art ? STAGE.keyListArt : STAGE.keyList));
+    }
   }
 
   // ---- requests of other views -------------------------------------------------------------

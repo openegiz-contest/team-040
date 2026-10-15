@@ -311,3 +311,7 @@ body:has(.stage[data-stage-mode="3d"]) #scheme-controls { display: none; }
 .s3[data-compact] .s3-label--working:not(.s3-label--problem):not(.is-selected),
 .s3[data-compact] .s3-label--sensor:not(.s3-label--problem):not(.is-selected) { font-size: 11px; }
 .s3[data-compact] .s3-label--loader, .s3[data-compact] .s3-label--decor { font-size: 11px; }
+
+/* The art of the mine (art mode with env.glb): the stage is never dimmed as a whole at a decision; only the
+   headline keeps its own local scrim (poster.css). */
+.centre:has(.s3[data-art-env="on"])::after { opacity: 0 !important; }

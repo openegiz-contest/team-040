@@ -24,8 +24,20 @@ export function presetsOf(state) {
       id: preset.id,
       label: typeof preset.label === 'string' && preset.label ? preset.label : preset.id,
       expect: preset.expect,
-      schedule: Array.isArray(preset.schedule) ? preset.schedule.filter((step) => step && typeof step === 'object') : [],
+      schedule: scheduleOf(preset),
     }));
+}
+
+/**
+ * The steps of a preset: a `schedule` of {at_sim_s, type, target}, or the one step the simulation
+ * publishes as {at_s, type, target} on the preset itself.
+ */
+function scheduleOf(preset) {
+  if (Array.isArray(preset.schedule)) return preset.schedule.filter((step) => step && typeof step === 'object');
+  if (typeof preset.type === 'string' && typeof preset.target === 'string') {
+    return [{at_sim_s: preset.at_s, type: preset.type, target: preset.target}];
+  }
+  return [];
 }
 
 /** What a command is aimed at, as written on the screen: the code of a twin, the label of a preset. */

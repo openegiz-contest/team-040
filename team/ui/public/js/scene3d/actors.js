@@ -20,10 +20,20 @@
 // person last walked; the marker stays above the helmet. A position that is not
 // fresh greys the figure and puts its lamp out. Two draw calls for all people.
 //
+// Walk cycle (mine-art SPEC §6). A figure model with an animation clip `walk`
+// (a loop, root still, stride per cycle in the clip's `extras.strideM`, and
+// optionally `idle`) is drawn per person as a skinned clone with its own mixer.
+// The walk plays only for a person who is moving between two different drawn
+// places (scene.js: the playback of walk.js), at the rate that makes one stride
+// cover the ground the person covers (no sliding feet), and fades to the idle
+// pose (held still) within FADE_MS when the person stops. Never under reduced
+// motion. A model without the clip (miner.glb) is merged and glides as before.
+//
 // Pure three.js and the layout; no DOM, no words.
 
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
+import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
 import {alongStep, pointOnWorking, stepBetween, stepLength} from './layout.js';
 
 /** A glide between two publications lasts as long as a person's (scene.js TWEEN_MS). */
@@ -40,14 +50,22 @@ export const FIGURE_SCALE = 2.5;
 const FIGURE_M = 1.8;
 /** A figure is drawn once it is at least this tall on the screen; at the overview the markers are enough. */
 export const FIGURE_PX = 28;
+/**
+ * Art mode (one orthographic view, at most 4× the overview): people are part of the illustration, drawn once they
+ * are this tall; the scene gives its threshold as source.figurePx.
+ */
+export const FIGURE_PX_ART = 14;
 /** People of one group (one stretch of a working) stand side by side across the channel, this far apart (scene m). */
 const SIDE_STEP = 2.4;
 const SIDE_MAX = 3.6;
 /** A marker stands this high over the floor (scene.js), and over the helmet of its figure when one is drawn. */
 const MARKER_LIFT = 6;
 const FIGURE_TOP = FIGURE_M * FIGURE_SCALE;
-const MARKER_OVER_FIGURE = FIGURE_TOP + 3.5;
+/** The marker stands this far over the helmet of a figure. */
+const OVER_HELMET = 3.5;
 const DEG = Math.PI / 180;
+/** The walk cycle fades in and out over this time (ms). */
+export const FADE_MS = 200;
 
 const LOOKS = new Set(['working', 'parked', 'stopped']);
 
@@ -155,9 +173,12 @@ function figureGeometry() {
  * The miner of miner.glb (assets/README.md: 1.8 m, feet at the origin, facing +X): every mesh painted with its
  * material's colour into one body, the cap lamp (`miner_lamp`) apart as the lens. Throws when it cannot be read.
  */
-async function loadFigure(url) {
+async function readFigure(url) {
   const {GLTFLoader} = await import('three/addons/loaders/GLTFLoader.js');
-  const gltf = await new GLTFLoader().loadAsync(url);
+  return new GLTFLoader().loadAsync(url);
+}
+
+function mergedFigure(gltf) {
   gltf.scene.updateMatrixWorld(true);
   const body = [];
   const lens = [];
@@ -201,9 +222,10 @@ const triangleCount = (geometry) => (geometry.index ? geometry.index.count : geo
  * @param {Object} options
  * @param {boolean} options.low                    the light quality: Lambert materials
  * @param {Object} options.source                  read when drawing: {layout, k, view, groups, camera, height,
- *                                                 position(name, now), tween(name), tweenMs}
+ *                                                 position(name) -> {working, offsetM, facing, moving}, viewDistance(point)}
+ * @param {() => boolean} [options.reducedMotion]   no walk cycle when true
  */
-export function createActors({low, source}) {
+export function createActors({low, source, reducedMotion = () => false}) {
   const group = new THREE.Group();
   group.name = 'actors';
   let names = [];                 // the loaders of the attributes; empty: the static symbols of the zones
@@ -234,7 +256,6 @@ export function createActors({low, source}) {
   let capacity = 0;
   let bodies = null;
   let lenses = null;
-  const facings = new Map();      // person -> {working, facing}: the way the person last walked
   const matrix = new THREE.Matrix4();
   const rotation = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
@@ -265,20 +286,91 @@ export function createActors({low, source}) {
     }
   }
 
-  /** The way a person faces: along the step being glided, else the way last walked on this working, else +1. */
-  function facingOf(name, position, now) {
-    const tween = source.tween(name);
-    if (tween && tween.start !== null) {
-      const t = Math.min((now - tween.start) / source.tweenMs, 1);
-      const piece = pieceAt(tween.pieces, tween.length * t);
-      const sign = Math.sign(piece.end - piece.start);
-      if (sign !== 0) {
-        facings.set(name, {working: piece.working, facing: sign});
-        return sign;
-      }
+  // ---- the walk cycle of a figure model with a `walk` clip (rig) -------------------------------------------------
+  /** {template, walk, idle, strideM, scale, top} of the rigged figure, or null (the merged figure, instanced). */
+  let rig = null;
+  /** person -> {root, mixer, walk, idle, materials, weight, last, speed} */
+  const riggedPeople = new Map();
+  let fading = false;
+  let lastDraw = null;
+
+  /** A clone of the rigged figure for one person, with its own mixer: the walk at weight 0, the idle pose held. */
+  function riggedPerson(name) {
+    if (riggedPeople.has(name)) return riggedPeople.get(name);
+    const root = cloneSkinned(rig.template);
+    const materials = [];
+    root.traverse((object) => {
+      if (!object.isMesh) return;
+      object.frustumCulled = false;
+      object.material = [].concat(object.material).map((material) => {
+        const own = material.clone();
+        // Its own colour, kept: a position that is not fresh multiplies it by the grey of DIMMED.
+        own.userData.baseColor = own.color ? own.color.clone() : null;
+        materials.push(own);
+        return own;
+      });
+      if (object.material.length === 1) object.material = object.material[0];
+    });
+    root.matrixAutoUpdate = true;
+    const mixer = new THREE.AnimationMixer(root);
+    const walk = mixer.clipAction(rig.walk);
+    walk.setEffectiveWeight(0);
+    walk.play();
+    const idle = rig.idle ? mixer.clipAction(rig.idle) : null;
+    if (idle) {
+      idle.setEffectiveWeight(1);
+      idle.timeScale = 0;
+      idle.play();
     }
-    const last = facings.get(name);
-    return last && last.working === position.working ? last.facing : 1;
+    mixer.update(0);
+    const entry = {root, mixer, walk, idle, materials, weight: 0, last: null, speed: 0, rate: 0};
+    riggedPeople.set(name, entry);
+    group.add(root);
+    return entry;
+  }
+
+  function dropRigged(name) {
+    const entry = riggedPeople.get(name);
+    if (!entry) return;
+    entry.mixer.stopAllAction();
+    entry.mixer.uncacheRoot(entry.root);
+    group.remove(entry.root);
+    entry.materials.forEach((material) => material.dispose());
+    riggedPeople.delete(name);
+  }
+
+  /**
+   * One frame of a rigged person at `point` (scene metres): the walk while the person moves between two different
+   * drawn places, at the rate that makes the stride cover the ground speed; a fade to the idle pose when it stops.
+   */
+  function animateRigged(entry, moving, dtMs) {
+    const p = entry.root.position;
+    if (entry.last && dtMs > 0 && dtMs < 250) {
+      const metresPerS = (p.distanceTo(entry.last) * 1000) / dtMs;
+      // Smoothed over about 120 ms: the frames of a software renderer are uneven.
+      const a = 1 - Math.exp(-dtMs / 120);
+      entry.speed += (metresPerS - entry.speed) * a;
+    } else {
+      entry.speed = 0;
+    }
+    entry.last = entry.last ? entry.last.copy(p) : p.clone();
+    const walking = moving && !reducedMotion();
+    const goal = walking ? 1 : 0;
+    if (reducedMotion()) entry.weight = goal;
+    else if (entry.weight !== goal) {
+      const stepW = dtMs / FADE_MS;
+      entry.weight = goal > entry.weight ? Math.min(entry.weight + stepW, 1) : Math.max(entry.weight - stepW, 0);
+    }
+    // One stride (strideM of the model, times its scale) per cycle of the clip: the feet keep to the ground. At most
+    // rig.maxCycles cycles a second (a faster honest rate looks frantic; above it the feet slide a little).
+    const stride = rig.strideM * rig.scale;
+    entry.rate = walking && stride > 0 ? Math.min((entry.speed * rig.walk.duration) / stride, rig.maxCycles * rig.walk.duration) : 0;
+    entry.walk.timeScale = entry.weight > 0 ? entry.rate : 0;
+    entry.walk.setEffectiveWeight(entry.weight);
+    if (entry.idle) entry.idle.setEffectiveWeight(1 - entry.weight);
+    if (entry.weight > 0 || walking) entry.mixer.update(Math.max(dtMs, 0) / 1000);
+    else entry.mixer.update(0);
+    return entry.weight > 0 && entry.weight < 1;
   }
 
   return {
@@ -291,10 +383,22 @@ export function createActors({low, source}) {
       glides.clear();
       return names.length > 0;
     },
-    /** The figure of miner.glb instead of the primitives (kept when it cannot be read); true when it was taken. */
-    async loadFigure(url) {
+    /**
+     * The figure of a model instead of the primitives (kept when it cannot be read); true when it was taken.
+     * A model with an animation clip `walk` becomes the rigged figure (walk cycle, see the header): `scale` is how
+     * many times it is drawn larger (a 1.8 m miner: FIGURE_SCALE; the 5 m worker of the art: 1); the stride of the
+     * cycle is the clip's extras.strideM (else the scene's extras.strideM, else 0.8 of the figure's height). Any
+     * other model is merged into one body (its `lamp` meshes the lens) and drawn instanced, as miner.glb.
+     */
+    async loadFigure(url, {scale = FIGURE_SCALE, maxCycles = Infinity} = {}) {
       try {
-        const next = await loadFigure(url);
+        const gltf = await readFigure(url);
+        const walkClip = (gltf.animations || []).find((clip) => clip.name === 'walk');
+        if (walkClip) {
+          this.useRig(gltf, {scale, maxCycles, source: url.split('/').pop()});
+          return true;
+        }
+        const next = mergedFigure(gltf);
         for (const mesh of [bodies, lenses]) {
           if (!mesh) continue;
           group.remove(mesh);
@@ -306,11 +410,41 @@ export function createActors({low, source}) {
         shapes.body.dispose();
         shapes.lens.dispose();
         shapes = next;
-        figureSource = 'miner.glb';
+        figureSource = url.split('/').pop();
         return true;
       } catch (error) {
         return false;
       }
+    },
+    /**
+     * The rigged figure from a loaded glTF ({scene, animations}) with a clip `walk` (and maybe `idle`). Phase II gives
+     * models/mine-art/actors/worker.glb through loadFigure; this is the same hook for a model built in memory.
+     */
+    useRig(gltf, {scale = FIGURE_SCALE, maxCycles = Infinity, source = 'rig'} = {}) {
+      const walkClip = (gltf.animations || []).find((clip) => clip.name === 'walk');
+      if (!walkClip) throw new Error('useRig: no clip "walk"');
+      for (const name of [...riggedPeople.keys()]) dropRigged(name);
+      const template = gltf.scene;
+      template.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(template);
+      const tall = Math.max(box.max.y - box.min.y, 1e-3);
+      const declared = [walkClip.userData && walkClip.userData.strideM, template.userData && template.userData.strideM]
+        .find((value) => Number.isFinite(value) && value > 0);
+      rig = {template, walk: walkClip, idle: (gltf.animations || []).find((clip) => clip.name === 'idle') || null,
+        strideM: declared || tall * 0.8, strideDeclared: Boolean(declared), scale, top: tall * scale, maxCycles, merged: figureSource};
+      figureSource = source;
+      if (bodies) bodies.visible = lenses.visible = false;
+    },
+    /** Back to the merged figure (instanced, no walk cycle): the rigged one is dropped. */
+    clearRig() {
+      if (!rig) return;
+      for (const name of [...riggedPeople.keys()]) dropRigged(name);
+      figureSource = rig.merged;
+      rig = null;
+    },
+    /** The rigged figure is in use (a model with a clip `walk`). */
+    get rigged() {
+      return Boolean(rig);
     },
     /** True when the loaders are the machines of the model (equipment twins), not the symbols of the zones. */
     get equipment() {
@@ -405,11 +539,19 @@ export function createActors({low, source}) {
 
     /** How high the marker of a group stands over the floor: over the helmets when its people are drawn. */
     liftOf(group) {
-      return figured.has(group.key) ? MARKER_OVER_FIGURE : MARKER_LIFT;
+      return figured.has(group.key) ? (rig ? rig.top : FIGURE_TOP) + OVER_HELMET : MARKER_LIFT;
+    },
+    /** True when the people of a group are drawn as figures (the last frame). */
+    figured(group) {
+      return figured.has(group.key);
     },
     /** Where the pin of a marker starts over the floor: on the helmet of a figure, else on the floor. */
     pinFrom(group) {
-      return figured.has(group.key) ? FIGURE_TOP : 0.3;
+      return figured.has(group.key) ? (rig ? rig.top : FIGURE_TOP) : 0.3;
+    },
+    /** True while a walk cycle fades in or out (frames are needed although nobody moves). */
+    get animating() {
+      return fading;
     },
 
     /**
@@ -420,52 +562,89 @@ export function createActors({low, source}) {
       const {layout, k, view, groups, camera, height} = source;
       const before = [...figured].join();
       figured = new Set();
+      const dtMs = lastDraw === null ? 0 : Math.min(Math.max(now - lastDraw, 0), 250);
+      lastDraw = now;
+      fading = false;
       if (!layout || !view || !groups) {
         if (bodies) bodies.visible = lenses.visible = false;
+        for (const name of [...riggedPeople.keys()]) dropRigged(name);
         figureInfo = {shown: 0, people: 0, px: 0};
         return before !== '';
       }
       const people = groups.reduce((sum, entry) => sum + entry.members.length, 0);
-      ensure(people);
+      if (!rig) ensure(people);
       const perPixel = 2 * Math.tan((camera.fov * DEG) / 2) / Math.max(height, 1);
+      const tall = rig ? rig.top : FIGURE_M * FIGURE_SCALE;
       let n = 0;
       let largest = 0;
       const placed = {};
+      const walks = {};
+      const feet = {};
+      const shown = new Set();
       for (const entry of groups) {
         entry.members.forEach((name, index) => {
           const person = view.workers[name];
-          const position = person && person.at ? source.position(name, now) : null;
+          const position = person && person.at ? source.position(name) : null;
           if (!position) return;
           const at = pointOnWorking(layout, position.working, position.offsetM, k);
           if (!at) return;
-          const distance = camera.position.distanceTo(where.set(at.point[0], at.point[1], at.point[2]));
-          const px = (FIGURE_M * FIGURE_SCALE) / Math.max(distance * perPixel, 1e-6);
+          const distance = source.viewDistance(at.point);
+          const px = tall / Math.max(distance * perPixel, 1e-6);
           largest = Math.max(largest, px);
-          if (px < FIGURE_PX) return;
-          const facing = facingOf(name, position, now);
+          if (px < (source.figurePx || FIGURE_PX)) return;
+          // Facing follows the travel along the path (walk.js); standing, the way last walked on this working.
+          const facing = position.facing || 1;
           const side = [-at.dir[2], at.dir[0]];
           const sideLength = Math.hypot(side[0], side[1]) || 1;
           const across = Math.max(-SIDE_MAX, Math.min(SIDE_MAX, (index - (entry.members.length - 1) / 2) * SIDE_STEP));
           where.set(at.point[0] + (side[0] / sideLength) * across, at.point[1] + 0.05, at.point[2] + (side[1] / sideLength) * across);
           rotation.setFromAxisAngle(up, Math.atan2(-at.dir[2] * facing, at.dir[0] * facing));
-          matrix.compose(where, rotation, scaleVector);
-          bodies.setMatrixAt(n, matrix);
-          lenses.setMatrixAt(n, matrix);
           const look = !person.posQuality || person.posQuality === 'fresh' ? FRESH : DIMMED;
-          bodies.setColorAt(n, colour.set(look.body));
-          lenses.setColorAt(n, colour.set(look.lens));
+          if (rig) {
+            const one = riggedPerson(name);
+            one.root.position.copy(where);
+            one.root.quaternion.copy(rotation);
+            one.root.scale.setScalar(rig.scale);
+            one.root.visible = true;
+            for (const material of one.materials) {
+              if (material.userData.baseColor) material.color.copy(material.userData.baseColor).multiply(colour.set(look.body));
+            }
+            if (animateRigged(one, Boolean(position.moving), dtMs)) fading = true;
+            walks[name] = [Math.round(one.weight * 1000) / 1000, Math.round(one.walk.timeScale * 1000) / 1000, Math.round(one.speed * 100) / 100];
+            shown.add(name);
+          } else {
+            matrix.compose(where, rotation, scaleVector);
+            bodies.setMatrixAt(n, matrix);
+            lenses.setMatrixAt(n, matrix);
+            bodies.setColorAt(n, colour.set(look.body));
+            lenses.setColorAt(n, colour.set(look.lens));
+          }
           figured.add(entry.key);
           placed[name] = [position.working, Math.round(position.offsetM * 100) / 100, facing];
+          feet[name] = [where.x, where.y, where.z].map((v) => Math.round(v * 1000) / 1000);
           n += 1;
         });
       }
-      for (const mesh of [bodies, lenses]) {
-        mesh.count = n;
-        mesh.visible = n > 0;
-        mesh.instanceMatrix.needsUpdate = true;
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      if (rig) {
+        for (const [name, one] of riggedPeople) {
+          if (shown.has(name)) continue;
+          if (!view.workers[name] || !view.workers[name].at) dropRigged(name);
+          else {
+            one.root.visible = false;
+            one.last = null;
+          }
+        }
+      } else {
+        for (const mesh of [bodies, lenses]) {
+          mesh.count = n;
+          mesh.visible = n > 0;
+          mesh.instanceMatrix.needsUpdate = true;
+          if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        }
       }
-      figureInfo = {shown: n, people, px: Math.round(largest * 10) / 10, groups: [...figured].sort(), at: placed};
+      figureInfo = {shown: n, people, px: Math.round(largest * 10) / 10, groups: [...figured].sort(), at: placed,
+        // The walk cycle per person drawn: [weight of the walk, playback rate of the clip, ground speed scene m/s].
+        walks: rig ? walks : null, feet};
       return [...figured].join() !== before;
     },
 
@@ -478,12 +657,15 @@ export function createActors({low, source}) {
           return {name, working: at.working, offsetM: Math.round(at.offsetM * 100) / 100, facing: at.facing, gliding: glides.has(name)};
         }),
         glides: glides.size,
-        figures: {...figureInfo, threshold: FIGURE_PX, scale: FIGURE_SCALE,
-          triangles: triangleCount(shapes.body) + triangleCount(shapes.lens), source: figureSource},
+        figures: {...figureInfo, threshold: source.figurePx || FIGURE_PX, scale: rig ? rig.scale : FIGURE_SCALE,
+          triangles: rig ? null : triangleCount(shapes.body) + triangleCount(shapes.lens), source: figureSource,
+          rig: rig ? {strideM: rig.strideM, strideDeclared: rig.strideDeclared, walkS: rig.walk.duration, idle: Boolean(rig.idle), top: rig.top,
+            maxCycles: rig.maxCycles} : null},
       };
     },
 
     dispose() {
+      for (const name of [...riggedPeople.keys()]) dropRigged(name);
       for (const mesh of [bodies, lenses]) if (mesh) mesh.dispose();
       shapes.body.dispose();
       shapes.lens.dispose();

@@ -36,6 +36,18 @@ export const STAGE = {
     ['двойной щелчок', 'показать объект крупно'],
     ['Tab', 'подписи объектов; Enter выбирает'],
   ],
+  /** Art mode (one orthographic view of the illustrated mine): pan and zoom only. */
+  keyListArt: [
+    ['мышь', 'перетаскивание — сдвинуть, колесо — приблизить к указателю'],
+    ['два пальца', 'развести — приблизить, вести — сдвинуть'],
+    ['← → ↑ ↓', 'сдвинуть'],
+    ['+ / −', 'приблизить, отдалить (до ×4)'],
+    ['Home', 'общий вид'],
+    ['PageUp / PageDown', 'следующий, предыдущий горизонт'],
+    ['Esc', 'снять выбор'],
+    ['двойной щелчок', 'показать объект крупно'],
+    ['Tab', 'подписи объектов; Enter выбирает'],
+  ],
   loading: '3D-модель загружается…',
   notice: {
     'no-webgl': 'WebGL 2 недоступен в этом браузере — показана схема',
@@ -49,6 +61,7 @@ export const STAGE = {
 
 export const SCENE = {
   canvas: (parts) => `Трёхмерная модель рудника. ${parts.join('. ')}. Камера: стрелки, Shift и стрелки, плюс и минус, Home. Подписи объектов — кнопки, полный перечень — вкладка «Список»`,
+  canvasArt: (parts) => `Рисованный разрез рудника. ${parts.join('. ')}. Камера: стрелки — сдвиг, плюс и минус — приближение, Home — общий вид. Подписи объектов — кнопки, полный перечень — вкладка «Список»`,
   levelsCount: (count) => `Горизонтов: ${num(count)}`,
   workingsCount: (count) => `выработок: ${num(count)}`,
   workersShown: (count) => `работников на модели: ${num(count)} (по опубликованным положениям)`,
@@ -92,5 +105,9 @@ export const SCENE = {
   machineNote: (factor) => `Положение и состояние — по публикации модели · ПДМ показана увеличенной ×${num(factor, 1)}`,
   /** The sign of a loader that does not work: stopped with its zone, or without a published state. */
   machineSign: {stopped: 'остановлена', unknown: 'ПДМ: ?'},
+  /** The notes of the illustrated mine (art mode with the art's GLB): what is to scale and what is decoration. */
+  artVertical: (factor) => `вертикаль ×${num(factor, 1)}; выработки нарисованы шире настоящих`,
+  artDecor: 'порода, крепь, лампы, оборудование, самосвал и буровая — оформление',
+  artFigures: (machine, people) => `ПДМ (×${num(machine, 1)}) показывает только работу своего участка; фигуры людей ×${num(people, 1)}`,
   decorEquipment: (factor, people) => `ПДМ — по данным модели, ×${num(factor, 1)}; фигуры людей ×${num(people, 1)}`,
 };

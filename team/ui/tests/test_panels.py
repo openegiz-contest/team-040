@@ -1411,7 +1411,7 @@ class StoriesTest(PanelsTestCase):
         self.assertEqual(len(self.commands_logged()), 1)
 
     def test_every_scenario_renders_the_panels_without_console_errors(self):
-        names = [item["name"] for item in self.mock.scenarios()["scenarios"]]
+        names = [item["name"] for item in self.mock.scenarios()["scenarios"] if not item["name"].startswith("sim_")]
         self.assertGreaterEqual(len(names), 23)
         for name in names:
             with self.subTest(scenario=name):

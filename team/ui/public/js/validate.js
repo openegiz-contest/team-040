@@ -113,6 +113,19 @@ export function plainFeatures(features, skip) {
   return {values, units};
 }
 
+/**
+ * One cause of an incident as {trigger, subject}. The contract draft lists records
+ * {trigger, subject, tick}; the simulation publishes a text "trigger:subject" ("hazard:zone-a",
+ * "passage_closed:w-04"). Both are read; a text without a colon and anything else is returned as it
+ * came (the readers skip what is not an object).
+ * @param {*} cause
+ */
+export function normalizeCause(cause) {
+  if (typeof cause !== 'string') return cause;
+  const at = cause.indexOf(':');
+  return at < 0 ? cause : {trigger: cause.slice(0, at), subject: cause.slice(at + 1)};
+}
+
 /** @param {string} thingId */
 export function localName(thingId) {
   const at = thingId.indexOf(':');
@@ -334,6 +347,9 @@ function checkShift(response, attributes, info) {
       if (position) return position;
     }
     scene[id] = plainFeatures(elementFeatures);
+    if (kind === 'incident' && Array.isArray(scene[id].values.causes)) {
+      scene[id].values.causes = scene[id].values.causes.map(normalizeCause);
+    }
   }
 
   return {

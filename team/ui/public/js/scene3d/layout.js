@@ -72,8 +72,10 @@ function levelOfNode(node, levels) {
  * Everything that does not depend on the state: levels, slabs, workings.
  * @param {import('../store.js').Model} model
  * @param {Object} mine attributes of the mine twin
+ * @param {{cx: number, cy: number, zTop: number}|null} [origin]  the origin of an art built for this topology (its GLB's
+ *        cx, cy, zTop), used instead of the one computed here so that everything mapped lands on the drawn floors
  */
-export function buildLayout(model, mine) {
+export function buildLayout(model, mine, origin = null) {
   const nodes = mine && mine.nodes && typeof mine.nodes === 'object' ? mine.nodes : {};
   const nodePoints = new Map();
   for (const name of Object.keys(nodes)) {
@@ -109,9 +111,10 @@ export function buildLayout(model, mine) {
   }
   if (all.length === 0) return null;
   const box = geo.bounds(all);
-  const cx = (box.minX + box.maxX) / 2;
-  const cy = (box.minY + box.maxY) / 2;
-  const zTop = levels[0].elevation;
+  const fixed = origin && [origin.cx, origin.cy, origin.zTop].every(Number.isFinite);
+  const cx = fixed ? origin.cx : (box.minX + box.maxX) / 2;
+  const cy = fixed ? origin.cy : (box.minY + box.maxY) / 2;
+  const zTop = fixed ? origin.zTop : levels[0].elevation;
   const toPlan = (point) => [point[0] - cx, cy - point[1]];
   for (const working of workings.values()) working.plan = working.mine.map(toPlan);
 
