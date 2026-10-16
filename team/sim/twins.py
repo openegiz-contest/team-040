@@ -11,6 +11,8 @@ UNITS = {
     "production_rate": "t/h", "last_out_s": "s", "downtime_s": "zone*s",
     "danger_exposure_person_s": "person*s", "unknown_exposure_person_s": "person*s",
     "forecast_horizon_s": "s",
+    "hauled_t": "t", "planned_t": "t", "production_lost_t": "t", "run_hauled_t": "t",
+    "conflict_yield_s": "machine*s",
 }
 
 
@@ -36,12 +38,14 @@ def snapshot(mine):
     dynamic = {}
     for collection in (mine.workings, mine.zones, mine.sensors, mine.workers, mine.exits):
         dynamic.update(copy.deepcopy(collection))
+    dynamic.update({key: {k: copy.deepcopy(v) for k, v in state.items() if not k.startswith("_")}
+                    for key, state in mine.machines.items()})
     for key, state in mine.workings.items():
         zone = mine.attributes[key].get("zone")
         hazard = mine.zones[zone] if zone else dict(hazard_state="unknown", data_quality="none",
                                                    reason_code="no_sensor", routing_restriction="allowed")
         for field, value in hazard.items():
-            if field not in ("work_state", "withdrawal_state", "workers_count", "production_rate", "downtime_s"):
+            if field not in ("work_state", "withdrawal_state", "workers_count", "production_rate", "downtime_s", "run_hauled_t"):
                 dynamic[key][field] = value
     for key, worker in mine.workers.items():
         # Directed segments are explicit; the browser does not solve the graph.
@@ -71,6 +75,10 @@ def snapshot(mine):
         speedup=mine.parameters["speedup"], seed=mine.seed, conditions=mine.conditions,
         workers_total=len(mine.workers), workers_out=sum(w["status"] == "out" for w in mine.workers.values()),
         workers_in_danger=m["in_danger"], workers_no_route=m["no_route"], workers_unknown=m["unknown"],
+        production_rate=sum(z["production_rate"] for z in mine.zones.values()),
+        run_hauled_t=sum(e["run_hauled_t"] for e in mine.machines.values()),
+        machines_total=len(mine.machines), machines_working=sum(e["state"] == "working" for e in mine.machines.values()),
+        machines_in_danger=m["machines_in_danger"], machines_stuck=m["machines_stuck"],
         commands=mine.commands, runs=[f"{NAMESPACE}:{r['id']}" for r in mine.archive],
         scene=[dict(thingId=twins[key]["thingId"], features=twins[key]["features"]) for key in dynamic])
     twins["shift"]["features"] = features(shift)

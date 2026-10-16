@@ -62,7 +62,7 @@ class ModelTests(unittest.TestCase):
         for e in mine.exits.values():
             e["state"] = "unavailable"
         mine._refresh()
-        self.assertEqual(mine.metrics()["no_route"], 6)
+        self.assertEqual(mine.metrics()["no_route"], 8)
 
     def test_movement_consumes_distance_across_junction(self):
         mine = Mine()
@@ -79,13 +79,15 @@ class ModelTests(unittest.TestCase):
     def test_exit_time_matches_distance_and_workers_preserved(self):
         mine = Mine()
         distance = max(w["egress_length_m"] for k, w in mine.workers.items()
-                       if mine.attributes[k]["home_zone"] == "zone-a")
+                       if mine.attributes[k]["home_zone"] == "zone-a" and mine.attributes[k]["role"] == "crew")
         command(mine, "action.withdraw_zone", "zone-a")
         mine.advance(math.ceil(distance / 1.25) - 1)
-        self.assertLess(mine.metrics()["out"], 3)
+        crew_out = lambda: sum(mine.workers[f"worker-a{i}"]["status"] == "out" for i in range(1, 4))
+        self.assertLess(crew_out(), 3)
         mine.advance(1)
-        self.assertEqual(mine.metrics()["out"], 3)
-        self.assertEqual(len(mine.workers), 6)
+        self.assertEqual(crew_out(), 3)
+        self.assertEqual(mine.metrics()["out"], 4)
+        self.assertEqual(len(mine.workers), 8)
         self.assertEqual(mine.zones["zone-a"]["withdrawal_state"], "done")
         self.assertFalse(mine.metrics()["all_out"])
         self.assertNotIn("last_out_s", mine.metrics())
@@ -144,7 +146,7 @@ class ModelTests(unittest.TestCase):
         before = copy.deepcopy(mine.__dict__)
         self.assertEqual(mine.forecast(), mine.forecasts)
         self.assertEqual(mine.__dict__, before)
-        self.assertEqual(mine.forecasts["observe"]["forecast_danger_exposure_person_s"], 2700)
+        self.assertEqual(mine.forecasts["observe"]["forecast_danger_exposure_person_s"], 2777)
         self.assertLess(mine.forecasts["withdraw_all"]["forecast_danger_exposure_person_s"], 2700)
         self.assertTrue(mine.forecasts["withdraw_all"]["forecast_all_out"])
         self.assertFalse(mine.forecasts["stop_withdraw_zone"]["forecast_all_out"])
@@ -158,7 +160,9 @@ class ModelTests(unittest.TestCase):
                 expected = {k.removeprefix("forecast_"): v for k, v in mine.forecasts[kind].items()
                             if k.startswith("forecast_") and k.removeprefix("forecast_") in
                             ("out", "all_out", "in_danger", "no_route", "unknown", "danger_exposure_person_s",
-                             "unknown_exposure_person_s", "downtime_s", "last_out_s")}
+                             "unknown_exposure_person_s", "downtime_s", "last_out_s", "hauled_t", "planned_t",
+                             "production_lost_t", "machines_in_danger", "machines_unknown", "machines_stuck",
+                             "conflicts", "conflict_yield_s")}
                 execute(mine, kind)
                 mine.advance(1000)
                 self.assertEqual(mine.metrics(), expected)

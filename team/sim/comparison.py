@@ -41,7 +41,7 @@ def experiment():
                            if option == "withdraw_all" else trial.incident["scope"][:])
             targeted = [k for k in trial.cohort if trial.attributes[k]["home_zone"] in target_zones]
             baseline = trial.metrics()
-            peak = {key: baseline[key] for key in ("in_danger", "unknown", "no_route")}
+            peak = {key: baseline[key] for key in ("in_danger", "unknown", "no_route", "machines_in_danger")}
             target_out_s = None
             apply(trial, "action.execute_option", "option-" + option, number,
                   decision_id=trial.incident["decision_id"])
@@ -67,8 +67,10 @@ def experiment():
                 actual=actual, peak=peak, downtime_since_decision_zone_s=actual["downtime_s"] - baseline["downtime_s"],
                 forecast=prediction, forecast_matches_actual=True,
                 comparison_key=trial.comparison_key, finished_at_sim_s=trial.tick,
-                zones={k: {f: z[f] for f in ("work_state", "withdrawal_state", "production_rate", "downtime_s")}
+                zones={k: {f: z[f] for f in ("work_state", "withdrawal_state", "production_rate", "downtime_s", "run_hauled_t")}
                        for k, z in trial.zones.items()},
+                machines={k: {f: m[f] for f in ("state", "hold_reason", "at_working", "offset_m", "loaded", "location_hazard")}
+                          for k, m in trial.machines.items()},
                 workers={k: {f: w[f] for f in ("status", "at_exit", "at_working", "offset_m", "egress_status", "egress_reason") if f in w}
                          for k, w in trial.workers.items()}))
         if fingerprint(checkpoint.__dict__) != unchanged:
@@ -82,21 +84,22 @@ def experiment():
             decision_routes={k: {f: copy.deepcopy(w.get(f)) for f in
                 ("route", "egress_exit", "egress_length_m", "egress_status", "egress_reason")} for k, w in checkpoint.workers.items()},
             horizon_s=horizon, rows=rows))
-    return dict(schema_version=1, synthetic=True, platform_verified=False,
+    return dict(schema_version=2, synthetic=True, platform_verified=False,
                 scope_policy_version=SCOPE_POLICY_VERSION,
                 model_version=MODEL_VERSION, topology_version=TOPOLOGY_VERSION,
                 parameters=checkpoint.parameters, scenarios=scenarios)
 
 
 def table(report):
-    lines = ["| Сценарий | Действие | Вышло / 6 | Выход всех, с | Без пути в конце | Опасность, чел·с | Неопределённость, чел·с | Простой, участок·с |",
-             "|---|---|---:|---:|---:|---:|---:|---:|"]
+    lines = ["| Сценарий | Действие | Вышло / 8 | Выход всех, с | Без пути в конце | Опасность, чел·с | Неопределённость, чел·с | Простой, участок·с | Недовывезено, т | ПДМ в опасности / застряли | Встречи с людьми |",
+             "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for scenario in report["scenarios"]:
         for row in scenario["rows"]:
             m = row["actual"]
             lines.append(f"| {scenario['label']} | {row['label']} | {m['out']} | {m.get('last_out_s', '—')} | "
                          f"{m['no_route']} | {m['danger_exposure_person_s']} | {m['unknown_exposure_person_s']} | "
-                         f"{row['downtime_since_decision_zone_s']} |")
+                         f"{row['downtime_since_decision_zone_s']} | {m['production_lost_t']:g} | "
+                         f"{m['machines_in_danger']} / {m['machines_stuck']} | {m['conflicts']} |")
     return "\n".join(lines)
 
 

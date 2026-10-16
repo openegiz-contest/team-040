@@ -12,9 +12,19 @@ PARAMETERS = {
     "lost_after_s": 30,
     "forecast_horizon_s": 900,
     "speedup": 10,
+    "lhd_payload_t": 14,
+    "lhd_speed_loaded_m_s": 2.5,
+    "lhd_speed_empty_m_s": 3.0,
+    "lhd_load_s": 45,
+    "lhd_dump_s": 20,
+    "lhd_availability": 0.8,
+    "lhd_clearance_m": 20,
 }
 
 SOURCES = {
+    "sandvik_lh514": dict(url="https://www.mining.sandvik/en/products/equipment/loaders/lh514-underground-lhd",
+        location="Dimensions / Capacity; accessed 2026-10-16", rated_payload_kg=14000,
+        length_mm=11000, scope="Rated machine specification, not operating cycle calibration"),
     "escape1983": dict(url="https://stacks.cdc.gov/view/cdc/206706",
         location="Description, average escape speeds", year=1983,
         scope="Underground coal mine experiment, not calibration of a copper mine",
@@ -34,7 +44,11 @@ def validate(parameters):
         raise ValueError("expected baseline < attention < danger < unstable")
     if parameters["stale_after_s"] >= parameters["lost_after_s"]:
         raise ValueError("stale timeout must precede lost timeout")
-    for key in ("stale_after_s", "lost_after_s", "forecast_horizon_s", "speedup"):
+    if parameters["lhd_availability"] > 1:
+        raise ValueError("lhd_availability must be in (0, 1]")
+    if parameters["lhd_speed_loaded_m_s"] > parameters["lhd_speed_empty_m_s"]:
+        raise ValueError("loaded speed cannot exceed empty speed")
+    for key in ("stale_after_s", "lost_after_s", "forecast_horizon_s", "speedup", "lhd_load_s", "lhd_dump_s"):
         if type(parameters[key]) is not int:
             raise ValueError(key + " must be an integer number of seconds")
 
@@ -43,6 +57,8 @@ def registry(parameters):
     units = dict(walking_speed_m_s="m/s", attention_rate_mm_h="mm/h", danger_rate_mm_h="mm/h",
         baseline_rate_mm_h="mm/h", unstable_rate_mm_h="mm/h", stale_after_s="s",
         lost_after_s="s", forecast_horizon_s="s", speedup="model s/wall s")
+    units.update(lhd_payload_t="t", lhd_speed_loaded_m_s="m/s", lhd_speed_empty_m_s="m/s",
+                 lhd_load_s="s", lhd_dump_s="s", lhd_availability="1", lhd_clearance_m="m")
     reasons = {
         "walking_speed_m_s": "Uniform free walking; no slope, fatigue or congestion correction",
         "attention_rate_mm_h": "Synthetic warning boundary, not a rock failure criterion",
@@ -54,11 +70,23 @@ def registry(parameters):
         "forecast_horizon_s": "Comparison window; incomplete exit is not successful evacuation",
         "speedup": "Presentation acceleration, does not change movement per model second",
     }
+    reasons.update(
+        lhd_payload_t="Rated LH514 capacity; full rated payload on each dump is a scenario assumption",
+        lhd_speed_loaded_m_s="TBD-source: level-drift operating speed loaded, not brochure maximum",
+        lhd_speed_empty_m_s="TBD-source: level-drift operating speed empty, no slope correction",
+        lhd_load_s="TBD-source: complete loading dwell at face, not hydraulic bucket lift time",
+        lhd_dump_s="TBD-source: complete dumping dwell at ore pass",
+        lhd_availability="TBD-source: shift context only; NOT applied to deterministic comparison tonnes",
+        lhd_clearance_m="TBD-source: synthetic path separation, not a certified traffic safety distance")
     entries = {key: dict(value=value, unit=units[key], status="scenario_assumption",
                         rationale=reasons[key], source_ids=[]) for key, value in parameters.items()}
     entries["walking_speed_m_s"].update(status="engineering_assumption",
         source_ids=["escape1983"], sensitivity_values=[0.5, 0.75, 1.0, 1.25],
         transfer="Historical coal-mine results are context only, not a validated range for this mine")
+    entries["lhd_payload_t"].update(status="manufacturer_rating", source_ids=["sandvik_lh514"])
+    if parameters["lhd_payload_t"] != 14:
+        entries["lhd_payload_t"].update(status="scenario_assumption",
+            transfer="Overridden scenario payload; the cited LH514 rating is 14 t, not this value")
     for key in ("attention_rate_mm_h", "danger_rate_mm_h", "baseline_rate_mm_h", "unstable_rate_mm_h"):
         entries[key]["source_ids"] = ["monitoring2024"]
         entries[key]["transfer"] = "Measurement type only; numerical value chosen by team"

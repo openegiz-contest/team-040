@@ -4,7 +4,9 @@ load("json.star", "json")
 INTEGER_FIELDS = ["tick", "publication_seq", "measured_at_tick", "index_at_tick",
                   "last_known_hazard_tick", "contract_version", "seed", "workers_total",
                   "workers_count", "workers_out", "workers_in_danger", "workers_no_route",
-                  "workers_unknown", "last_seq", "opened_at_tick", "forecast_tick"]
+                  "workers_unknown", "last_seq", "opened_at_tick", "forecast_tick",
+                  "machines_total", "machines_working", "machines_in_danger", "machines_stuck",
+                  "machines_unknown", "loads_dumped", "conflicts"]
 
 def scalar(value):
     return type(value) in ["int", "float", "bool", "string"]

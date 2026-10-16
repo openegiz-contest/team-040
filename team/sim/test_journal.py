@@ -33,13 +33,13 @@ class JournalTests(unittest.TestCase):
         mine = Mine()
         command(mine, "condition.close_working", "w-07")
         lost = [e for e in mine.events if e["code"] == "route.changed"]
-        self.assertEqual(len(lost), 3)
+        self.assertEqual(len(lost), 4)
         self.assertTrue(all(e["details"]["after"]["egress_reason"] == "current_working_closed" for e in lost))
         self.assertIn("passage_closed:w-07", lost[0]["details"]["causes"])
         seq = mine.journal_seq
         command(mine, "condition.open_working", "w-07")
         restored = [e for e in mine.events if e["seq"] > seq and e["code"] == "route.changed"]
-        self.assertEqual(len(restored), 3)
+        self.assertEqual(len(restored), 4)
         self.assertTrue(all(e["details"]["after"]["egress_status"] == "ok" for e in restored))
 
     def test_movement_is_not_reroute_exit_once(self):
@@ -47,10 +47,11 @@ class JournalTests(unittest.TestCase):
         command(mine, "condition.instability_on", "zone-a")
         execute(mine, "withdraw_all")
         mine.advance(900)
-        self.assertFalse(any(e["code"] == "route.changed" for e in mine.events))
+        self.assertFalse(any(e["code"] == "route.changed" and mine.attributes[e["subject"]]["role"] == "crew"
+                             for e in mine.events))
         exits = [e for e in mine.events if e["code"] == "worker.exited"]
-        self.assertEqual(len(exits), 6)
-        self.assertEqual(len({e["subject"] for e in exits}), 6)
+        self.assertEqual(len(exits), 8)
+        self.assertEqual(len({e["subject"] for e in exits}), 8)
         self.assertEqual(mine.events[-1]["code"], "run.finished")
 
     def test_alternative_exit_is_a_real_reroute(self):

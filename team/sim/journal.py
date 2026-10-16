@@ -11,9 +11,11 @@ def capture(mine):
         result[key] = {k: zone[k] for k in ("hazard_state", "data_quality", "routing_restriction",
                                             "work_state", "withdrawal_state")}
     for key, worker in mine.workers.items():
-        result[key] = dict(status=worker["status"], egress_status=worker["egress_status"],
+        result[key] = dict(status=worker["status"], aboard=worker.get("aboard"), egress_status=worker["egress_status"],
             egress_reason=worker["egress_reason"], exit=worker.get("egress_exit"),
             path=[[s["working"], s["to_node"]] for s in worker.get("route_segments", [])])
+    for key, machine in mine.machines.items():
+        result[key] = {k: machine[k] for k in ("state", "hold_reason", "location_hazard")}
     return result
 
 
@@ -67,5 +69,22 @@ def observe(mine):
                      ("Нет расчётного маршрута: " + new["egress_reason"]) if new["egress_status"] != "ok"
                      else "Расчётный маршрут к " + str(new["exit"]) + ": " + " → ".join(p[0] for p in path),
                      old, new)
-        if old["status"] != new["status"] and new["status"] != "out":
-            emit("worker.state_changed", key, f"{old['status']} → {new['status']}", old["status"], new["status"])
+        if (old["status"] != new["status"] or old.get("aboard") != new.get("aboard")) and new["status"] != "out":
+            emit("worker.state_changed", key, f"{old['status']} → {new['status']}; борт: {new.get('aboard') or 'пешком'}",
+                 {k: old.get(k) for k in ("status", "aboard")}, {k: new.get(k) for k in ("status", "aboard")})
+    states = dict(working="работает", parked="стоит без работы", stopped="участок остановлен")
+    reasons = dict(none="нет ограничения", path_closed="проход закрыт", zone_stopped="участок остановлен",
+                   entry_blocked="вход в участок запрещён", crew_absent="нет бригады")
+    for key, machine in mine.machines.items():
+        old, new = previous[key], current[key]
+        label = mine.attributes[key]["label"]
+        if any(old[k] != new[k] for k in ("state", "hold_reason")):
+            emit("equipment.state_changed", key,
+                f"{label}: {states[old['state']]} → {states[new['state']]} ({reasons[new['hold_reason']]})",
+                {k: old[k] for k in ("state", "hold_reason")}, {k: new[k] for k in ("state", "hold_reason")},
+                at_working=machine["at_working"], offset_m=machine["offset_m"])
+        if old["location_hazard"] != new["location_hazard"]:
+            emit("equipment.hazard_changed", key,
+                f"{label}: {old['location_hazard']} → {new['location_hazard']}",
+                old["location_hazard"], new["location_hazard"], working=machine["at_working"],
+                zone=mine.attributes[machine["at_working"]].get("zone"))
