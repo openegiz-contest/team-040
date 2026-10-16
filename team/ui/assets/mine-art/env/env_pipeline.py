@@ -83,7 +83,7 @@ def render_projected(name, rect, res, cam, samples):
     bg.default_value = 0.0
     hidden = []
     for ob in bpy.data.objects:
-        if ob.name == "TRACKS" and not ob.hide_render:
+        if ob.name in ("TRACKS", "P_cone") and not ob.hide_render:
             ob.hide_render = True
             hidden.append(ob)
     out = {}
@@ -109,7 +109,7 @@ def render_projected(name, rect, res, cam, samples):
     return beauty, out["depth"], out["normal"]
 
 
-ROCKY = (3, 5)     # mk of rock and rockcut faces (env_geom.facet_attributes)
+ROCKY = (3, 4)     # mk of the rock: top and cut faces (env_geom.facet_attributes: slot + 1)
 
 
 def outlined(beauty, depth, normal, texel):
@@ -138,10 +138,10 @@ def outlined(beauty, depth, normal, texel):
     V = (N * key).sum(axis=2)                        # painted key value of the pixel's facet
     rocky = np.isin(MK, ROCKY)
     wall = MK == 2
-    ground = MK == 4
+    ground = MK == -1     # (no separate ground kind any more)
     ink = np.zeros_like(D)                           # dark line alpha
     rim = np.zeros_like(D)                           # light rim alpha
-    cos_hard, cos_rock, cos_wall = math.cos(math.radians(38.0)), math.cos(math.radians(13.0)), \
+    cos_hard, cos_rock, cos_wall = math.cos(math.radians(38.0)), math.cos(math.radians(24.0)), \
         math.cos(math.radians(22.0))
     flat = N[..., 2] > 0.8
     for axis in (1, 0):
@@ -168,11 +168,11 @@ def outlined(beauty, depth, normal, texel):
         p_lit = Vp >= Vq
         # dark line on the darker side of a convex edge, on both sides of a concave one
         # (a crease); walls only get their concave creases, faintly
-        a_ink = np.where(same_wall, np.where(convex, 0.0, 0.16), np.where(convex, 0.34, 0.50))
+        a_ink = np.where(same_wall, np.where(convex, 0.0, 0.10), np.where(convex, 0.18, 0.30))
         ink[sl_p] = np.maximum(ink[sl_p], np.where(facet & (~p_lit | ~convex), a_ink, 0.0))
         ink[sl_q] = np.maximum(ink[sl_q], np.where(facet & (p_lit | ~convex), a_ink, 0.0))
         # light rim on the lit side of convex edges
-        a_rim = np.where(same_wall, 0.0, np.where(gp | gq, 0.45, 0.36))
+        a_rim = np.where(same_wall, 0.0, 0.24)
         rim[sl_p] = np.maximum(rim[sl_p], np.where(facet & convex & p_lit, a_rim, 0.0))
         rim[sl_q] = np.maximum(rim[sl_q], np.where(facet & convex & ~p_lit, a_rim, 0.0))
         hq = hard.astype(np.float32) * 0.38
@@ -307,8 +307,16 @@ def cull_hidden(tris, back):
     for t in keep:
         a, b_, c = t
         cen = (a + b_ + c) / 3.0
-        samples = [cen, a.lerp(cen, 0.12), b_.lerp(cen, 0.12), c.lerp(cen, 0.12),
-                   ((a + b_) / 2).lerp(cen, 0.1), ((b_ + c) / 2).lerp(cen, 0.1), ((c + a) / 2).lerp(cen, 0.1)]
+        # a barycentric grid, denser on big triangles (a long sliver along an edge may peek out
+        # only in part); keep the triangle if any sample sees the camera
+        size = max((b_ - a).length, (c - b_).length, (a - c).length)
+        n = max(2, min(24, int(size / 6.0) + 2))
+        samples = []
+        for i in range(n + 1):
+            for j in range(n + 1 - i):
+                k = n - i - j
+                p = (a * (i + 0.15) + b_ * (j + 0.15) + c * (k + 0.15)) / (n + 0.45)
+                samples.append(p)
         for p in samples:
             if bvh.ray_cast(p + back * 0.05, back)[0] is None:
                 out.append(t)
@@ -413,6 +421,12 @@ def _clearance(mine, loc, yaw, footprint):
     return round(best, 1)
 
 
+# machines are drawn 2.2x real (SPEC section 6 actors): footprints length x width, metres
+FOOT_LHD = (34.0, 11.0)
+FOOT_TRUCK = (34.0, 11.0)
+FOOT_DRILL = (47.0, 11.0)
+
+
 def anchors(mine):
     """Decor places for the browser (machines are decoration, SPEC section 6).
     Yaw is about the up axis; the actor faces +X locally. The clearance from the walking
@@ -420,24 +434,23 @@ def anchors(mine):
     out = {}
     for wid, zone in (("w-07", "zone-a"), ("w-12", "zone-b")):
         face = mine.workings[wid]["pts"][-1]
-        loc = Vector((face.x - 16.0, face.y + 14.0, face.z))
-        out[f"ANCHOR_lhd_{zone}"] = (loc, -90.0, {
-            "kind": "lhd", "zone": zone, "working": wid, "footprintM": [16.5, 4.5], "facing": "+X local"})
-    H = mine.nodes["b"].z
-    out["ANCHOR_truck"] = (Vector((87.0, mine.back_y + 7.0, H)), 180.0, {
-        "kind": "truck", "working": "w-04", "footprintM": [18.0, 5.2], "facing": "+X local",
-        "place": "bay behind drift w-04"})
-    He = mine.nodes["f"].z
-    out["ANCHOR_drill"] = (Vector((-76.0, mine.back_y + 6.5, He)), 180.0, {
-        "kind": "drill", "working": "w-10", "footprintM": [18.0, 3.75], "facing": "+X local",
-        "place": "bay behind drift w-10"})
+        loc = Vector((face.x - 24.0, face.y + 7.0, face.z))
+        out[f"ANCHOR_lhd_{zone}"] = (loc, 180.0, {
+            "kind": "lhd", "zone": zone, "working": wid, "footprintM": list(FOOT_LHD), "facing": "+X local",
+            "place": "face chamber west of the zone drift"})
+    out["ANCHOR_truck"] = (Vector((87.0, mine.back_y + 7.5, mine.nodes["b"].z)), 180.0, {
+        "kind": "truck", "working": "w-04", "footprintM": list(FOOT_TRUCK), "facing": "+X local",
+        "place": "pocket behind drift w-04"})
+    out["ANCHOR_drill"] = (Vector((-100.0, mine.face_y - 29.0, mine.nodes["f"].z)), 180.0, {
+        "kind": "drill", "working": "w-10", "footprintM": list(FOOT_DRILL), "facing": "+X local",
+        "place": "terrace in front of drift w-10"})
     for name, (loc, yaw, ex) in out.items():
         ex["clearFromWalkingLineM"] = _clearance(mine, loc, yaw, ex["footprintM"])
         log("anchor", name, "clearance", ex["clearFromWalkingLineM"], "m")
     return out
 
 
-def build_glb(mine, topo, cam, far_name="env_far.jpg", near_name="env_near.jpg"):
+def build_glb(mine, topo, cam, slope, far_name="env_far.jpg", near_name="env_near.jpg"):
     from glb_writer import GLB, b2g, quat_from_matrix
     back, right, up = (Vector(v) for v in mine_map.cam_basis())
     objs = [o for o in bpy.data.objects if o.type == "MESH" and
@@ -447,8 +460,6 @@ def build_glb(mine, topo, cam, far_name="env_far.jpg", near_name="env_near.jpg")
     tris = cull_hidden(tris, back)
     log("export triangles", n0, "->", len(tris), "after culling")
     visibility_report(mine, tris, back)
-    render_rock = [o for o in bpy.data.objects if o.name in ("MASSIF", "PILLAR", "SPUR_w-07", "SPUR_w-12")]
-    visibility_report(mine, export_triangles(render_rock, back), back, name="visibility_render.json")
     g = GLB()
     tex_far = g.add_texture(far_name)
     tex_near = g.add_texture(near_name)
@@ -548,19 +559,27 @@ def build_glb(mine, topo, cam, far_name="env_far.jpg", near_name="env_near.jpg")
     env_mesh = g.add_mesh("ENV", plist)
     g.add_node({"name": "ENV", "mesh": env_mesh, "extras": {"role": "static_environment"}})
     log("env primitives (verts, tris)", stats)
+    import env_geom
     for wid in sorted(mine.workings):
         w = mine.workings[wid]
         pos, idx = [], []
-        for a, b in zip(w["pts"], w["pts"][1:]):
+        for si, (a, b) in enumerate(zip(w["pts"], w["pts"][1:])):
             d = Vector((b.x - a.x, b.y - a.y, 0.0))
             if d.length < 1e-6:
                 continue
             nrm = Vector((-d.y, d.x, 0.0)).normalized()
             if abs(a.y - mine.face_y) < 0.01 and abs(b.y - mine.face_y) < 0.01:
-                # the drawn gallery floor: from the open front edge to the back wall
-                import env_geom
-                lo_y, hi_y = env_geom.FRONT - 2.0, mine.back_y
+                # the drawn gallery floor: from its front edge to the back wall
+                seg = next(s_ for s_ in mine.segments if s_["wid"] == wid and s_["idx"] == si)
+                fmax = 0.0
+                for k in range(21):
+                    x = a.x + (b.x - a.x) * k / 20.0
+                    fmax = max(fmax, env_geom.Stack(mine, slope, x).of(seg)[1]["Feff"])
+                lo_y, hi_y = mine.face_y - fmax - 1.0, mine.back_y
                 offs = sorted(((lo_y - a.y) / nrm.y, (hi_y - a.y) / nrm.y))
+            elif wid == "w-05":
+                # the a-d slot: open floor toward the island (south-east), back wall north-west
+                offs = (-(env_geom.CC_FRONT + env_geom.CC_OPEN), env_geom.B_BACK)
             else:
                 offs = (-7.5, 7.5)
             base = len(pos)
@@ -614,11 +633,11 @@ def previews(mine, cam, samples):
     X.render_view(os.path.join(X.PREVIEWS, "zone_b_3x.png"), cam, 3.0, zone_focus(mine, "w-12"), samples)
 
 
-def full_pipeline(mine, topo, cam, samples, do_textures=True, do_previews=True):
+def full_pipeline(mine, topo, cam, slope, samples, do_textures=True, do_previews=True):
     os.makedirs(X.OUT_DIR, exist_ok=True)
     if do_textures:
         bake_far(cam, samples, os.path.join(X.OUT_DIR, "env_far.jpg"))
         bake_near(cam, samples, os.path.join(X.OUT_DIR, "env_near.jpg"))
-    build_glb(mine, topo, cam)
+    build_glb(mine, topo, cam, slope)
     if do_previews:
         previews(mine, cam, max(128, samples // 3))

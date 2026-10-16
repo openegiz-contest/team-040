@@ -15,10 +15,15 @@ import os
 K = 1.35
 ZTOP = 0.0
 
-# Main view (SPEC section 4): orthographic, from the south, azimuth toward the east,
-# elevation above the horizon. Tuned within the allowed ranges after previews.
-CAM_AZ_DEG = 12.0
-CAM_EL_DEG = 23.0
+# Main view (SPEC section 4): orthographic isometric-like view from the south-east:
+# azimuth from south toward the east, elevation above the horizon. Chosen by comparing
+# overviews at azimuth 22, 24, 30 and 40 (the reference reads at 40-45; 24 fills the 16:9
+# frame with the mine and shows the lit back walls). Allowed: azimuth 20-50, elevation 26-34.
+
+CAM_AZ_DEG = 24.0
+CAM_EL_DEG = 28.0
+CAM_AZ_RANGE = (20.0, 50.0)
+CAM_EL_RANGE = (26.0, 34.0)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOPOLOGY_JSON = os.path.join(HERE, "build", "topology.json")

@@ -3241,7 +3241,13 @@ export function createScene(host, options) {
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     camera.aspect = width / height;
-    if (orbit.art) orbit.apply();
+    if (orbit.art && orbit.limits.cover && layout && art && art.frame) {
+      // Art mode on its coverage: another shape of the stage changes how much one view shows. The 1× view and the
+      // camera are fitted to it at once (the refit after the size has settled comes too): no frame shows the stage
+      // beyond the art.
+      fitAll();
+      orbit.reclamp();
+    } else if (orbit.art) orbit.apply();
     else camera.updateProjectionMatrix();
     obstaclesAt = 0;
     if (pendingFocus && layout) {
@@ -4210,7 +4216,7 @@ export function createScene(host, options) {
       },
       // Art mode: its view, its vertical factor, the zoom now (1 at the overview … ART_ZOOM_MAX) and the pan bounds.
       art: art ? {az: art.az / DEG, el: art.el / DEG, k, zoom: orbit.zoomFactor, zoomMax: ART_ZOOM_MAX, distMax: orbit.limits.distMax,
-        distMin: orbit.limits.distMin, pan: orbit.where(),
+        distMin: orbit.limits.distMin, pan: orbit.where(), cover: orbit.limits.cover,
         // The illustrated mine: shown, its origin, its machines and their lamps (0 dark … 1 lit), the floor under each figure.
         env: artOn, origin: artOn ? {cx: layout.cx, cy: layout.cy, zTop: layout.zTop} : null,
         machines: artMachines ? [...artMachines.zone, ...artMachines.decor].map((entry) => ({name: entry.name, kind: entry.kind, zone: entry.zone,

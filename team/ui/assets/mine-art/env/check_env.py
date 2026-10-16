@@ -90,6 +90,22 @@ def main():
         check(c["type"] == "orthographic", "MainView is orthographic")
         o = c["orthographic"]
         check(abs(o["xmag"] / o["ymag"] - 16 / 9) < 1e-6, "MainView aspect 16:9")
+        cex = cam_nodes[0].get("extras", {})
+        az, el = cex.get("azimuthDeg"), cex.get("elevationDeg")
+        check(az is not None and mine_map.CAM_AZ_RANGE[0] <= az <= mine_map.CAM_AZ_RANGE[1],
+              f"MainView azimuth {az} in {mine_map.CAM_AZ_RANGE}")
+        check(el is not None and mine_map.CAM_EL_RANGE[0] <= el <= mine_map.CAM_EL_RANGE[1],
+              f"MainView elevation {el} in {mine_map.CAM_EL_RANGE}")
+        # the node's rotation must look along the exported angles (back = (sin az cos el, sin el, cos az cos el) in glTF)
+        qx, qy, qz, qw = cam_nodes[0]["rotation"]
+        bz = (2 * (qx * qz + qw * qy), 2 * (qy * qz - qw * qx), 1 - 2 * (qx * qx + qy * qy))
+        import math as _m
+        want = (_m.sin(_m.radians(az)) * _m.cos(_m.radians(el)), _m.sin(_m.radians(el)),
+                _m.cos(_m.radians(az)) * _m.cos(_m.radians(el)))
+        check(sum((p - q) ** 2 for p, q in zip(bz, want)) < 1e-6, "MainView direction matches its azimuth/elevation")
+        frame_w = 2 * o["xmag"]
+        frame_h = 2 * o["ymag"]
+        print(f"overview frame {frame_w:.1f} m x {frame_h:.1f} m; 1x on a 1920 px stage: {frame_w / 1920:.4f} m/px")
     check("lights" not in json.dumps(j.get("extensions", {})) and "KHR_lights_punctual" not in j.get("extensionsUsed", []),
           "no lights")
     check(not j.get("animations"), "no animations")
@@ -125,6 +141,47 @@ def main():
         print(f"texture: {im['uri']} {w}x{h} {size} bytes")
         check(w <= MAX_TEX and h <= MAX_TEX, f"{im['uri']} <= {MAX_TEX}^2 (light-map class, max 2)")
     check(len(j.get("images", [])) <= 2, "at most 2 baked textures")
+    # texel rules: >= 1 texel per screen pixel at 1x (16:9 and 4:3 on the main block, 21:9 on the
+    # wings) and at 3x near both zone faces (the near window), all on a 1920 px wide stage
+    if cams:
+        S = 2048.0
+        for m in mats:
+            ex = m.get("extras", {})
+            for blk in ex.get("atlas", []):
+                l, b, w, h = blk["screenM"]
+                c0, r0, cols, rows = blk["texels"]
+                if blk.get("rotated"):
+                    mx, my = w / rows, h / cols
+                else:
+                    mx, my = w / cols, h / rows
+                if blk["block"] == "main":
+                    need = frame_w / 1920
+                    check(max(mx, my) <= need * 1.0001,
+                          f"far main block {max(mx, my):.4f} m/texel <= {need:.4f} m/px: "
+                          f"{need / max(mx, my):.3f} texels per pixel at 1x (16:9, 4:3)")
+                    check(w >= frame_w and h >= frame_w * 0.75,
+                          f"far main block {w:.1f} x {h:.1f} m covers the 16:9 and 4:3 1x stage "
+                          f"({frame_w:.1f} x {frame_w * 0.75:.1f} m)")
+                else:
+                    need = frame_h * 21 / 9 / 1920
+                    check(max(mx, my) <= need * 1.0001,
+                          f"far {blk['block']} wing {max(mx, my):.4f} m/texel <= {need:.4f} m/px: "
+                          f"{need / max(mx, my):.3f} texels per pixel at 1x (21:9)")
+            if "windowScreenM" in ex:
+                l, b, side = ex["windowScreenM"]
+                need = frame_w / 3 / 1920
+                check(side / S <= need * 1.0001,
+                      f"near window {side:.0f} m: {side / S:.4f} m/texel <= {need:.4f} m/px: "
+                      f"{need / (side / S):.3f} texels per pixel at 3x")
+        blocks = [blk["screenM"] for m in mats for blk in m.get("extras", {}).get("atlas", [])]
+        if blocks:
+            cxs = [b_[0] + b_[2] / 2 for b_ in blocks if b_[2] > 300]
+            fcx = cxs[0] if cxs else 0.0
+            wide = frame_h * 21 / 9
+            lo = min(b_[0] for b_ in blocks)
+            hi = max(b_[0] + b_[2] for b_ in blocks)
+            check(lo <= fcx - wide / 2 and hi >= fcx + wide / 2,
+                  f"atlas covers the 21:9 1x stage ({wide:.1f} m wide): {lo - fcx:.1f} .. {hi - fcx:.1f} m")
     env_total = glb_bytes + tex_bytes
     folder = 0
     for dp, _, fs in os.walk(ART):

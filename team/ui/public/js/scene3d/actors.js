@@ -52,10 +52,10 @@ const FIGURE_M = 1.8;
 export const FIGURE_PX = 28;
 /**
  * Art mode (one orthographic view, at most 4× the overview): people are part of the illustration, drawn once they
- * are this tall (the 8 m worker of the art is about 11 px tall at the overview of a 1920×1080 stage, so the figures
- * show from the first picture); the scene gives its threshold as source.figurePx.
+ * are this tall (the 8 m worker of the art is about 15 px tall at the overview of a 1920×1080 stage and about 9.6 px at
+ * 1280×720, so the figures show from the first picture at both); the scene gives its threshold as source.figurePx.
  */
-export const FIGURE_PX_ART = 10;
+export const FIGURE_PX_ART = 9;
 /**
  * People drawn close together (one place, or places closer than CLOSE of the figure's height) stand apart: side by
  * side across the channel and a step along it, diagonally, so that neither a working running across the view nor

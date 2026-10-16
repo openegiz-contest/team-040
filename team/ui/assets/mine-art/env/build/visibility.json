@@ -1,36 +1,36 @@
 {
  "w-01": {
   "samples": 253,
-  "bodyHiddenPct": 4.3,
-  "feetHiddenPct": 3.2,
-  "longestBodyHiddenM": 18.0,
+  "bodyHiddenPct": 3.2,
+  "feetHiddenPct": 2.8,
+  "longestBodyHiddenM": 12.0,
   "hiddenOffsetRangesM": [
    [
-    225.8,
-    241.5
+    233.6,
+    243.5
    ],
    [
-    477.1,
-    479.1
+    473.2,
+    475.1
    ]
   ]
  },
  "w-02": {
   "samples": 242,
-  "bodyHiddenPct": 1.2,
-  "feetHiddenPct": 0.8,
-  "longestBodyHiddenM": 6.0,
+  "bodyHiddenPct": 0.8,
+  "feetHiddenPct": 1.2,
+  "longestBodyHiddenM": 4.0,
   "hiddenOffsetRangesM": [
    [
-    468.0,
-    471.9
+    466.0,
+    468.0
    ]
   ]
  },
  "w-03": {
   "samples": 76,
   "bodyHiddenPct": 0.0,
-  "feetHiddenPct": 0.0,
+  "feetHiddenPct": 10.5,
   "longestBodyHiddenM": 0.0,
   "hiddenOffsetRangesM": []
  },
@@ -64,33 +64,33 @@
  },
  "w-08": {
   "samples": 197,
-  "bodyHiddenPct": 8.1,
-  "feetHiddenPct": 6.6,
-  "longestBodyHiddenM": 18.0,
+  "bodyHiddenPct": 4.6,
+  "feetHiddenPct": 4.1,
+  "longestBodyHiddenM": 10.0,
   "hiddenOffsetRangesM": [
    [
-    9.7,
-    25.2
+    7.7,
+    15.5
    ],
    [
-    195.5,
-    207.2
+    193.6,
+    199.4
    ]
   ]
  },
  "w-09": {
   "samples": 197,
-  "bodyHiddenPct": 7.6,
-  "feetHiddenPct": 6.6,
-  "longestBodyHiddenM": 16.0,
+  "bodyHiddenPct": 6.1,
+  "feetHiddenPct": 4.6,
+  "longestBodyHiddenM": 12.0,
   "hiddenOffsetRangesM": [
    [
-    7.7,
-    21.3
+    3.9,
+    13.6
    ],
    [
-    197.5,
-    209.1
+    193.6,
+    203.3
    ]
   ]
  },
@@ -103,15 +103,10 @@
  },
  "w-11": {
   "samples": 76,
-  "bodyHiddenPct": 2.6,
-  "feetHiddenPct": 1.3,
-  "longestBodyHiddenM": 4.0,
-  "hiddenOffsetRangesM": [
-   [
-    146.0,
-    148.0
-   ]
-  ]
+  "bodyHiddenPct": 0.0,
+  "feetHiddenPct": 0.0,
+  "longestBodyHiddenM": 0.0,
+  "hiddenOffsetRangesM": []
  },
  "w-12": {
   "samples": 41,

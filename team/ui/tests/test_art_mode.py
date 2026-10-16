@@ -934,8 +934,9 @@ class ArtEnvTest(ArtEnvCase):
         extras = art_extras()
         self.assertEqual(art["origin"], {"cx": extras["cx"], "cy": extras["cy"], "zTop": extras.get("zTop", 0)}, "the GLB's origin")
         self.assertAlmostEqual(art["k"], extras["k"], places=6, msg="the vertical factor read from the GLB")
-        self.assertAlmostEqual(art["az"], 12, places=3, msg="MainView's azimuth")
-        self.assertAlmostEqual(art["el"], 23, places=3, msg="MainView's elevation")
+        az, el = main_view_angles()
+        self.assertAlmostEqual(art["az"], az, places=3, msg="MainView's azimuth (read from the GLB)")
+        self.assertAlmostEqual(art["el"], el, places=3, msg="MainView's elevation (read from the GLB)")
         self.assertAlmostEqual(art["zoom"], 1, places=6)
         self.assertEqual(info["camera"]["type"], "orthographic")
         self.assertLessEqual(info["calls"], 40, "draw calls of the art")
@@ -1192,6 +1193,16 @@ def art_cover():
     node = next(n for n in gltf["nodes"] if n.get("name") == "MainView")
     blocks = [b["screenM"] for m in gltf["materials"] for b in (m.get("extras") or {}).get("atlas", [])]
     return _rotate(node["rotation"], (1, 0, 0)), _rotate(node["rotation"], (0, 1, 0)), blocks
+
+
+def main_view_angles():
+    """Azimuth and elevation (degrees) of env.glb's MainView, from its rotation (its back direction)."""
+    with open(ENV_GLB, "rb") as handle:
+        head = handle.read(20)
+        gltf = json.loads(handle.read(struct.unpack("<I", head[12:16])[0]))
+    node = next(n for n in gltf["nodes"] if n.get("name") == "MainView")
+    back = _rotate(node["rotation"], (0, 0, 1))
+    return math.degrees(math.atan2(back[0], back[2])), math.degrees(math.asin(max(-1.0, min(1.0, back[1]))))
 
 
 def uncovered(cam, tol=0.5):

@@ -80,11 +80,13 @@ the mapped polyline (Y of the floor = mapped z).
 
 ## 4. Camera and composition
 
-- One orthographic camera, looking from the south (from +Z toward −Z),
-  azimuth 12° (turned so that the east side of the massif shows a little),
-  elevation 28°. The Blender build may tune azimuth within 0–20° and elevation
-  within 22–34° after comparing previews with the references; the chosen camera
-  is exported in the GLB (section 5) and is the only definition of the main view.
+- One orthographic camera, looking from the south-east (azimuth measured from
+  south toward the east), azimuth 24°, elevation 28° (chosen in the fourth art
+  pass by comparing overviews at 22°, 24°, 30° and 40°: the drifts and ramps run
+  diagonally, the mine fills the 16:9 frame and the lit back walls show). The
+  Blender build may tune azimuth within 20–50° and elevation within 26–34°; the
+  chosen camera is exported in the GLB (section 5) and is the only definition of
+  the main view.
 - The overview frames the whole mine, surface portals included, at 16:9.
 - The browser allows pan and zoom only (zoom 1× to 4× of the overview, pan
   clamped to the mine's bounds), smoothed (critically damped, no overshoot,
@@ -142,11 +144,19 @@ References (look only, not geometry):
 `reference-detail.png` (full path:
 `C:\Users\Azim\AppData\Local\Temp\claude\C--Users-Azim--codex-worktrees-claude-mine-ui-OpenegizRudnik\cd68de12-3493-40a6-92f0-63e15136b8d7\scratchpad\scene-kit\mine-scene-kit\`).
 
-- Rock: dark charcoal faceted massif with large irregular planes, copper-orange
-  veins, clear cut edges; light catches the facets near lamps.
-- Workings: gravel floors with tyre tracks, rock walls with bolting mesh, steel
-  sets (I-beam frames) every ~20 m, cables, a ventilation duct along the main
-  drifts, warm lamps (≈2700 K, `#FFC37A`) with soft pools on walls and floor.
+- Fourth pass: the balance of the clean isometric reference
+  `scratchpad\ref2\reference-iso.webp` (natural reading, value structure) and the
+  richness of the faceted pass.
+- Rock: a dark charcoal body sculpted into big facets (large planes, soft strata
+  on the cut faces, moderate contrast, light rims on upper edges), a few thin
+  copper veins. The workings are tunnels opened along their length: light gravel
+  floor > mid textured rock walls > dark rock, an irregular rock edge above with
+  drips, rounded junctions, landings and face chambers.
+- Workings: gravel floors with tyre tracks and loose stones, textured rock walls
+  with light drips, steel sets (I-beam frames) every ~20–30 m, cables, a
+  ventilation duct along the main drifts and down the zone drifts, warm lamps
+  (≈2700 K, `#FFC37A`) with faint light cones, soft pools on the floor and a wash
+  up the walls.
 - Machines yellow (`#E8B22A` family), people safety orange (`#F26A1B`), steel
   mid grey, cabinets red/yellow as small props.
 - Limited palette, slight hue variation, no plastic gloss, no random noise; thin

@@ -343,6 +343,15 @@ export function createArtRig(camera, options) {
     return best;
   }
 
+  /** The goal and the camera now kept in the zoom range and on the coverage (a new size of the stage). */
+  function reclamp() {
+    clampGoal();
+    const [lo, hi] = logRange();
+    state.dist = Math.exp(clamp(Math.log(state.dist), lo, hi));
+    onCover(state.target, state.dist);
+    apply();
+  }
+
   /** A new viewing direction (the MainView of the art); the bounds must be set again (setBounds). */
   function setView(az, el) {
     state.az = az;
@@ -358,7 +367,7 @@ export function createArtRig(camera, options) {
 
   return {
     art: true, state, limits, axes, apply, set, glideTo, retarget, drag, release, zoom, rotate, pan, step, fit, stop, setBounds, setView, where,
-    setCover, largestOnCover,
+    setCover, largestOnCover, reclamp,
     get gliding() {
       return moving;
     },

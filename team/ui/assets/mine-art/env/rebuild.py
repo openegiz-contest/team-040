@@ -29,7 +29,7 @@ def run(cmd):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--samples", type=int, default=768)
+    ap.add_argument("--samples", type=int, default=256)
     ap.add_argument("--blender", default=DEFAULT_BLENDER)
     a = ap.parse_args()
     run([sys.executable, os.path.join(HERE, "dump_topology.py")])
