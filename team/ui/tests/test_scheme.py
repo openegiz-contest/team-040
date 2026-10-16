@@ -153,14 +153,15 @@ class SchemeTestCase(BrowserTestCase):
         scheme, rows = drawn["scheme"], drawn["list"]
         kinds = {}
         for thing_id, row in rows.items():
-            if row["kind"] not in ("working", "zone", "sensor", "exit", "worker"):
+            # The loaders (equipment twins) are drawn at their published place too (CONTRACT.md §9).
+            if row["kind"] not in ("working", "zone", "sensor", "exit", "worker", "equipment"):
                 self.assertNotIn(thing_id, scheme, "a twin without a place is not on the scheme")
                 continue
             self.assertIn(thing_id, scheme, f"{thing_id} is drawn")
             self.assertEqual(len(scheme[thing_id]), 1, f"{thing_id} is drawn exactly once")
             self.assertEqual(scheme[thing_id][0], row, f"{thing_id}: the scheme and the list carry the same state")
             kinds[row["kind"]] = kinds.get(row["kind"], 0) + 1
-        self.assertEqual(kinds, {"working": 36, "zone": 4, "sensor": 10, "exit": 3, "worker": 14})
+        self.assertEqual(kinds, {"working": 36, "zone": 4, "sensor": 10, "exit": 3, "worker": 14, "equipment": 4})
         self.assertEqual(set(scheme), {thing_id for thing_id, row in rows.items() if row["kind"] in kinds})
 
         roles = self.page.evaluate("""[...document.querySelectorAll('#scheme [data-thing-id]')].every((node) =>

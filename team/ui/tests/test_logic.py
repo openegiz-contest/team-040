@@ -138,6 +138,10 @@ class ValidateTest(LogicTestCase):
             incident_state: (r) => { delete element(r, 'incident').features.state; },
             option_state: (r) => { delete element(r, 'option-observe').features.state; },
             journal_events: (r) => { delete element(r, 'journal').features.events; },
+            // CONTRACT.md §9: a machine always has a state and a place; without them the snapshot fails closed.
+            equipment_state: (r) => { delete element(r, 'lhd-a').features.state; },
+            equipment_working: (r) => { delete element(r, 'lhd-a').features.at_working; },
+            equipment_offset: (r) => { delete element(r, 'lhd-a').features.offset_m; },
             element_tick: (r) => { delete element(r, 'w-01').features.tick; },
             null_value: (r) => { element(r, 'w-01').features.hazard_state.properties.value = null; },
             wrong_type: (r) => { r.body.features.tick.properties.value = '12'; },
@@ -198,6 +202,9 @@ class ValidateTest(LogicTestCase):
             "incident_state": ("missing_field", {"thing": "incident", "field": "state"}),
             "option_state": ("missing_field", {"thing": "option-observe", "field": "state"}),
             "journal_events": ("missing_field", {"thing": "journal", "field": "events"}),
+            "equipment_state": ("missing_field", {"thing": "lhd-a", "field": "state"}),
+            "equipment_working": ("missing_field", {"thing": "lhd-a", "field": "at_working"}),
+            "equipment_offset": ("missing_field", {"thing": "lhd-a", "field": "offset_m"}),
             "element_tick": ("missing_field", {"thing": "w-01", "field": "tick"}),
             "null_value": ("malformed", {"thing": "w-01", "field": "hazard_state"}),
             "wrong_type": ("malformed", {"thing": "shift", "field": "tick"}),
@@ -1737,6 +1744,67 @@ class TextTest(LogicTestCase):
         self.assertEqual(got["order"][-1], "paused_decision")
         self.assertEqual(len(got["order"]), 11)
         self.assertEqual(got["severities"], [])
+
+
+class LoaderWordsTest(LogicTestCase):
+    """CONTRACT.md §9: every new code of the loaders has Russian words, an unknown one is shown as is, the cost of an
+    option is written from the published fields only (never a zero for a missing value), with units, and nothing in
+    its words ranks the options."""
+
+    def test_vocabularies_units_and_the_cost_of_an_option(self):
+        got = self.js("""
+          const T = await import('/js/text.js');
+          const D = await import('/js/view/decision.js');
+          const required = {
+            equipmentActivity: ['loading', 'hauling', 'dumping', 'returning', 'tramming', 'yielding', 'idle'],
+            equipmentState: ['working', 'parked', 'stopped'],
+            holdReason: ['none', 'zone_stopped', 'entry_blocked', 'path_closed', 'crew_absent'],
+            workerRole: ['crew', 'lhd_operator'],
+            journalCode: ['equipment.state_changed', 'equipment.hazard_changed', 'equipment.conflict', 'model.migrated'],
+            unit: ['t', 'machine*s'],
+          };
+          const missing = [];
+          for (const [vocab, codes] of Object.entries(required)) for (const code of codes) if (!T.isKnown(vocab, code)) missing.push(`${vocab}:${code}`);
+          const full = {values: {forecast_out: 4, forecast_in_danger: 0, forecast_hauled_t: 84, forecast_planned_t: 140,
+            forecast_production_lost_t: 56, forecast_machines_in_danger: 1, forecast_machines_unknown: 0, forecast_machines_stuck: 0,
+            forecast_conflicts: 2, forecast_conflict_yield_s: 47, forecast_downtime_s: 900},
+            units: {forecast_hauled_t: 't', forecast_planned_t: 't', forecast_production_lost_t: 't', forecast_conflict_yield_s: 'machine*s',
+              forecast_downtime_s: 'zone*s'}};
+          const people = {values: {forecast_out: 4, forecast_in_danger: 0, forecast_downtime_s: 900}, units: {forecast_downtime_s: 'zone*s'}};
+          const part = {values: {forecast_out: 4, forecast_production_lost_t: 56}, units: {}};
+          const cost = (twin) => { const facts = D.costFacts(T, twin, 'forecast_'); return facts && facts.map((f) => [f.key, f.text, f.badge || null]); };
+          const words = [...Object.values(T.PANEL.cost).filter((v) => typeof v === 'string'), T.PANEL.costLabel, T.PANEL.costNotPublished,
+            ...Object.values(T.UI.decision.costTitle), T.UI.decision.costNote, T.UI.decision.lostTitle, T.UI.decision.groupCost].join(' ').toLowerCase();
+          return {
+            missing,
+            odd: [T.label('holdReason', 'tyres_flat'), T.label('equipmentActivity', 'flying'), T.codeLabel('journalCode', 'equipment.new')],
+            units: [T.quantity(14, 't'), T.quantity(47, 'machine*s'), T.quantity(281.564, 't/h')],
+            full: cost(full), people: cost(people), part: cost(part),
+            lost: D.decisionCell(T, full, 'forecast_', 'production_lost_t').text,
+            cells: ['hauled_t', 'machines_in_danger', 'machines_unknown', 'conflicts', 'conflict_yield_s']
+              .map((metric) => [metric, D.decisionCell(T, full, 'forecast_', metric).text, D.decisionCell(T, full, 'forecast_', metric).badge]),
+            missingCell: D.decisionCell(T, people, 'forecast_', 'hauled_t').text,
+            rows: D.DECISION_ROWS, order: D.METRIC_ORDER,
+            ranking: ['лучш', 'худш', 'оптимал', 'выгодн', 'дешевл', 'рекомендуем', 'советуем', 'вероятност'].filter((w) => words.includes(w)),
+          };""")
+        nb = lambda value: value.replace(" ", " ") if isinstance(value, str) else value  # noqa: E731
+        self.assertEqual(got["missing"], [])
+        self.assertEqual(got["odd"], ["неизвестно (tyres_flat)", "неизвестно (flying)", "equipment.new"], "unknown codes shown as is")
+        self.assertEqual([nb(u) for u in got["units"]], ["14 т", "47 маш.·с", "281,56 т/ч"])
+        self.assertEqual([[k, nb(t), b] for k, t, b in got["full"]], [
+            ["tonnes", "Руда: вывезено 84 т из 140 т, недовывезено 56 т", None],
+            ["machines", "ПДМ в опасной зоне: 1", "danger"],
+            ["meet", "Встречи ПДМ с идущими людьми: 2, ПДМ уступала 47 маш.·с", None],
+            ["downtime", "простой участков 15 уч.·мин", None]])
+        self.assertIsNone(got["people"], "a forecast without any field of the cost: «цена не опубликована», no zeros")
+        self.assertEqual([[k, nb(t)] for k, t, _ in got["part"]], [["tonnes", "Руда: недовывезено 56 т"]], "only what is published")
+        self.assertEqual(nb(got["lost"]), "56 т из 140 т")
+        self.assertEqual([[m, nb(t), b] for m, t, b in got["cells"]], [["hauled_t", "84 т", None], ["machines_in_danger", "1", "danger"],
+                         ["machines_unknown", "0", None], ["conflicts", "2", None], ["conflict_yield_s", "47 маш.·с", None]])
+        self.assertEqual(got["missingCell"], "—")
+        self.assertEqual(got["rows"][-8:], ["production_lost_t", "hauled_t", "machines_in_danger", "machines_unknown", "machines_stuck",
+                                            "conflicts", "conflict_yield_s", "downtime_s"])
+        self.assertEqual(got["ranking"], [], "no word of the cost ranks or recommends")
 
 
 class RouterStoreDomTest(LogicTestCase):

@@ -147,6 +147,22 @@ function rowCells(text, model, thing, snapshot) {
     const reachBadge = {ok: 'ok', none: 'blocked'}[values.egress_status] || 'unknown';
     reach = {text: join([text.egressText(values, name), text.crossesText(values)]), badge: reachBadge};
     value = text.label('workerStatus', values.status);
+  } else if (thing.kind === 'equipment') {
+    // A loader (CONTRACT.md §9): the hazard of its place as a person's, its state with the reason, its operation.
+    if (values.location_hazard !== undefined) {
+      hazard = {
+        text: `${text.UI.incident.zone}: ${text.hazardCodeText(values.location_hazard)}`,
+        badge: HAZARD_BADGE[knownHazard(values.location_hazard)],
+      };
+    }
+    value = join([
+      text.label('equipmentState', values.state),
+      typeof values.hold_reason === 'string' && values.hold_reason !== 'none' ? text.label('holdReason', values.hold_reason) : '',
+      values.activity !== undefined ? text.label('equipmentActivity', values.activity) : '',
+      typeof values.loaded === 'boolean' ? text.UI.list.load(values.loaded) : '',
+      values.operator_aboard === true ? text.fieldLabel('operator_aboard') : '',
+      typeof values.run_hauled_t === 'number' ? `${text.fieldLabel('run_hauled_t')} ${text.quantity(values.run_hauled_t, units.run_hauled_t || 't')}` : '',
+    ]);
   } else if (thing.kind === 'exit') {
     reach = {
       text: text.label('exitState', values.state),

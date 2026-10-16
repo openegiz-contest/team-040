@@ -133,9 +133,18 @@ Folder `team/ui/public/models/mine-art/actors/`:
   beacon, emissive), `WHEELS` (named `WHEEL_*`, spun only on real movement).
   Budgets: LHD ≤ 6 000 tris, truck ≤ 6 000, drill ≤ 7 000; one texture ≤ 1024²
   each.
-- Machines are decoration (no equipment is published by the simulation). The
-  only state a machine may show is the published work state of the zone it
-  stands in (lamps on when the zone works, off when it is stopped).
+- Without equipment twins, machines are decoration: the only state a machine
+  may show is the published work state of the zone it stands in (lamps on when
+  the zone works, off when it is stopped).
+- With equipment twins (CONTRACT.md §9, model 0.2: `lhd-a`, `lhd-b`) the browser
+  draws `lhd.glb` for each published loader at its published `at_working` /
+  `offset_m`, turned towards `toward_node`, playing back between publications
+  with the people (at most the registry's step, 30 m), lamps by its published
+  `state` (working lit, parked dim, stopped or unknown dark), a browser-made heap
+  of rock in the bucket only while `loaded`. The art's loaders at
+  `ANCHOR_lhd_zone-*` are then hidden. The truck and the drill stay decoration
+  with dark lamps (no telemetry, not pickable, said in the scale note). An
+  operator riding a loader (`aboard`) is drawn as part of it, not as a figure.
 
 ## 7. Art direction
 

@@ -102,12 +102,21 @@ export const SCENE = {
   machineWorking: 'работает',
   machineUnknown: 'состояние не опубликовано',
   machineLoad: (loaded) => (loaded ? 'в ковше руда' : 'ковш пуст'),
+  /** CONTRACT.md §9: why a loader is held, the person it yields to, the operator who rides it. */
+  machineHeld: (reason) => `стоит: ${reason}`,
+  machineYields: (code) => `уступает дорогу ${code}`,
+  machineRider: (code) => `оператор ${code} на борту`,
+  machineNoRider: 'оператора на борту нет',
+  /** An ore pass of mine.attributes.dump_points: where the loaders dump. */
+  orePass: (label, working) => `${label} · ${working}`,
+  orePassNote: 'место разгрузки ПДМ (атрибут рудника, не двойник)',
   machineNote: (factor) => `Положение и состояние — по публикации модели · ПДМ показана увеличенной ×${num(factor, 1)}`,
   /** The sign of a loader that does not work: stopped with its zone, or without a published state. */
   machineSign: {stopped: 'остановлена', unknown: 'ПДМ: ?'},
   /** The notes of the illustrated mine (art mode with the art's GLB): what is to scale and what is decoration. */
   artVertical: (factor) => `вертикаль ×${num(factor, 1)}; выработки нарисованы шире настоящих`,
   artDecor: 'порода, крепь, лампы, оборудование, самосвал и буровая — оформление',
-  artFigures: (machine, people) => `машины ×${num(machine, 1)} настоящих, фигуры людей ×${num(people, 1)}; ПДМ показывает только работу своего участка`,
+  artFigures: (machine, people, equipment = false) => `машины ×${num(machine, 1)} настоящих, фигуры людей ×${num(people, 1)}; ${equipment
+    ? 'ПДМ — по данным модели, самосвал и буровая — оформление' : 'ПДМ показывает только работу своего участка'}`,
   decorEquipment: (factor, people) => `ПДМ — по данным модели, ×${num(factor, 1)}; фигуры людей ×${num(people, 1)}`,
 };

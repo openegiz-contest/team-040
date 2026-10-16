@@ -265,3 +265,17 @@ body[data-old-data] .worker .worker__hit { transition: none; }
   /* Beside the legend chip, never under it: the note wraps into a narrow column at the right. */
   .scheme__note { max-width: 210px; font-size: 11px; }
 }
+
+/* The loaders (CONTRACT.md §9): the glyph of the depth rail at the published place, under the people's dots. */
+.obj.machine { color: var(--dust-1); cursor: pointer; }
+.obj.machine .loader__ring { fill: none; stroke: none; }
+.obj.machine .loader__body { fill: currentColor; stroke: currentColor; stroke-width: 1; stroke-linejoin: round; }
+.obj.machine .loader__wheel { fill: var(--ink-0); stroke: currentColor; stroke-width: 1.2; }
+.obj.machine .loader__pause, .obj.machine .loader__question { display: none; fill: none; stroke: currentColor; stroke-width: 1.4; }
+.obj.machine[data-state="parked"] .loader__body, .obj.machine[data-state="stopped"] .loader__body { fill: var(--ink-0); }
+.obj.machine[data-state="stopped"] .loader__pause { display: inline; }
+.obj.machine[data-state="unknown"] { color: var(--unknown); }
+.obj.machine[data-state="unknown"] .loader__body { fill: none; stroke-dasharray: 2 1.6; }
+.obj.machine[data-state="unknown"] .loader__question { display: inline; }
+.obj.machine[data-location-hazard="danger"] .loader__ring { stroke: var(--danger); stroke-width: 2; }
+.obj.machine.is-selected .loader__ring { stroke: var(--selection); stroke-width: 2; }

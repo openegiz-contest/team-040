@@ -398,6 +398,8 @@ export function mount(root, ctx) {
    * false when there is none.
    */
   ctx.stage.people = () => (mode === '3d' && instance ? instance.people() : null);
+  /** The loaders as the 3D stage draws them now ([{name, thingId, z, working, moving}]), null when not in 3D. */
+  ctx.stage.machines = () => (mode === '3d' && instance && instance.machines ? instance.machines() : null);
   ctx.stage.onPeople = (listener) => {
     peopleListeners.add(listener);
     return () => peopleListeners.delete(listener);

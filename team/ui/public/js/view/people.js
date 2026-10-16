@@ -17,6 +17,10 @@
 // press on a zone row selects the zone and asks the stage to show it; its
 // chevron unfolds the dispatcher actions of the zone (view/actions.js).
 //
+// Under them, the shift's machines as the model publishes them (CONTRACT.md §9): how many work of how many, the
+// shift's production rate and the tonnes hauled in the run; machines in a danger zone or held by a closed passage
+// only when there are any (with the sign of their axis). Shown only when the shift publishes them.
+//
 // The rail folds to a strip of figures (shell.rail = 'collapsed').
 //
 // Motion (variant 3): a changed counter slides from the old published value to
@@ -84,13 +88,17 @@ export function mount(root, ctx) {
   const figureBox = h('div', {class: 'rail-figs', role: 'group', 'aria-label': UI.incident.peopleTitle, title: UI.incident.peopleTitle},
     h('div', {class: 'rail-figs__main'}, figures[0].node, figures[1].node),
     h('div', {class: 'rail-figs__alerts'}, figures.slice(2).map((item) => item.node)));
+  // The machines of the shift: published counters and totals only.
+  const machineList = h('div', {class: 'rail-machines__list'});
+  const machineBox = h('div', {class: 'rail-machines', role: 'group', 'data-testid': 'rail-machines', 'aria-label': R.machinesTitle,
+    title: R.machinesTitle, hidden: true}, h('span', {class: 'rail-machines__title', text: R.machines}), machineList);
 
   // ---- where the people are ----------------------------------------------------------
   const rows = h('ol', {class: 'zrows', 'data-testid': 'rail-zones'});
   const where = h('section', {class: 'rail__where', 'aria-labelledby': 'rail-where-title'},
     h('h3', {class: 'rail__sub', id: 'rail-where-title', title: R.whereTitle, text: R.where}),
     rows);
-  root.append(h('div', {class: 'rail__inner', role: 'region', 'aria-labelledby': 'rail-title'}, head, figureBox, where));
+  root.append(h('div', {class: 'rail__inner', role: 'region', 'aria-labelledby': 'rail-title'}, head, figureBox, machineBox, where));
 
   /** A new published value: the old number slides up out of its mask, the new one rises into place, and an
    *  accent underline fades out. Never on the first value, never through intermediate values. */
@@ -119,6 +127,34 @@ export function mount(root, ctx) {
         'data-value': published ? value : null,
       });
     }
+  }
+
+  function drawMachines(state) {
+    const {model} = state;
+    const values = model && model.shift ? model.shift.values : {};
+    const units = model && model.shift ? model.shift.units : {};
+    const has = (field) => typeof values[field] === 'number' && Number.isFinite(values[field]);
+    machineBox.hidden = !has('machines_total');
+    if (machineBox.hidden) return;
+    const items = [];
+    items.push({key: 'machines_working', text: has('machines_working') ? R.machinesWorking(text.num(values.machines_working), text.num(values.machines_total))
+      : R.machinesTotal(text.num(values.machines_total))});
+    if (has('production_rate')) items.push({key: 'production_rate', text: R.production(text.quantity(values.production_rate, units.production_rate || 't/h'))});
+    if (has('run_hauled_t')) items.push({key: 'run_hauled_t', text: R.hauled(text.quantity(values.run_hauled_t, units.run_hauled_t || 't'))});
+    if (has('machines_in_danger') && values.machines_in_danger > 0) {
+      items.push({key: 'machines_in_danger', text: R.machinesInDanger(text.num(values.machines_in_danger)), sign: 'danger'});
+    }
+    if (has('machines_stuck') && values.machines_stuck > 0) {
+      items.push({key: 'machines_stuck', text: R.machinesStuck(text.num(values.machines_stuck)), sign: 'blocked'});
+    }
+    reconcile(machineList, items, (item) => item.key, () => h('span', {class: 'rail-machines__item'}, h('span', {class: 'rail-machines__sign',
+      'aria-hidden': 'true'}), h('span', {class: 'rail-machines__words'})), (node, item) => {
+      const [holder, words] = node.children;
+      holder.hidden = !item.sign;
+      if (item.sign) setSign(holder, item.sign);
+      setText(words, item.text);
+      setAttrs(node, {'data-field': item.key, 'data-value': values[item.key], class: ['rail-machines__item', item.sign && `is-alert is-alert--${item.sign}`]});
+    });
   }
 
   // ---- rows ---------------------------------------------------------------------------
@@ -365,6 +401,7 @@ export function mount(root, ctx) {
     flashing = run !== null && run === drawnRun && motionAllowed(state);
     drawnRun = run;
     drawFigures(state);
+    drawMachines(state);
     const groups = state.model && state.model.hasSnapshot ? groupsOf(state.model) : [];
     reconcile(rows, groups, (group) => group.key, createRow, (row, group) => updateRow(row, group, state));
     setAttrs(rows, {'data-state': state.model && state.model.hasSnapshot ? null : 'empty'});

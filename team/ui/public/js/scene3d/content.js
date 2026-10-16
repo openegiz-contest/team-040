@@ -27,7 +27,7 @@ const {UI} = text;
  *                                     group(group), sensor(name), exit(name)
  * @returns {import('./labels.js').LabelItem[]}
  */
-export function labelItems({model, view, layout, groups, anchors, arriving = new Set(), loaders = []}) {
+export function labelItems({model, view, layout, groups, anchors, arriving = new Set(), loaders = [], orePasses = []}) {
   const items = [];
   const name = (local) => labelOf(model, local);
   const selected = view.selected;
@@ -216,7 +216,7 @@ export function labelItems({model, view, layout, groups, anchors, arriving = new
   for (const {zone, look, lines: said} of loaders) {
     const thing = thingByName(model, zone);
     if (thing && thing.kind === 'equipment') {
-      items.push(machineItem(thing, look, said, selected, anchors));
+      items.push(machineItem(thing, look, said, selected, anchors, view, name));
       continue;
     }
     if (!thing || look === 'working') continue;
@@ -232,26 +232,60 @@ export function labelItems({model, view, layout, groups, anchors, arriving = new
     });
   }
 
+  // Ore passes (mine.attributes.dump_points, CONTRACT.md §9): named close up; a press selects their working.
+  for (const entry of orePasses) {
+    const working = thingByName(model, entry.working);
+    const words = SCENE.orePass(entry.label, working ? working.label : entry.working);
+    items.push({
+      key: `orepass:${entry.id}`, thingId: null,
+      attrs: {'data-kind': 'orepass', 'data-orepass': entry.id, 'data-select': working ? working.thingId : null, 'aria-label': words},
+      lines: [{text: entry.label}], tip: [{text: words, bold: true}, {text: SCENE.orePassNote}],
+      signs: [], rank: 8, always: false, cls: ['s3-label--orepass'],
+      anchor: () => anchors.orePass(entry.id), place: 'around', minScale: 3,
+    });
+  }
+
   return items;
 }
 
 /**
- * The label of a loader of the model (equipment twin, contract question 18). A working or parked one is named by
- * its code close up, on hover or selected; a stopped one («остановлена») and one without a published state («?»)
- * always carry a sign. The label is the loader's twin: Enter or a click selects it, the card shows its fields.
+ * The label of a loader of the model (CONTRACT.md §9). A working one is named by its code close up, on hover or
+ * selected; a held one says why («стоит: вход в участок запрещён»), a stopped one «остановлена», one without a
+ * published state «?» — those always. A loader in a danger zone carries the danger sign of a person, always; an
+ * unknown place carries «?» unless the working has no sensors by design (as people). The operator riding it is a
+ * second line («оператор Р-A4 на борту»): the person is part of the machine, no figure of its own. The label is the
+ * loader's twin: Enter or a click selects it, the card shows its fields.
  */
-function machineItem(thing, look, said, selected, anchors) {
+function machineItem(thing, look, said, selected, anchors, view, name) {
   const isSelected = thing.thingId === selected;
-  const sign = SCENE.machineSign[look];
-  const lines = sign && !isSelected ? [{text: sign, bold: look === 'stopped'}] : [{text: isSelected ? said[0] : thing.label, bold: true}];
+  const machine = view && view.equipment ? view.equipment[thing.name] : null;
+  const working = machine && machine.at && view.workings ? view.workings[machine.at] : null;
+  const hazard = machine ? machine.locationHazard : null;
+  const danger = hazard === 'danger';
+  const unknownPlace = hazard === 'unknown' && !(working && working.quality === 'none');
+  const held = look === 'parked' && machine && machine.holdReason && machine.holdReason !== 'none'
+    ? SCENE.machineHeld(text.label('holdReason', machine.holdReason)) : null;
+  const sign = SCENE.machineSign[look] || held;
+  const lines = sign && !isSelected ? [{text: `${thing.label} · ${sign}`, bold: look === 'stopped' || danger}]
+    : [{text: isSelected ? said[0] : thing.label, bold: true}];
+  if (machine && machine.operatorAboard === true && machine.operator && view.workers && view.workers[machine.operator]) {
+    lines.push({text: SCENE.machineRider(name(machine.operator)), muted: true});
+  }
+  const signs = [];
+  if (danger) signs.push('danger');
+  else if (unknownPlace) signs.push('unknown');
+  if (look === 'stopped') signs.push('stopped');
+  const always = Boolean(sign) || danger || unknownPlace || isSelected;
   return {
     key: `loader:${thing.name}`, thingId: thing.thingId,
-    attrs: {'data-thing-id': thing.thingId, 'data-kind': 'equipment', 'data-state': look, 'aria-label': said.join('. '),
-      'aria-pressed': String(isSelected)},
+    // The state attributes of the list (model.js stateAttributes), then the look drawn and the rest of the machine.
+    attrs: {...stateAttributes(thing), 'data-look': look, 'aria-label': said.join('. '), 'aria-pressed': String(isSelected),
+      'data-hold-reason': machine && machine.holdReason ? machine.holdReason : null, 'data-aboard': machine && machine.operatorAboard ? 'true' : null},
     lines, tip: said.map((line, index) => ({text: line, bold: index === 0})),
-    signs: look === 'stopped' ? ['stopped'] : [], rank: sign ? 2.5 : 6, always: Boolean(sign) || isSelected,
-    cls: ['s3-label--loader', 's3-label--machine', `s3-label--loader-${look}`, isSelected && 'is-selected'].filter(Boolean),
-    anchor: () => anchors.loader(thing.name), place: 'around', minScale: sign || isSelected ? 0 : 4,
+    signs, rank: danger ? 2 : (always ? 2.5 : 6), always,
+    cls: ['s3-label--loader', 's3-label--machine', `s3-label--loader-${look}`, danger && 's3-label--problem', isSelected && 'is-selected']
+      .filter(Boolean),
+    anchor: () => anchors.loader(thing.name), place: 'around', minScale: always ? 0 : 4,
   };
 }
 
@@ -267,14 +301,22 @@ export function machineLines(model, name, machine, look, factor) {
   const thing = thingByName(model, name);
   if (!thing || !machine) return [];
   let words = SCENE.machineUnknown;
-  if (look === 'working') words = machine.activity ? text.label('equipmentActivity', machine.activity) : SCENE.machineWorking;
-  else if (SCENE.machineStill[look]) words = SCENE.machineStill[look];
+  const doing = machine.activity === 'yielding' && machine.yieldingTo ? SCENE.machineYields(labelOf(model, machine.yieldingTo))
+    : (machine.activity ? text.label('equipmentActivity', machine.activity) : null);
+  if (look === 'working') words = doing || SCENE.machineWorking;
+  else if (look === 'parked') {
+    words = machine.holdReason && machine.holdReason !== 'none' ? SCENE.machineHeld(text.label('holdReason', machine.holdReason)) : SCENE.machineStill.parked;
+    if (doing && machine.activity !== 'idle') words = `${words} · ${doing}`;
+  } else if (look === 'stopped') words = doing && machine.activity !== 'idle' ? `${SCENE.machineStill.stopped} · ${doing}` : SCENE.machineStill.stopped;
   const zone = machine.zone ? thingByName(model, machine.zone) : null;
   const lines = [SCENE.machineTitle(thing.label, words, zone ? zone.label : null)];
   const where = [];
   if (machine.at) where.push(`${labelOf(model, machine.at)}, ${text.quantity(machine.offsetM, 'm')}`);
   if (machine.loaded !== null) where.push(SCENE.machineLoad(machine.loaded));
+  if (machine.locationHazard) where.push(`${UI.incident.zone}: ${text.hazardCodeText(machine.locationHazard)}`);
   if (where.length > 0) lines.push(where.join(' · '));
+  if (machine.operatorAboard === true && machine.operator) lines.push(SCENE.machineRider(labelOf(model, machine.operator)));
+  else if (machine.operatorAboard === false) lines.push(SCENE.machineNoRider);
   lines.push(SCENE.machineNote(factor));
   return lines;
 }

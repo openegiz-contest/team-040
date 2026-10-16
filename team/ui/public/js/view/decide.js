@@ -26,7 +26,7 @@ import {h, reconcile, s, setAttrs, setGlyph, setText} from '../dom.js';
 import {incidentOf, isUnderground, thingByName, thingsOfKind, workersInZone} from '../model.js';
 import {EASE_POSTER, motionAllowed, play, playIn, stagger} from '../motion.js';
 import {situationOf} from '../situation.js';
-import {decisionOf, headline, launchOption, metricsTable, optionVerb, peopleBar, peopleOf, peoplePatterns, qualityMark,
+import {costFacts, costLine, decisionOf, hasCost, headline, launchOption, metricsTable, optionVerb, peopleBar, peopleOf, peoplePatterns, qualityMark,
   scopeText, secondaryFacts} from './decision.js';
 import {blockNote, commandButton, guard, showBlock, standing} from './pending.js';
 import {executingView, incidentSentence, resultView, showThing, updateWho, whoButton, workerFigure} from './progress.js';
@@ -66,7 +66,8 @@ function decisionView(ctx) {
 
   // 3. What can be done.
   const caption = h('p', {class: 'dp-caption', 'data-testid': 'decide-caption'}, h('span', {class: 'dp-caption__what'}), ' ',
-    h('span', {class: 'dp-caption__quality'}), h('span', {class: 'dp-caption__advice'}));
+    h('span', {class: 'dp-caption__quality'}), h('span', {class: 'dp-caption__advice'}),
+    h('span', {class: 'dp-caption__cost', 'data-testid': 'decide-no-cost', hidden: true}));
   const keysDiffer = h('p', {class: 'dp-alert', 'data-testid': 'decide-keys-differ', text: P.keysDiffer, hidden: true});
   const noForecast = h('p', {class: 'dp-alert dp-alert--unknown', 'data-testid': 'decide-no-forecast', text: P.notPublished, hidden: true});
   const cards = h('div', {class: 'dp-cards', role: 'radiogroup', 'aria-labelledby': 'dp-step-3', 'data-testid': 'decide-options'});
@@ -189,7 +190,12 @@ function decisionView(ctx) {
         h('span', {class: 'dp-card__verb'}), h('span', {class: 'dp-card__state'})),
       h('p', {class: 'dp-card__headline', 'data-testid': 'option-headline'}),
       h('div', {class: 'dp-card__bar'}, bar.svg),
+      // Beside the people of the headline, on every card and with the same weight: the time in a danger zone (the
+      // benefit) and the cost in one line (CONTRACT.md §9); the chosen card unfolds the whole cost. No verdict.
+      h('p', {class: 'dp-card__sum', 'data-testid': 'option-sum'}, h('span', {class: 'dp-card__benefit'}), h('span', {class: 'dp-card__cost-line'})),
       h('p', {class: 'dp-card__facts'}),
+      h('div', {class: 'dp-card__cost', 'data-testid': 'option-cost'},
+        h('span', {class: 'dp-card__cost-label'}), h('ul', {class: 'dp-card__cost-list'})),
       h('p', {class: 'dp-card__quality'}));
     bars.set(node, bar);
     return node;
@@ -197,12 +203,13 @@ function decisionView(ctx) {
 
   function updateCard(node, option, info) {
     const {model, decision, sameQuality} = info;
-    const [top, line, barBox, factsBox, qualityBox] = node.children;
+    const [top, line, barBox, sumBox, factsBox, costBox, qualityBox] = node.children;
     const [, verbNode, stateNode] = top.children;
     const verb = optionVerb(text, model, option);
     const offered = option.values.state === 'offered';
     const forecast = headline(text, option.values, 'forecast_');
-    const ids = {verb: `dp-verb-${option.name}`, line: `dp-line-${option.name}`, facts: `dp-facts-${option.name}`};
+    const ids = {verb: `dp-verb-${option.name}`, line: `dp-line-${option.name}`, facts: `dp-facts-${option.name}`, cost: `dp-cost-${option.name}`,
+      sum: `dp-sum-${option.name}`};
     setText(verbNode, verb);
     setAttrs(verbNode, {id: ids.verb});
     setText(stateNode, offered ? '' : (option.values.state === undefined ? text.DASH : text.label('optionState', option.values.state)));
@@ -214,13 +221,37 @@ function decisionView(ctx) {
     const people = peopleOf(option.values, 'forecast_', decision.total);
     barBox.hidden = !forecast;
     if (forecast) bars.get(node).update(people, 'forecast', `${text.UI.decision.forecast}: ${forecast.text}`);
-    const facts = forecast ? secondaryFacts(text, option, 'forecast_') : [];
-    reconcile(factsBox, facts, (fact) => fact.key, () => h('span', {class: 'dp-card__fact'}), (span, fact) => {
+    const facts = forecast ? secondaryFacts(text, option, 'forecast_', {unknown: info.unknownShown}) : [];
+    // With the cost published, the exposures are in the summary of every card and the chosen card unfolds the rest;
+    // without it (an older model) the chosen card unfolds the facts as before.
+    const unfolded = info.anyCost ? facts.filter((fact) => fact.key !== 'exposure' && fact.key !== 'unknown') : facts;
+    reconcile(factsBox, unfolded, (fact) => fact.key, () => h('span', {class: 'dp-card__fact'}), (span, fact) => {
       setText(span, fact.text);
       setAttrs(span, {title: fact.title || null});
     });
-    factsBox.hidden = facts.length === 0;
+    factsBox.hidden = unfolded.length === 0;
     setAttrs(factsBox, {id: ids.facts});
+    // The summary of every card: the exposure (benefit) and the cost in one line; never a zero for a missing value.
+    const [benefitNode, costNode] = sumBox.children;
+    const exposure = facts.filter((fact) => fact.key === 'exposure' || fact.key === 'unknown');
+    setText(benefitNode, exposure.map((fact) => fact.text).join(' · '));
+    setAttrs(benefitNode, {title: exposure.map((fact) => fact.title).filter(Boolean).join('; ') || null});
+    benefitNode.hidden = exposure.length === 0;
+    const summary = forecast ? costLine(text, option, 'forecast_') : null;
+    setText(costNode, summary ? summary.text : P.costNotPublished);
+    setAttrs(costNode, {'data-badge': summary ? summary.badge : null, 'data-cost': summary ? 'published' : 'not_published'});
+    sumBox.hidden = !forecast || !info.anyCost;
+    setAttrs(sumBox, {id: ids.sum});
+    // The whole cost on the chosen card: published fields only; a forecast without them says so, never a zero.
+    const cost = forecast ? costFacts(text, option, 'forecast_') : null;
+    const [costLabel, costList] = costBox.children;
+    setText(costLabel, cost ? `${P.costLabel}:` : P.costNotPublished);
+    reconcile(costList, cost || [], (fact) => fact.key, () => h('li', {class: 'dp-card__cost-item'}), (item, fact) => {
+      setText(item, fact.text);
+      setAttrs(item, {title: fact.title || null, 'data-cost': fact.key, 'data-badge': fact.badge || null});
+    });
+    costBox.hidden = !forecast || !info.anyCost;
+    setAttrs(costBox, {id: ids.cost, 'data-cost': cost ? 'published' : 'not_published'});
     const quality = forecast ? qualityMark(text, option.values.forecast_quality) : {words: '', badge: null};
     // A partial forecast is said on the card itself when the options differ; else once in the caption.
     const ownQuality = quality.words !== '' && !sameQuality;
@@ -232,7 +263,7 @@ function decisionView(ctx) {
       'data-option': option.name, 'data-thing-id': option.thingId, 'data-state': option.values.state,
       'data-option-kind': option.attrs.option_kind,
       'aria-checked': checked ? 'true' : 'false', 'aria-disabled': offered ? null : 'true',
-      'aria-labelledby': ids.verb, 'aria-describedby': `${ids.line} ${ids.facts}`,
+      'aria-labelledby': ids.verb, 'aria-describedby': `${ids.line} ${ids.sum} ${ids.facts} ${ids.cost}`,
       class: ['dp-card', checked && 'is-chosen', !offered && 'is-unavailable', !forecast && 'is-unpublished'],
     });
   }
@@ -324,7 +355,14 @@ function decisionView(ctx) {
     setText(noForecast, P.noOptions);
     keysDiffer.hidden = decision.sharedKey || options.length < 2;
 
-    const info = {model, decision, sameQuality: qualities.length <= 1};
+    // The time in zones of unknown state is said on every card once one option publishes it above zero.
+    const unknownShown = decision.published.some((option) => option.values.forecast_unknown_exposure_person_s > 0);
+    // The cost on the cards once one option publishes it; else «цена не опубликована» once, in the caption.
+    const anyCost = decision.published.some((option) => hasCost(option.values, 'forecast_'));
+    const noCost = caption.querySelector('.dp-caption__cost');
+    setText(noCost, ` · ${P.costNotPublished}`);
+    noCost.hidden = anyCost || decision.published.length === 0;
+    const info = {model, decision, sameQuality: qualities.length <= 1, unknownShown, anyCost};
     reconcile(cards, options, (option) => option.name, createCard, (node, option) => updateCard(node, option, info));
     // A decision that appears (or a new one of the model): its cards cascade in from the right, once.
     const cascadeKey = `${decision.decisionIds.join()}|${options.map((option) => option.name).join()}`;

@@ -17,13 +17,14 @@
 import {unresolvedFor} from '../commands.js';
 import {h, onActivate, reconcile, s, setAttrs, setText} from '../dom.js';
 import * as geo from '../geometry.js';
-import {drawWorking, exitMarker, focusFrame, hazardSign, patterns, sensorMarker, sign, workerMarker} from '../icons.js';
+import {drawWorking, exitMarker, focusFrame, hazardSign, loaderGlyph, patterns, sensorMarker, sign, workerMarker} from '../icons.js';
 import {
   incidentOf, isUnderground, labelOf, placeOf, routeOf, stateAttributes, thingsOfKind, workersInZone, zoneOfWorking,
 } from '../model.js';
 
 // Bottom to top. A route lies on the workings and under every tag and marker: words are never crossed by a line.
-const LAYERS = ['planes', 'halos', 'workings', 'nodes', 'route', 'zones', 'sensors', 'exits', 'workers', 'labels'];
+// The loaders (CONTRACT.md §9) lie under the people: an operator riding one is the person's dot over the machine.
+const LAYERS = ['planes', 'halos', 'workings', 'nodes', 'route', 'zones', 'sensors', 'exits', 'machines', 'workers', 'labels'];
 const PAD = {top: 50, right: 16, bottom: 58, left: 16};
 const BAND_PX = {shaft: 11, drift: 9};
 const STUB_PX = 34;
@@ -476,6 +477,19 @@ export function mount(root, ctx) {
       placer.block({x: x - 10, y: y - 25, w: 20, h: 24}, 400);
     }
 
+    // Loaders: at their published working and offset, turned along it towards the published `toward_node`.
+    const machines = [];
+    for (const machine of thingsOfKind(model, 'equipment')) {
+      const {values} = machine;
+      if (typeof values.at_working !== 'string' || !Number.isFinite(values.offset_m) || !scene.drawn.has(values.at_working)) continue;
+      const at = spot(values.at_working, values.offset_m);
+      if (!at) continue;
+      const line = scene.lines.get(values.at_working);
+      const facing = values.toward_node === line.from ? -1 : 1;
+      machines.push({thing: machine, at, facing});
+      placer.block({x: at.point[0] - 12, y: at.point[1] - 8, w: 24, h: 16}, 300);
+    }
+
     // Workers: grouped by the data (working and stretch of offset), never by distance on the screen.
     const groups = new Map();
     for (const worker of thingsOfKind(model, 'worker')) {
@@ -666,6 +680,29 @@ export function mount(root, ctx) {
         transform: `translate(${Math.round(point[0])} ${Math.round(point[1])})`,
         'aria-label': `${thing.label}: ${text.label('exitState', thing.values.state)}${out}`,
       });
+    });
+
+    reconcile(layer.machines, machines, (entry) => entry.thing.thingId, (entry) => createObject(entry.thing,
+      s('g', {class: 'machine__pic', transform: 'translate(-11 -7)'}, loaderGlyph())), (g, {thing, at, facing}) => {
+      const {values} = thing;
+      const look = thing.hasState && ['working', 'parked', 'stopped'].includes(values.state) ? values.state : 'unknown';
+      const reason = typeof values.hold_reason === 'string' && values.hold_reason !== 'none' ? text.label('holdReason', values.hold_reason) : '';
+      const words = [text.label('equipmentState', values.state), reason, values.activity !== undefined ? text.label('equipmentActivity', values.activity) : '',
+        values.location_hazard !== undefined ? `${UI.incident.zone}: ${text.hazardCodeText(values.location_hazard)}` : '',
+        values.operator_aboard === true ? text.fieldLabel('operator_aboard') : ''].filter(Boolean);
+      const angle = Math.round(Math.atan2(at.dir[1] * facing, at.dir[0] * facing) * 180 / Math.PI);
+      const flip = Math.abs(angle) > 90;
+      setAttrs(g, {
+        ...stateAttributes(thing, isPending(thing)),
+        class: ['obj', 'machine', isSelected(thing) && 'is-selected'],
+        'data-state': look, 'data-loaded': typeof values.loaded === 'boolean' ? String(values.loaded) : null,
+        'data-location-hazard': values.location_hazard === undefined ? null : String(values.location_hazard),
+        'data-working': values.at_working, 'data-offset': values.offset_m,
+        'aria-label': `${thing.label}: ${words.join('; ')}`,
+      });
+      // Along the working; never drawn upside down (a machine heading left is mirrored instead).
+      g.firstChild.setAttribute('transform', `rotate(${flip ? angle - 180 : angle}) scale(${flip ? -1 : 1} 1) translate(-11 -7)`);
+      g.style.transform = `translate(${Math.round(at.point[0])}px, ${Math.round(at.point[1])}px)`;
     });
 
     reconcile(layer.workers, workers, (entry) => entry.thing.thingId, (entry) => {

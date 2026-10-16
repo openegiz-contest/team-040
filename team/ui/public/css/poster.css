@@ -217,6 +217,28 @@ body[data-panel="shown"] .headline { max-width: min(900px, var(--hl-room, 9999px
   white-space: nowrap; pointer-events: none;
 }
 
+/* The loaders (CONTRACT.md §9): a small loader right of the axis at the depth where the stage draws it; its look is
+   its published state, a danger ring when its place is in a danger zone (hazard colour for hazard only). */
+.hz__machines { position: absolute; inset: 0; pointer-events: none; }
+.hz__machine {
+  position: absolute; left: calc(100% - var(--axis) + 4px + var(--slot, 0) * 24px);
+  width: 22px; height: 14px; margin-top: -7px; color: var(--dust-1);
+}
+.hz__machine-pic { display: block; overflow: visible; }
+.hz__machine .loader__ring { fill: none; stroke: none; }
+.hz__machine .loader__body { fill: currentColor; stroke: currentColor; stroke-width: 1; stroke-linejoin: round; }
+.hz__machine .loader__wheel { fill: var(--ink-0); stroke: currentColor; stroke-width: 1.2; }
+.hz__machine .loader__pause, .hz__machine .loader__question { display: none; fill: none; stroke: currentColor; stroke-width: 1.4; }
+.hz__machine[data-state="parked"] .loader__body { fill: var(--ink-0); }
+.hz__machine[data-state="stopped"] .loader__body { fill: var(--ink-0); }
+.hz__machine[data-state="stopped"] .loader__pause { display: inline; }
+.hz__machine[data-state="unknown"] { color: var(--unknown); }
+.hz__machine[data-state="unknown"] .loader__body { fill: none; stroke-dasharray: 2 1.6; }
+.hz__machine[data-state="unknown"] .loader__question { display: inline; }
+.hz__machine[data-location-hazard="danger"] .loader__ring { stroke: var(--danger); stroke-width: 2; }
+.hz__machine[data-location-hazard="unknown"] .loader__ring { stroke: var(--unknown); stroke-width: 1.4; stroke-dasharray: 2.4 2; }
+body[data-panel="shown"] .hz__machine { left: calc(100% - var(--axis) + 2px + var(--slot, 0) * 24px); }
+
 /* The probe: a line across the gauge at the depth under the pointer, its readout left of the axis. */
 .hz__probe { position: absolute; left: -24px; right: 0; height: 0; pointer-events: none; }
 .hz__probe-line { position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--accent);

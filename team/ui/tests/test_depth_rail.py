@@ -7,7 +7,9 @@ gauge gives a probe line with its depth («−173 м») and the 3D stage draws a
 (scene.setDepthProbe); a hovered horizon glows in the stage (scene.setLevelHighlight) with a chip of its published
 summary; a press frames the horizon and the cursor of the rail slides there; the keyboard moves between the
 horizons. Nothing moves on a pause, a failed read or a new run; reduced motion makes everything instant; nothing is
-drawn while the pointer rests.
+drawn while the pointer rests. The loaders of the model (CONTRACT.md §9) are small loader marks right of the axis at the
+depth where the stage draws them, their state in the mark; the chip of a horizon names its loaders and the production of
+its zones; an operator riding a loader is a person's dot at the machine's depth.
 
 The scenario is sim_instability, the topology of the real simulation, where the illustrated mine is shown; the
 procedural scene of variant 3 and the scheme are checked on `normal`.
@@ -168,7 +170,9 @@ class PeopleOnTheRailTest(DepthRailCase):
         self.open_art()
         rail = self.rail()
         y_of = self.scale(rail)
-        expected = {"worker-a1": -120, "worker-a2": -120, "worker-a3": -120, "worker-b1": -240, "worker-b2": -240, "worker-b3": -240}
+        # Eight people: the six of the crews and the two operators riding their loaders (drawn at the machine's depth).
+        expected = {"worker-a1": -120, "worker-a2": -120, "worker-a3": -120, "worker-a4": -120,
+                    "worker-b1": -240, "worker-b2": -240, "worker-b3": -240, "worker-b4": -240}
         self.assertEqual(sorted(rail["dots"]), sorted(expected), "one dot per person underground")
         for name, dot in rail["dots"].items():
             self.assertAlmostEqual(dot["z"], expected[name], delta=0.05, msg=f"{name} at the depth of its published place")
@@ -191,7 +195,7 @@ class PeopleOnTheRailTest(DepthRailCase):
         self.assertIsNone(self.page.evaluate("document.querySelector('[data-testid=\"horizon-level-240\"]').dataset.hazard || null"),
                           "a horizon whose zones are in norm carries no mark")
         dots = self.rail()["dots"]
-        self.assertTrue(all(dots[name]["hazard"] == "danger" for name in ("worker-a1", "worker-a2", "worker-a3")),
+        self.assertTrue(all(dots[name]["hazard"] == "danger" for name in ("worker-a1", "worker-a2", "worker-a3", "worker-a4")),
                         f"the people in the dangerous zone carry the danger ring: {dots}")
 
     def test_the_dots_rise_with_the_people_during_withdraw_all_and_the_out_are_counted_at_0_m(self):
@@ -223,6 +227,78 @@ class PeopleOnTheRailTest(DepthRailCase):
         box = self.page.evaluate("(() => { const r = document.querySelector('[data-testid=\"horizon-out\"]').getBoundingClientRect();"
                                  " return [r.top, r.bottom]; })()")
         self.assertLess(abs((box[0] + box[1]) / 2 - y_of(0)), 26, f"«вышли N» beside 0 m: {box} vs {y_of(0)}")
+
+
+MACHINES = """(async () => {
+  const app = (await import('/js/main.js')).app;
+  const out = [];
+  const t0 = performance.now();
+  while (performance.now() - t0 < %(ms)d) {
+    const marks = Object.fromEntries([...document.querySelectorAll('.hz__machine')].map((m) => {
+      const r = m.getBoundingClientRect();
+      return [m.dataset.machine, {z: Number(m.dataset.z), y: r.top + r.height / 2, state: m.dataset.state, hazard: m.dataset.locationHazard || null,
+        title: m.title}];
+    }));
+    const drawn = Object.fromEntries((app.ctx.stage.machines() || []).map((m) => [m.name, Math.round(m.z * 100) / 100]));
+    const s = app.store.getState();
+    const pub = Object.fromEntries(s.model.byKind.equipment.map((m) => [m.name, [m.values.state, m.values.location_hazard]]));
+    out.push({t: Math.round(performance.now() - t0), marks, drawn, pub, runState: s.snapshot.runState});
+    await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, %(step)d)));
+  }
+  return out;
+})()"""
+
+
+class MachinesOnTheRailTest(DepthRailCase):
+    """The loaders on the rail: a mark per machine at the depth where the stage draws it, its published state in it."""
+
+    def machine_samples(self, ms, step=60):
+        return self.page.evaluate(MACHINES % {"ms": ms, "step": step}, timeout=ms / 1000 + 30)
+
+    def test_each_loader_is_a_mark_at_the_depth_where_the_stage_draws_it(self):
+        self.open_art()
+        self.start_decision()
+        rail = self.rail()
+        y_of = self.scale(rail)
+        sample = self.machine_samples(ms=10, step=10)[0]
+        self.assertEqual(sorted(sample["marks"]), ["lhd-a", "lhd-b"])
+        for name, level in (("lhd-a", -120), ("lhd-b", -240)):
+            mark = sample["marks"][name]
+            self.assertAlmostEqual(mark["z"], sample["drawn"][name], delta=0.01, msg=f"{name}: the mark at the depth the stage draws it")
+            self.assertAlmostEqual(mark["z"], level, delta=0.05)
+            self.assertLessEqual(abs(mark["y"] - y_of(mark["z"])), 1.0, f"{name}: within 1 px of its depth on the scale")
+            self.assertEqual(mark["state"], "working")
+        self.assertEqual(sample["marks"]["lhd-a"]["hazard"], "danger", "the loader in the dangerous zone carries the danger ring")
+        self.assertEqual(sample["marks"]["lhd-b"]["hazard"], "normal", "no ring in a zone in norm (the ring is drawn for danger only)")
+        self.assertIn("ПДМ-A: везёт руду", sample["marks"]["lhd-a"]["title"])
+        # The chip of level −120 names its loader and what it does, and the production of its zone.
+        x, y = self.level_point("level-120")
+        self.move(x, y)
+        time.sleep(0.4)
+        chip = self.rail()["chip"]
+        self.assertEqual(chip["level"], "level-120")
+        rate = self.js(f"return {APP}.store.getState().model.byName['zone-a'].values.production_rate;")
+        self.assertIn("ПДМ-A: везёт руду", chip["text"])
+        self.assertIn("Участок A: добыча " + f"{rate:.2f}".rstrip("0").rstrip(".").replace(".", ",") + "\u00a0т/ч", chip["text"])
+        self.leave()
+        # The pointer off the rail: its lens and the stage's highlight settle first.
+        time.sleep(1.2)
+        self.wait_idle()
+        # Paused at the decision: the marks stand, no frame.
+        before = self.machine_samples(ms=10, step=10)[0]["marks"]
+        self.page.evaluate("window.__probe.raf = 0")
+        time.sleep(2.0)
+        self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "no frame while paused")
+        self.assertEqual({k: v["z"] for k, v in self.machine_samples(ms=10, step=10)[0]["marks"].items()}, {k: v["z"] for k, v in before.items()})
+        # Withdraw all: the marks follow the stage in every sample, and show the stopped state.
+        self.withdraw_all()
+        samples = self.machine_samples(ms=6000, step=80)
+        for sample in samples:
+            for name, mark in sample["marks"].items():
+                self.assertAlmostEqual(mark["z"], sample["drawn"][name], delta=0.06, msg=f"{name}: mark and machine agree")
+                state = sample["pub"][name][0]
+                self.assertEqual(mark["state"], state if state in ("working", "parked", "stopped") else "unknown")
+        self.assertEqual(samples[-1]["marks"]["lhd-a"]["state"], "stopped", "a stopped loader is marked stopped")
 
 
 class StillTest(DepthRailCase):
@@ -343,7 +419,7 @@ class ProbeTest(DepthRailCase):
         self.assertGreater(rail["stage"]["levelHighlight"]["meshes"], 0, "the outlines of its workings glow")
         self.assertIsNone(rail["stage"]["depthProbe"], "over a horizon the horizon speaks, not the probe")
         self.assertEqual(rail["chip"]["level"], "level-120")
-        for words in ("Горизонт -120 м", "3 работника", "Участок A — норма"):
+        for words in ("Горизонт -120 м", "4 работника", "Участок A — норма", "ПДМ-A: ", "Участок A: добыча"):
             self.assertIn(words, rail["chip"]["text"])
         # Moving over the horizon and then straight onto the next one: never a frame without a highlight in between,
         # never the probe over a horizon.

@@ -336,6 +336,8 @@ export function placeOf(model, thing) {
   } else if (thing.kind === 'worker') {
     if (typeof values.at_exit === 'string') place.exit = thingByName(model, values.at_exit);
     else if (isUnderground(thing) && typeof values.at_working === 'string') onWorking(values.at_working, values.offset_m);
+  } else if (thing.kind === 'equipment') {
+    if (typeof values.at_working === 'string') onWorking(values.at_working, values.offset_m);
   } else if (thing.kind === 'exit') {
     place.node = typeof attrs.node === 'string' ? attrs.node : null;
     const nodes = model.things[MINE_ID] ? model.things[MINE_ID].attrs.nodes : null;
@@ -388,6 +390,10 @@ export function stateAttributes(thing, pending = false) {
     attrs['data-pos-quality'] = text(values.pos_quality);
   } else if (thing.kind === 'exit' || thing.kind === 'incident' || thing.kind === 'option') {
     attrs['data-state'] = text(values.state);
+  } else if (thing.kind === 'equipment') {
+    // A loader (CONTRACT.md §9): its published state and the hazard of its place, as a person's.
+    attrs['data-state'] = text(values.state);
+    attrs['data-location-hazard'] = text(values.location_hazard);
   }
   return attrs;
 }

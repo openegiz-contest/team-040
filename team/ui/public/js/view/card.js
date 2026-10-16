@@ -29,7 +29,7 @@ const VOCAB_OF = {
   egress_status: 'egress', egress_reason: 'egressReason', egress_crosses: 'hazard', reason_code: 'reasonCode',
   run_state: 'runState', pause_reason: 'pauseReason', forecast_quality: 'forecastQuality', trigger: 'incidentTrigger',
   working_kind: 'workingKind', sensor_kind: 'sensorKind', exit_kind: 'exitKind',
-  activity: 'equipmentActivity', equipment_kind: 'equipmentKind',
+  activity: 'equipmentActivity', equipment_kind: 'equipmentKind', hold_reason: 'holdReason', role: 'workerRole',
 };
 const STATE_VOCAB = {exit: 'exitState', incident: 'incidentState', option: 'optionState', equipment: 'equipmentState'};
 /** Shown in the line of times, not as rows. */
@@ -43,6 +43,7 @@ const KEY_FIGURES = {
   sensor: ['value', 'rate', 'events_count'],
   worker: ['egress_length_m', 'egress_eta_s', 'egress_detour_m'],
   exit: ['workers_out'],
+  equipment: ['run_hauled_t', 'loads_dumped'],
 };
 const HAZARD_SIGN = {normal: null, attention: 'attention', danger: 'danger', unknown: 'unknown'};
 const QUALITY_BADGE = {fresh: ['fresh', null], stale: ['stale', 'clock'], lost: ['lost', 'lost'], none: ['none', 'none']};
@@ -258,6 +259,11 @@ export function mount(root, ctx) {
         const shape = {ok: 'route', none: 'noroute'}[status] || 'unknown';
         list.push({axis: 'reach', cls: shape, sign: shape, text: text.label('egress', status)});
       }
+    } else if (thing.kind === 'equipment') {
+      // A loader where it stands: the hazard of its place, as a person's (an unknown place never reads as safe).
+      if (values.location_hazard !== undefined) {
+        hazard(knownHazard(values.location_hazard), `${UI.incident.zone}: ${text.hazardCodeText(values.location_hazard)}`);
+      }
     } else if (thing.kind === 'exit') {
       const shape = {available: 'route', unavailable: 'blocked'}[values.state] || 'unknown';
       list.push({axis: 'reach', cls: shape, sign: shape === 'route' ? 'route' : shape, text: text.label('exitState', values.state)});
@@ -318,6 +324,10 @@ export function mount(root, ctx) {
         return unit === 's' && value >= 60 ? `${shown} (${text.duration(value)})` : shown;
       }
       if (typeof value === 'string') return thingByName(model, value) ? text.codeAndName(value, name) : value;
+      // A place of the model ({working, offset_m}): «В-07, 80 м».
+      if (value && typeof value === 'object' && typeof value.working === 'string' && Number.isFinite(value.offset_m)) {
+        return `${name(value.working)}, ${text.quantity(value.offset_m, 'm')}`;
+      }
       if (Array.isArray(value)) {
         if (field === 'route') return routeOf(model, thing).map((segment) => name(segment.working)).join(' → ') || UI.card.none;
         if (value.length === 0) return UI.card.none;
@@ -370,13 +380,21 @@ export function mount(root, ctx) {
         if (status === 'none') say(UI.card.graphOnly);
       }
       say(text.label('workerStatus', values.status));
+      // An operator riding a machine (CONTRACT.md §9): drawn as part of it, said here.
+      const vehicle = typeof values.aboard === 'string' ? thingByName(model, values.aboard) : null;
+      if (typeof values.aboard === 'string') say(UI.card.aboard(vehicle ? vehicle.label : values.aboard));
       say(text.placeText(placeOf(model, thing)));
     } else if (thing.kind === 'exit') {
       if (typeof values.workers_out === 'number') say(UI.scheme.out(values.workers_out));
     } else if (thing.kind === 'equipment') {
-      // A loader of the model (contract question 18): its published state, operation, place and load.
-      say(text.label('equipmentState', values.state), null, true);
-      if (values.state === 'working' && values.activity !== undefined) say(text.label('equipmentActivity', values.activity));
+      // A loader of the model (CONTRACT.md §9): its published state with the reason it is held, operation, place and load.
+      const reason = typeof values.hold_reason === 'string' && values.hold_reason !== 'none' ? text.label('holdReason', values.hold_reason) : '';
+      say(reason && values.state !== 'stopped' ? `${text.label('equipmentState', values.state)}: ${reason}` : text.label('equipmentState', values.state),
+        null, true);
+      if (values.activity !== undefined) {
+        const yielding = values.activity === 'yielding' && typeof values.yielding_to === 'string' ? thingByName(model, values.yielding_to) : null;
+        say(yielding ? UI.card.yieldingTo(yielding.label) : text.label('equipmentActivity', values.activity));
+      }
       const working = thingByName(model, values.at_working);
       if (working) {
         say(text.placeText({working, offsetM: typeof values.offset_m === 'number' ? values.offset_m : null,
@@ -384,6 +402,19 @@ export function mount(root, ctx) {
           level: null, exit: null, node: null}));
       }
       if (typeof values.loaded === 'boolean') say(`${text.fieldLabel('loaded')}: ${text.yesNo(values.loaded)}`);
+      const operator = typeof attrs.operator === 'string' ? thingByName(model, attrs.operator) : null;
+      if (typeof values.operator_aboard === 'boolean') {
+        say(values.operator_aboard ? UI.card.operatorAboard(operator ? operator.label : attrs.operator || '') : UI.card.operatorOff);
+      }
+      // The cycle of the attributes; the registry says how its numbers were chosen (TBD-source assumptions).
+      const registry = state.attributes && state.attributes.mine ? state.attributes.mine.parameter_registry : null;
+      const entries = registry && registry.entries && typeof registry.entries === 'object' ? registry.entries : {};
+      const sources = Object.keys(entries).filter((key) => key.startsWith('lhd_')).sort()
+        .map((key) => `${key}: ${entries[key].status || text.DASH}${/TBD-source/.test(entries[key].rationale || '') ? ' (TBD-source)' : ''}`);
+      if (typeof attrs.cycle_s === 'number') {
+        say(UI.card.cycle(text.quantity(attrs.cycle_s, 's'), text.quantity(attrs.payload_t, 't'), text.quantity(attrs.nominal_production_t_h, 't/h')),
+          null, false, sources.length ? `${UI.card.cycleSources}: ${sources.join('; ')}` : undefined);
+      }
     }
 
     // Related twins.
@@ -422,9 +453,12 @@ export function mount(root, ctx) {
     } else if (thing.kind === 'option') {
       (Array.isArray(values.scope) ? values.scope : []).forEach((zone) => add(thingByName(model, zone)));
     } else if (thing.kind === 'equipment') {
+      add(thingByName(model, attrs.operator));
       add(thingByName(model, values.at_working));
       add(thingByName(model, attrs.zone));
+      if (typeof values.yielding_to === 'string') add(thingByName(model, values.yielding_to));
     }
+    if (thing.kind === 'worker' && typeof values.aboard === 'string') add(thingByName(model, values.aboard));
     add(place.level);
     if (related.length > 0) view.sections.push({key: 'related', title: UI.card.related, links: related.map((other) => link(other))});
 
@@ -432,7 +466,7 @@ export function mount(root, ctx) {
     const stateRows = Object.keys(values).filter((field) => !TIME_FIELDS.has(field) && !field.startsWith('reason_') && field !== 'scene')
       .map((field) => [text.fieldLabel(field, thing.kind), show(field, values[field], units[field]), field]);
     if (stateRows.length > 0) view.fields.push({key: 'state', title: UI.card.state, rows: stateRows});
-    const unitOf = (field) => (field.endsWith('_m') ? 'm' : (field.endsWith('_s') ? 's' : undefined));
+    const unitOf = (field) => ({_m: 'm', _s: 's', _t: 't', _t_h: 't/h'}[(field.match(/(_t_h|_m|_s|_t)$/) || [])[1]]);
     const attrRows = Object.keys(attrs).filter((field) => !SKIPPED_ATTRS.has(field))
       .map((field) => [text.fieldLabel(field, thing.kind), show(field, attrs[field], unitOf(field)), field]);
     if (attrRows.length > 0) view.fields.push({key: 'attributes', title: UI.card.attributes, rows: attrRows});

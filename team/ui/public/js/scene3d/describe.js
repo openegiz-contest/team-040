@@ -97,6 +97,9 @@ export function describe(state, layout) {
       offsetM: placed ? values.offset_m : null,
       hasState: worker.hasState,
       pending: pendingOf(worker),
+      // CONTRACT.md §9: an operator riding a machine (published `aboard`, a local equipment id) is drawn as part of it.
+      role: str(worker.attrs.role),
+      aboard: placed ? str(values.aboard) : null,
     };
   }
   // Equipment twins (contract question 18): a loader drawn where the model publishes it. Without a published
@@ -114,6 +117,11 @@ export function describe(state, layout) {
       offsetM: placed ? values.offset_m : null,
       toward: str(values.toward_node),
       loaded: typeof values.loaded === 'boolean' ? values.loaded : null,
+      holdReason: str(values.hold_reason),
+      locationHazard: str(values.location_hazard),
+      operator: str(machine.attrs.operator),
+      operatorAboard: typeof values.operator_aboard === 'boolean' ? values.operator_aboard : null,
+      yieldingTo: str(values.yielding_to),
       hasState: machine.hasState,
     };
   }

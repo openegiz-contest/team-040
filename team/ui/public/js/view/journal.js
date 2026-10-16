@@ -40,6 +40,23 @@ export function eventText(text, state, event) {
     else if (event.code === 'command.rejected' && text.isKnown('ackReason', arg)) detail = `${VOCAB.ackReason[arg]} (${arg})`;
     else if (event.code === 'worker.route_changed' || event.code === 'worker.out') detail = `${VOCAB.kind.exit} ${name(arg)}`;
   }
+  // The loaders and their operators (CONTRACT.md §9): the structured details in words, not the raw codes of `arg`.
+  const details = event.details && typeof event.details === 'object' ? event.details : null;
+  const J = text.UI.journal;
+  if (details && event.code === 'equipment.hazard_changed' && typeof details.before === 'string' && typeof details.after === 'string') {
+    detail = J.change(text.hazardCodeText(details.before), text.hazardCodeText(details.after));
+  } else if (details && event.code === 'worker.state_changed' && details.before && details.after
+    && typeof details.before.status === 'string' && typeof details.after.status === 'string') {
+    const parts = [];
+    if (details.before.status !== details.after.status) {
+      parts.push(J.change(text.label('workerStatus', details.before.status), text.label('workerStatus', details.after.status)));
+    }
+    const was = typeof details.before.aboard === 'string' ? details.before.aboard : null;
+    const now = typeof details.after.aboard === 'string' ? details.after.aboard : null;
+    if (was && !now) parts.push(J.gotOff(name(was)));
+    else if (now && now !== was) parts.push(J.gotOn(name(now)));
+    if (parts.length > 0) detail = parts.join('; ');
+  }
   return [subject ? `${subject}: ${code}` : code, detail].filter(Boolean).join(' — ');
 }
 

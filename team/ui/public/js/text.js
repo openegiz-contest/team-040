@@ -23,7 +23,7 @@ export const VOCAB = {
   },
   kindPlural: {
     all: 'все объекты', level: 'горизонты', working: 'выработки', zone: 'участки', sensor: 'датчики',
-    worker: 'работники', exit: 'выходы', incident: 'инцидент', option: 'варианты', journal: 'журнал',
+    worker: 'работники', equipment: 'техника', exit: 'выходы', incident: 'инцидент', option: 'варианты', journal: 'журнал',
   },
   hazard: {normal: 'норма', attention: 'внимание', danger: 'опасно', unknown: 'состояние неизвестно'},
   quality: {
@@ -38,12 +38,18 @@ export const VOCAB = {
     blocked: 'новый вход запрещён моделью', allowed: 'вход разрешён моделью', unknown: 'ограничение входа неизвестно',
   },
   workState: {working: 'работает', stopped: 'остановлен'},
-  // Equipment twins (contract question 18): a loader's published state and operation.
+  // Equipment twins (CONTRACT.md §9): a loader's published state, why it is held, and its operation.
   equipmentState: {working: 'работает', parked: 'стоит без работы', stopped: 'остановлена: участок остановлен'},
+  holdReason: {
+    none: '', zone_stopped: 'участок остановлен', entry_blocked: 'вход в участок запрещён', path_closed: 'проход закрыт',
+    crew_absent: 'нет бригады',
+  },
   equipmentActivity: {
-    loading: 'грузит руду', hauling: 'везёт руду', dumping: 'разгружает', returning: 'возвращается порожняком', idle: 'без работы',
+    loading: 'грузит руду', hauling: 'везёт руду', dumping: 'разгружает в рудоспуск', returning: 'возвращается порожняком',
+    tramming: 'едет в карман', yielding: 'уступает дорогу', idle: 'стоит',
   },
   equipmentKind: {lhd: 'ПДМ (погрузочно-доставочная машина)'},
+  workerRole: {crew: 'бригада участка', lhd_operator: 'оператор ПДМ'},
   withdrawal: {
     none: 'приказа о выводе нет', in_progress: 'вывод персонала идёт', done: 'вывод персонала завершён',
     incomplete: 'вывод не завершён',
@@ -121,6 +127,9 @@ export const VOCAB = {
     'work.changed': 'изменилась работа участка', 'withdrawal.changed': 'изменился вывод персонала',
     'worker.exited': 'работник вышел', 'route.changed': 'изменён расчётный маршрут',
     'worker.state_changed': 'изменилось состояние работника',
+    // CONTRACT.md §9: the loaders. Their `arg` is the model's own sentence.
+    'equipment.state_changed': 'изменилось состояние ПДМ', 'equipment.hazard_changed': 'изменилась опасность на месте ПДМ',
+    'equipment.conflict': 'ПДМ встретила идущего человека', 'model.migrated': 'модель обновлена, начат новый прогон',
   },
   linkStatus: {ok: 'связь есть', degraded: 'связь ухудшилась', stale: 'данные устарели', unavailable: 'недоступна'},
   publications: {alive: 'публикации идут', stopped: 'публикации остановились', unknown: 'публикации: неизвестно'},
@@ -135,7 +144,8 @@ export const VOCAB = {
     rejected: 'Команда отклонена', no_ack: `Нет подтверждения ${ACK_TIMEOUT_MS / 1000} с. Команда могла не дойти`,
     delivery_unknown: 'Результат доставки неизвестен', not_sent: 'Команда не отправлена',
   },
-  unit: {m: 'м', mm: 'мм', 'mm/h': 'мм/ч', 't/h': 'т/ч', s: 'с', 'person*s': 'чел.·с', 'zone*s': 'уч.·с', 1: ''},
+  unit: {m: 'м', mm: 'мм', 'mm/h': 'мм/ч', 't/h': 'т/ч', t: 'т', s: 'с', 'person*s': 'чел.·с', 'zone*s': 'уч.·с', 'machine*s': 'маш.·с',
+    'm/s': 'м/с', 1: ''},
 };
 
 /** Names of features and attributes as captions. */
@@ -173,22 +183,40 @@ const FIELD = {
   lost_after_s: 'допуск потери (модель)', window_s: 'окно счёта событий', home_zone: 'участок приписки',
   exit_kind: 'вид выхода', node: 'узел',
   equipment_kind: 'вид техники', activity: 'операция', toward_node: 'направлена к узлу', loaded: 'руда в ковше', option_kind: 'вид варианта', workings: 'выработки', sensors: 'датчики',
+  // CONTRACT.md §9: loaders, their operators, the shift totals.
+  hold_reason: 'причина удержания', operator_aboard: 'оператор на борту', yielding_to: 'уступает дорогу',
+  loads_dumped: 'ковшей разгружено с начала прогона', run_hauled_t: 'вывезено с начала прогона',
+  operator: 'оператор', payload_t: 'груз ковша', cycle_s: 'время цикла без помех', nominal_production_t_h: 'номинальная производительность',
+  load_point: 'место погрузки', dump_point: 'рудоспуск', bay: 'карман у рудоспуска', cycle_route: 'выработки цикла',
+  length_source_id: 'источник длины', role: 'роль', aboard: 'на борту машины', vehicle: 'машина', equipment: 'техника',
+  dump_points: 'рудоспуски', initial_working: 'начальная выработка', initial_offset_m: 'начальное расстояние от узла',
+  required_workers: 'нужно работников', machines_total: 'машин всего', machines_working: 'машин работает',
+  machines_in_danger: 'машин в опасных зонах', machines_stuck: 'машин удержано закрытым проходом',
 };
 
 /** Result metrics of CONTRACT.md, section 6: bare for a run, with forecast_ / actual_ for an option. */
 export const METRICS = ['in_danger', 'danger_exposure_person_s', 'unknown_exposure_person_s', 'no_route', 'out',
   'all_out', 'last_out_s', 'downtime_s'];
+/** The cost of an option (CONTRACT.md §9): production and machines, beside the people of METRICS. */
+export const COST_METRICS = ['hauled_t', 'planned_t', 'production_lost_t', 'machines_in_danger', 'machines_unknown',
+  'machines_stuck', 'conflicts', 'conflict_yield_s'];
 
 const METRIC = {
   in_danger: 'в опасных зонах', danger_exposure_person_s: 'пребывание в опасных зонах',
   unknown_exposure_person_s: 'пребывание в зонах с неизвестным состоянием', no_route: 'без расчётного маршрута',
   out: 'вышло', all_out: 'все вышли', last_out_s: 'время выхода всех', downtime_s: 'суммарный простой участков',
+  hauled_t: 'вывезено руды', planned_t: 'план вывоза без остановок', production_lost_t: 'недовывезено руды',
+  machines_in_danger: 'ПДМ в опасных зонах', machines_unknown: 'ПДМ в зонах с неизвестным состоянием',
+  machines_stuck: 'ПДМ удержаны закрытым проходом', conflicts: 'встречи ПДМ с идущими людьми',
+  conflict_yield_s: 'ПДМ уступала дорогу людям',
 };
 
 const METRIC_SHORT = {
   in_danger: 'в оп. зонах', danger_exposure_person_s: 'в оп. зонах, чел.·с',
   unknown_exposure_person_s: 'неизв., чел.·с', no_route: 'без маршр.', out: 'вышло', all_out: 'все вышли',
   last_out_s: 'выход всех', downtime_s: 'простой, уч.·с',
+  hauled_t: 'вывезено, т', planned_t: 'план, т', production_lost_t: 'недовывез., т', machines_in_danger: 'ПДМ в оп.',
+  machines_unknown: 'ПДМ неизв.', machines_stuck: 'ПДМ застр.', conflicts: 'встречи', conflict_yield_s: 'уступала, маш.·с',
 };
 
 function own(map, key) {
@@ -860,6 +888,15 @@ export const UI = {
     hazardShort: {normal: 'норма', attention: 'внимание', danger: 'опасно', unknown: 'неизвестно'},
     worker: (code, words) => `${code}: ${words}`,
     exitGroup: (exit) => `через ${exit}`,
+    // The machines of the shift (CONTRACT.md §9): counters and totals of the model.
+    machines: 'Техника',
+    machinesTitle: 'Техника смены: счётчики модели; производительность и тонны — опубликованные значения',
+    machinesWorking: (working, total) => `работают ${working} из ${total}`,
+    machinesTotal: (total) => `машин ${total}`,
+    production: (rate) => `добыча ${rate}`,
+    hauled: (tonnes) => `вывезено ${tonnes}`,
+    machinesInDanger: (count) => `в опасной зоне ${count}`,
+    machinesStuck: (count) => `удержаны проходом ${count}`,
   },
   sheet: {
     close: 'Закрыть карточку',
@@ -879,6 +916,7 @@ export const UI = {
     pending: 'команда отправлена, не подтверждена',
     // The knowledge cell of a twin without sensors; the card gives the full sentence.
     noSensors: 'без датчиков',
+    load: (loaded) => (loaded ? 'в ковше руда' : 'ковш пуст'),
   },
   scheme: {
     title: 'Схема рудника',
@@ -944,6 +982,13 @@ export const UI = {
     more: (count) => `Подробнее: все поля (${num(count)})`,
     less: 'Скрыть поля',
     focus: 'Показать на модели',
+    // Loaders and their operators (CONTRACT.md §9).
+    aboard: (machine) => `на борту ${machine}: показан вместе с машиной`,
+    operatorAboard: (code) => `оператор ${code} на борту`,
+    operatorOff: 'оператора на борту нет',
+    yieldingTo: (code) => `уступает дорогу ${code}`,
+    cycle: (cycle, payload, rate) => `цикл без помех ${cycle} · ковш ${payload} · номинал ${rate}`,
+    cycleSources: 'Допущения модели (реестр параметров)',
   },
   conditions: {
     title: 'Условия сценария (стенд)',
@@ -1053,9 +1098,29 @@ export const UI = {
     summaryExecuting: (option) => `исполняется: ${option}`,
     summaryFact: (option, people) => `факт прогона, ${option}: ${people}`,
     summaryStates: 'варианты не предлагаются',
+    // The two groups of the table of options (CONTRACT.md §9): the people, then the cost, in the same columns.
+    groupPeople: 'Люди',
+    groupCost: 'Цена: добыча и техника',
+    groupCostNone: 'Цена: не опубликована',
+    groupCostPlan: (tonnes, seconds) => `Цена: добыча и техника · план вывоза${typeof seconds === 'number' ? ` за ${duration(seconds)}` : ''}: ${tonnes}`,
+    costNote: 'Расчёт модели за то же окно, что и люди. Тонны — не деньги: цен в модели нет. Варианты не ранжируются',
+    lostOf: (lost, planned) => `${lost} из ${planned}`,
+    lostTitle: 'план минус вывезено: разгрузки тех же машин без остановок и задержек; не финансовый убыток',
+    costTitle: {
+      hauled_t: 'разгружено в рудоспуски после точки решения',
+      machines_in_danger: 'машин в опасной контролируемой зоне на конец расчёта',
+      machines_unknown: 'машин в контролируемой зоне с неизвестным состоянием на конец расчёта',
+      machines_stuck: 'машин, удержанных закрытым проходом, на конец расчёта',
+      conflicts: 'эпизоды встречи ПДМ с идущим или ожидающим человеком впереди по правилу модели, не оценка столкновений',
+      conflict_yield_s: 'машино-секунды, на которые ПДМ сокращала шаг из-за человека впереди',
+    },
   },
   journal: {
     title: 'Журнал событий',
+    // Words of the structured details of the simulation's events (CONTRACT.md §9), instead of its raw codes.
+    change: (before, after) => `${before} → ${after}`,
+    gotOff: (machine) => `сошёл с ${machine}, идёт пешком`,
+    gotOn: (machine) => `на борту ${machine}`,
     order: 'модельное время, новые сверху',
     empty: 'Событий нет',
     gap: (from, to) => `Пропущено ${counted(to - from + 1, FORMS.event)}: №${NBSP}${from === to ? from : `${from}–${to}`}`,
@@ -1154,7 +1219,34 @@ export const PANEL = {
     clear: (out) => `В опасной зоне никого${typeof out === 'number' ? ` · вышли${NBSP}${num(out)}` : ''}`,
   },
   exposure: (words) => `пребывание в опасной зоне ${words}`,
+  unknownExposure: (words) => `в зонах с неизвестным состоянием ${words}`,
   downtime: (words) => `простой участков ${words}`,
+  // The cost of an option on its card (view/decision.js costFacts): published fields only, no ranking.
+  costLabel: 'Цена',
+  costNotPublished: 'цена не опубликована',
+  cost: {
+    line: (words) => `Цена: ${words}`,
+    shortLostOf: (lost, planned) => `недовывезено ${lost} из ${planned}`,
+    shortLost: (lost) => `недовывезено ${lost}`,
+    shortMeet: (count) => `встречи с людьми ${count}`,
+    tonnes: (words) => `Руда: ${words}`,
+    hauledOf: (hauled, planned) => `вывезено ${hauled} из ${planned}`,
+    hauled: (hauled) => `вывезено ${hauled}`,
+    planned: (planned) => `план ${planned}`,
+    lost: (lost) => `недовывезено ${lost}`,
+    tonnesTitle: 'План — разгрузки тех же машин без остановок и задержек за окно прогноза. Тонны — не деньги',
+    machines: {
+      machines_in_danger: (count) => `ПДМ в опасной зоне: ${count}`,
+      machines_unknown: (count) => `ПДМ в зоне с неизвестным состоянием: ${count}`,
+      machines_stuck: (count) => `ПДМ удержаны закрытым проходом: ${count}`,
+    },
+    machinesWord: {machines_in_danger: 'в опасной зоне', machines_unknown: 'в неизвестной зоне', machines_stuck: 'удержаны проходом'},
+    machinesNone: (words) => `ПДМ ${words.join(', ')}: 0`,
+    machinesTitle: 'Машины на конец окна прогноза (счётчики модели)',
+    meet: (count, yieldS) => `Встречи ПДМ с идущими людьми: ${count}${yieldS ? `, ПДМ уступала ${yieldS}` : ''}`,
+    yielded: (yieldS) => `ПДМ уступала дорогу ${yieldS}`,
+    meetTitle: 'Эпизоды по правилу модели: человек впереди на пути машины; это не оценка столкновений',
+  },
   details: 'Подробнее',
   detailsTitle: 'Все показатели прогноза',
   // The launch: one primary button.
@@ -1259,4 +1351,8 @@ export const HORIZON = {
   chipZone: (zone, words) => `${zone} — ${words}`,
   chipNoZones: 'участков с датчиками нет',
   person: (code, depth) => `${code}: ${depth}`,
+  /** The loaders on the rail and in the chip (CONTRACT.md §9). */
+  machine: (code, words) => `${code}: ${words}`,
+  held: (reason) => `стоит: ${reason}`,
+  production: (zone, rate) => `${zone}: добыча ${rate}`,
 };

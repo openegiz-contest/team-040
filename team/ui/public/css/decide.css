@@ -177,9 +177,34 @@
 .dp-card__headline[data-rule="not_published"], .dp-card__headline[data-rule="none"] { color: var(--unknown); font-size: 22px;
   font-style: italic; font-weight: 500; text-transform: none; }
 .dp-card__bar .pb { max-width: none; width: 100%; height: 18px; }
-.dp-card__facts { display: none; gap: 2px; margin: 0; color: var(--dust-2); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
+/* Every card: the time in a danger zone and the cost in one line each (CONTRACT.md §9), the same quiet type on every
+   card; nothing marks one as better. The chosen card unfolds the facts and the whole cost. */
+.dp-card__sum { display: grid; gap: 0; margin: 0; color: var(--dust-2); font-family: var(--font-mono); font-size: 12px; line-height: 1.3; }
+.dp-card:has(.dp-card__sum:not([hidden])) { gap: 8px; }
+.dp-card__sum[hidden], .dp-card__benefit[hidden] { display: none; }
+.dp-card__cost-line[data-cost="not_published"] { color: var(--unknown); font-style: italic; }
+.dp-card__cost-line[data-badge="danger"] { color: var(--danger-ink); }
+.dp-card__cost-line[data-badge="blocked"] { text-decoration: underline dashed var(--noroute) 2px; }
+.dp-card__cost-line[data-badge="unknown"] { font-style: italic; }
+.dp-card__facts { display: none; gap: 0; margin: 0; color: var(--dust-2); font-family: var(--font-mono); font-size: 12px; line-height: 1.45; }
 .dp-card.is-chosen .dp-card__facts { display: grid; }
+.dp-card__facts[hidden] { display: none !important; }
+.dp-card__cost { display: none; gap: 0; padding-top: 6px; border-top: 1px dashed var(--line); color: var(--dust-2);
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.45; }
+.dp-card.is-chosen .dp-card__cost { display: grid; }
+.dp-card__cost[hidden] { display: none !important; }
+.dp-card__cost-label { color: var(--dust-2); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; }
+.dp-card__cost[data-cost="not_published"] .dp-card__cost-label { color: var(--unknown); font-style: italic; letter-spacing: 0; text-transform: none; font-size: 12px; }
+.dp-card__cost-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.dp-card__cost-item[data-badge="danger"] { color: var(--danger-ink); font-weight: 600; }
+.dp-card__cost-item[data-badge="blocked"] { text-decoration: underline dashed var(--noroute) 2px; }
+.dp-card__cost-item[data-badge="unknown"] { font-style: italic; text-decoration: underline dotted var(--unknown) 1px; }
+.dp-card.is-chosen .dp-card__sum, .dp-card.is-chosen .dp-card__facts, .dp-card.is-chosen .dp-card__cost { color: var(--dust-1); }
 .dp-card__quality { justify-self: start; margin: 0; }
+/* The two groups of the table of options: people, then the cost, in the same columns. */
+.metrics tr.metrics__group > th { padding-top: 6px; color: var(--dust-1); font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+  letter-spacing: .08em; text-transform: uppercase; white-space: normal; }
+.metrics tr.metrics__group[data-cost="not_published"] > th { color: var(--unknown); font-style: italic; text-transform: none; letter-spacing: 0; }
 
 /* «Подробнее»: the full table of the forecast, as in the archive of runs. */
 .dp-details { margin-top: var(--sp-3); }
@@ -334,7 +359,11 @@
   .dp-zone__name { font-size: 18px; }
 }
 
-/* A low screen: the secondary facts give way to the cards themselves (they stay in «Подробнее»). */
+/* A low screen: the summary of every card stays, smaller; the unfolded facts and the whole cost give way (they stay in
+   «Подробнее», the table of options). */
 @media (max-height: 899px) {
-  .dp-card.is-chosen .dp-card__facts { display: none; }
+  .dp-card__sum { font-size: 10px; line-height: 1.25; }
+  .dp-card:has(.dp-card__sum:not([hidden])) { gap: 3px; padding-top: 6px; padding-bottom: 8px; }
+  .dp-card.is-chosen:has(.dp-card__sum:not([hidden])) { padding-top: 4px; padding-bottom: 6px; }
+  .dp-card.is-chosen .dp-card__facts, .dp-card.is-chosen .dp-card__cost { display: none; }
 }

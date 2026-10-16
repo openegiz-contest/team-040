@@ -15,7 +15,25 @@ python -m unittest tests.test_sim_fixtures     from team/ui
 ```
 
 The recording is deterministic (no clock, no random numbers, sorted keys, LF); a second run gives the same
-bytes. The four files weigh about 8 MB each: every publication of the story is a full frame, nothing is repeated.
+bytes. The four files weigh about 0.9 MB each gzipped: every publication of the story is a full frame, nothing is repeated.
+
+## Model 0.2: loaders and the cost of options (CONTRACT.md §9)
+
+Recorded from the merged `codex/lhd-simulation` (contract 1, model 0.2, topology `t2`). The attribute set of each file
+is keyed by the published `topology_version` (`t2`): 38 twins in the manifest, 33 in the scene. Next to the six crew
+(`role = crew`) there are two operators, `worker-a4` / `worker-b4` (`role = lhd_operator`, `vehicle = lhd-a/b`), so
+every count of people is 8. The loaders `lhd-a` / `lhd-b` (kind `equipment`) publish `state`, `hold_reason`,
+`activity`, `at_working`, `offset_m`, `toward_node`, `loaded`, `location_hazard`, `operator_aboard`, `yielding_to`,
+`loads_dumped`, `run_hauled_t`; an operator riding one publishes `aboard` and the machine's place. The mine lists
+its ore passes in `dump_points` (not twins) and the `lhd_*` parameters in `parameter_registry`. Each option publishes
+eight more `forecast_*` / `actual_*` fields: `hauled_t`, `planned_t`, `production_lost_t` (t), `machines_in_danger`,
+`machines_unknown`, `machines_stuck`, `conflicts` and `conflict_yield_s` (machine*s); the forecast equals the fact for
+all of them (tests/test_sim_fixtures.py). The shift adds `production_rate` (t/h), `run_hauled_t` (t) and
+`machines_total/working/in_danger/stuck`. The working geometry is that of t1, so the art's topology signature still
+matches. With the published parameters a loader moves at most 30 m per publication (25 m loaded) along its cycle
+`[w-07, w-03]` / `[w-12, w-10]`, through node b / f.
+
+The recorder needed one change: the key of the attribute set is the published `TOPOLOGY_VERSION` (it was `t1`).
 
 ## The story of a scenario
 

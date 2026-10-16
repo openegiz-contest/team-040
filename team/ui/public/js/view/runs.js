@@ -8,7 +8,7 @@
 
 import {h, s, setAttrs, setText} from '../dom.js';
 import {localName} from '../model.js';
-import {METRIC_ORDER, commonGroup, hasMetrics, metricCell, peopleBar, peopleOf, peoplePatterns, peopleWords, valueClass} from './decision.js';
+import {COST_FIELDS, METRIC_ORDER, commonGroup, hasMetrics, metricCell, peopleBar, peopleOf, peoplePatterns, peopleWords, valueClass} from './decision.js';
 
 /** The completion reasons that mean a run came to its end with a result. */
 export const COMPLETED_REASONS = ['withdrawal_done', 'horizon_reached'];
@@ -62,10 +62,14 @@ export function mount(root, ctx) {
   const {UI} = text;
   const status = h('span', {class: 'badge', 'data-testid': 'runs-status', hidden: true});
   const note = h('p', {class: 'empty-note', hidden: true});
-  const table = h('table', {class: 'runs', 'data-testid': 'runs-table'},
-    h('thead', null, h('tr', null,
-      h('th', {scope: 'col', text: UI.runs.run}), h('th', {scope: 'col', text: UI.runs.series}),
-      METRIC_ORDER.map((metric) => h('th', {scope: 'col', text: text.metricLabel(metric, true), title: text.metricLabel(metric)})))));
+  // The columns: the result metrics; those of the cost (CONTRACT.md §9) only when a run of the archive publishes them.
+  let columns = METRIC_ORDER.filter((metric) => !COST_FIELDS.includes(metric));
+  const headRow = h('tr');
+  const writeHead = () => headRow.replaceChildren(
+    h('th', {scope: 'col', text: UI.runs.run}), h('th', {scope: 'col', text: UI.runs.series}),
+    ...columns.map((metric) => h('th', {scope: 'col', text: text.metricLabel(metric, true), title: text.metricLabel(metric)})));
+  writeHead();
+  const table = h('table', {class: 'runs', 'data-testid': 'runs-table'}, h('thead', null, headRow));
   root.append(
     s('svg', {class: 'pb-defs', width: 0, height: 0, 'aria-hidden': 'true', focusable: 'false'}, s('defs', null, peoplePatterns(PATTERNS))),
     h('div', {class: 'view__bar runs-bar'},
@@ -86,7 +90,7 @@ export function mount(root, ctx) {
     }
     return h('tr', {class: `runs-row runs-row--${prefix ? 'forecast' : 'actual'}`, 'data-run': run.name, 'data-series': prefix ? 'forecast' : 'actual'},
       labelCell,
-      METRIC_ORDER.map((metric) => {
+      columns.map((metric) => {
         const cell = published ? metricCell(text, run, prefix, metric, interrupted) : {text: text.DASH, badge: null};
         return h('td', {'data-metric': metric},
           h('span', {class: valueClass(series, cell.text === text.DASH ? 'none' : cell.badge), text: cell.text}));
@@ -141,13 +145,16 @@ export function mount(root, ctx) {
   store.watch((state) => [state.archive, state.attributes], () => {
     const {archive, model} = store.getState();
     const groups = groupRuns(archive.runs, archive.ids);
+    const costed = (metric) => archive.runs.some((run) => ['', 'forecast_'].some((prefix) => run.values[prefix + metric] !== undefined));
+    columns = METRIC_ORDER.filter((metric) => !COST_FIELDS.includes(metric) || costed(metric));
+    writeHead();
     table.replaceChildren(table.tHead, ...groups.map((group) => {
       const title = group.key === null ? UI.runs.noKey
         : (group.comparable >= 2 ? UI.runs.comparison(text.counted(group.comparable, text.FORMS.run), group.key) : UI.runs.single(group.key));
       // One key means one common group: its size is known where a run of the key says that everyone was out.
       const size = group.key === null ? null : commonGroup(group.runs.map((item) => item.run), ['', 'forecast_']);
       return h('tbody', {'data-comparison-key': group.key, 'data-group': group.comparable >= 2 ? 'comparison' : 'single'},
-        h('tr', {class: 'runs-group'}, h('th', {scope: 'rowgroup', colspan: METRIC_ORDER.length + 2},
+        h('tr', {class: 'runs-group'}, h('th', {scope: 'rowgroup', colspan: columns.length + 2},
           h('span', {class: 'runs-group__title', text: title}),
           size ? h('span', {class: 'runs-group__size', text: UI.runs.groupFrom(size.total)}) : null)),
         group.runs.flatMap((item) => runRows(item, group, model, size ? size.total : null)));

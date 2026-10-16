@@ -13,6 +13,13 @@ failed read or old data, the buffer is cleared on a new run, a hidden page costs
 state when shown again. A figure model with a clip `walk` plays it only while its person walks, at the rate that
 makes its stride match the ground speed, and fades out when the person stops (actors.js).
 
+Loaders (CONTRACT.md §9, the recorded simulation): the art's lhd.glb is drawn for each published loader at its published
+place, turned towards its `toward_node`, its lamps by its published state, rock in the bucket only while `loaded`; the
+art's own loaders at the zones' anchors are hidden (the truck and the drill stay as dark decoration). A loader moves in
+the people's playback buffer, through the node it shares with the next working of its cycle, at most the registry's
+step (30 m) per publication, and freezes on a pause, a failed read and under reduced motion. An operator riding it
+(`aboard`) is no figure of its own: drawn with the machine, a figure again once the model says the person got off.
+
     PYTHONUTF8=1 python -m unittest tests.test_art_mode        (from team/ui)
 """
 
@@ -940,12 +947,14 @@ class ArtEnvTest(ArtEnvCase):
         self.assertAlmostEqual(art["zoom"], 1, places=6)
         self.assertEqual(info["camera"]["type"], "orthographic")
         self.assertLessEqual(info["calls"], 40, "draw calls of the art")
-        self.assertEqual(sorted((m["name"], m["kind"]) for m in art["machines"]),
-                         [("drill", "drill"), ("lhd_zone-a", "lhd"), ("lhd_zone-b", "lhd"), ("truck", "truck")])
+        self.assertEqual(sorted((m["name"], m["kind"], m["shown"]) for m in art["machines"]),
+                         [("drill", "drill", True), ("lhd-a", "lhd", True), ("lhd-b", "lhd", True), ("lhd_zone-a", "lhd", False),
+                          ("lhd_zone-b", "lhd", False), ("truck", "truck", True)],
+                         "the published loaders replace the art's loaders of the zones; truck and drill stay as decoration")
         self.assertEqual(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.artFigure"), "worker.glb")
         notes = self.page.evaluate("document.querySelector('[data-testid=\"scene3d-gizmo\"]').textContent")
-        for words in (f"вертикаль ×{decimal(extras['k'])}", "шире настоящих", "оформление", "только работу своего участка",
-                      "машины ×2,2 настоящих", "фигуры людей ×4,4"):
+        for words in (f"вертикаль ×{decimal(extras['k'])}", "шире настоящих", "оформление", "ПДМ — по данным модели",
+                      "самосвал и буровая — оформление", "машины ×2,2 настоящих", "фигуры людей ×4,4"):
             self.assertIn(words, notes)
         # An invented fixture (another topology): the procedural scene of variant 3, perspective, no art.
         self.page.set_viewport(1280, 720)
@@ -1041,6 +1050,10 @@ class ArtEnvTest(ArtEnvCase):
         self.wait_selected(thing(found[0]))
 
     def test_lamps_follow_the_published_work_state_of_their_zone(self):
+        """Without equipment twins (a stand that does not publish them) the art's loaders of the zones show the zones'
+        work state; with them, the published loaders show their own state (ArtLoaderTest)."""
+        self.page.add_init_script(STRIP_EQUIPMENT)
+        self.page._strip_equipment = True
         self.decision_art()
         lights = {m["name"]: m["light"] for m in self.info()["art"]["machines"]}
         self.assertEqual(lights, {"lhd_zone-a": 1, "lhd_zone-b": 1, "truck": 0, "drill": 0}, "working zones: lit; decor: dark")
@@ -1142,9 +1155,13 @@ class ArtSizeTest(ArtEnvCase):
     def test_machines_are_twice_real_and_clear_of_every_walking_line(self):
         self.open_art()
         info = self.info()
-        machines = info["art"]["machines"]
+        # The art's own machines at its anchors (the published loaders drive on the workings by definition).
+        machines = [machine for machine in info["art"]["machines"] if not machine["published"]]
         self.assertEqual(info["art"]["machineFactor"], 2.2)
         self.assertEqual(len(machines), 4)
+        for machine in info["art"]["machines"]:
+            if machine["published"]:
+                self.assertAlmostEqual(machine["scale"], 2.2 / 1.5, delta=0.002, msg=f"{machine['name']}: 2.2× real (built 1.5×)")
         for machine in machines:
             self.assertAlmostEqual(machine["scale"], 2.2 / 1.5, delta=0.002, msg=f"{machine['name']}: 2.2× real (built 1.5×)")
         lines = self.js(f"""const s = {APP}.store.getState(); const nodes = s.attributes.mine.nodes;
@@ -1285,3 +1302,245 @@ class ArtEdgesTest(ArtEnvCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---- the loaders of the model in the art (CONTRACT.md §9) -----------------------------------------------------------
+
+# Samples, every `step` ms for `ms` ms: each loader as published and as drawn, its operator, the yielding drawn.
+LOADERS = """(async () => {
+  const app = (await import('/js/main.js')).app;
+  const out = [];
+  const t0 = performance.now();
+  %(act)s;
+  while (performance.now() - t0 < %(ms)d) {
+    const s = app.store.getState();
+    const i = app.ctx.stage.info();
+    const pub = Object.fromEntries(s.model.byKind.equipment.map((m) => [m.name, [m.values.at_working, m.values.offset_m,
+      m.values.activity, m.values.yielding_to || null, m.values.state, m.values.loaded, m.values.operator_aboard]]));
+    const riders = Object.fromEntries(s.model.byKind.worker.filter((w) => w.attrs.role === 'lhd_operator')
+      .map((w) => [w.name, [w.values.aboard || null, w.values.at_working, w.values.offset_m, w.values.status]]));
+    out.push({t: Math.round(performance.now() - t0), seq: s.snapshot.seq, tick: s.snapshot.tick, runState: s.snapshot.runState,
+      link: document.body.dataset.link, pub, riders,
+      drawn: Object.fromEntries(i.actors.machines.map((m) => [m.name, [m.working, m.offsetM, m.facing, m.gliding]])),
+      at: i.walk.at, feet: Object.keys(i.actors.figures.feet || {}), riding: i.actors.figures.riding,
+      art: Object.fromEntries(i.art.machines.filter((m) => m.published).map((m) => [m.name, [m.world, m.loaded, m.light, m.shown]])),
+      yielding: i.art.yielding, rendering: document.querySelector('#stage').dataset.rendering});
+    await new Promise((resolve) => setTimeout(resolve, %(step)d));
+  }
+  return out;
+})()"""
+
+# The ends of the loaders' workings at the node they share (b: w-07 0 m, w-03 150 m; f: w-12 0 m, w-10 150 m).
+CYCLE_NODE = {"w-07": 0, "w-03": 150, "w-12": 0, "w-10": 150}
+
+
+def mine_point(working, offset):
+    """The mine point of a published place on a loader's working (the recorded topology, SPEC §2)."""
+    if working == "w-07":
+        return (150, -offset, -120)
+    if working == "w-12":
+        return (150, -offset, -240)
+    if working == "w-03":
+        return (offset, 0, -120)
+    if working == "w-10":
+        return (offset, 0, -240)
+    raise KeyError(working)
+
+
+def path_length(a, b):
+    """Metres between two published places of a loader along its cycle (one working, or through the shared node)."""
+    if a[0] == b[0]:
+        return abs(a[1] - b[1])
+    return abs(a[1] - CYCLE_NODE[a[0]]) + abs(b[1] - CYCLE_NODE[b[0]])
+
+
+class ArtLoaderTest(ArtEnvCase):
+    """The two loaders of the recorded simulation drawn by the art's lhd.glb where and as the model publishes them."""
+
+    def loader_samples(self, act="", ms=6000, step=40):
+        return self.page.evaluate(LOADERS % {"act": act, "ms": ms, "step": step}, timeout=ms / 1000 + 30)
+
+    def execute(self, kind):
+        result = self.js(f"return {APP}.ctx.sendCommand('action.execute_option', 'option-{kind}');")
+        self.assertTrue(result["ok"], result)
+        self.page.wait_for("document.body.dataset.runState === 'running'", timeout=15.0)
+
+    def test_each_loader_stands_at_its_published_place_with_its_operator_aboard(self):
+        self.decision_art()
+        sample = self.loader_samples(ms=10, step=10)[0]
+        info = self.info()
+        for name in ("lhd-a", "lhd-b"):
+            working, offset, activity, _, state, loaded, aboard = sample["pub"][name]
+            world, shown_loaded, light, shown = sample["art"][name]
+            want = art_point(*mine_point(working, offset))
+            self.assertTrue(shown, name)
+            self.assertLess(math.dist(world, [want[0], want[1] + 0.02, want[2]]), 1.0, f"{name} within 1 m of its published place")
+            self.assertEqual(sample["drawn"][name][:2], [working, offset], f"{name}: the published place")
+            self.assertEqual(shown_loaded, loaded, f"{name}: rock in the bucket exactly when published loaded")
+            self.assertEqual(light, 1 if state == "working" else (0.35 if state == "parked" else 0), f"{name}: lamps by state")
+            # It faces its published toward_node (b / f: north, scene −Z): turned a quarter about the vertical.
+            machine = next(m for m in info["art"]["machines"] if m["name"] == name)
+            self.assertAlmostEqual(abs(machine["angle"]), math.pi / 2, places=2, msg=f"{name} turned along w-07 / w-12")
+            # Its operator rides it: no figure of the person, the person's drawn place is the machine's.
+            operator = {"lhd-a": "worker-a4", "lhd-b": "worker-b4"}[name]
+            self.assertTrue(aboard)
+            self.assertEqual(sample["riders"][operator][0], name)
+            self.assertNotIn(operator, sample["feet"], f"{operator} is not drawn as a separate figure while aboard")
+            self.assertEqual(sample["at"][operator][:2], [working, offset], f"{operator} drawn with the machine")
+            # The screen point of the machine is where the stage projects its published place.
+            mark = self.js(f"return {APP}.ctx.stage.screenOf({json.dumps(thing(name))});")
+            self.assertIsNotNone(mark)
+            self.assertLess(math.dist([mark["world"][0], mark["world"][2]], [want[0], want[2]]), 1.0, f"{name}: its label over it")
+            label = self.page.evaluate(f"(() => {{ const b = document.querySelector('#stage-3d .s3-label[data-label=\"loader:{name}\"]');"
+                                       " return b && [b.dataset.aboard, b.dataset.locationHazard, b.textContent]; })()")
+            self.assertEqual(label[0], "true", f"{name}: the label says its operator is aboard")
+            self.assertIn(f"оператор Р-{name[-1].upper()}4 на борту", label[2])
+        self.assertEqual(sample["riding"], 2)
+        self.assertEqual(len(sample["feet"]), 6, "six walking figures; the two operators ride")
+        # The machine in a danger zone carries the danger sign; the one in a normal zone none.
+        self.assertEqual(self.page.evaluate("document.querySelector('#stage-3d .s3-label[data-label=\"loader:lhd-a\"]').dataset.locationHazard"),
+                         "danger")
+        # The art's own loaders of the zones are hidden; truck and drill stay, dark.
+        art = {m["name"]: m for m in info["art"]["machines"]}
+        self.assertFalse(art["lhd_zone-a"]["shown"])
+        self.assertFalse(art["lhd_zone-b"]["shown"])
+        self.assertEqual((art["truck"]["light"], art["drill"]["light"]), (0, 0))
+
+    def test_the_registry_step_and_the_path_through_the_node(self):
+        """30 m per publication (speedup 10 × 3 m/s) plus 10 % is a move, through node b from w-07 onto w-03; longer is a jump."""
+        self.open_art()
+        got = self.js("""
+          const app = (await import('/js/main.js')).app;
+          const A = await import('/js/scene3d/actors.js');
+          const L = await import('/js/scene3d/layout.js');
+          const s = app.store.getState();
+          const layout = L.buildLayout(s.model, s.attributes.mine, null);
+          const limit = A.machineLimit(s.attributes.mine, s.model.shift.values.speedup);
+          const leg = (a, b) => { const r = A.machineLeg(layout, a, b, limit); return r && [r.length, r.pieces.map((p) => p.working)]; };
+          return {limit, none: A.machineLimit(null), thirty: leg({working: 'w-07', offsetM: 12}, {working: 'w-03', offsetM: 132}),
+            along: leg({working: 'w-03', offsetM: 120}, {working: 'w-03', offsetM: 90}),
+            far: leg({working: 'w-07', offsetM: 30}, {working: 'w-03', offsetM: 130}),
+            apart: leg({working: 'w-07', offsetM: 10}, {working: 'w-10', offsetM: 140})};""")
+        self.assertAlmostEqual(got["limit"], 33, places=6)
+        self.assertAlmostEqual(got["none"], 33, places=6, msg="without the registry: 30 m + 10 %")
+        self.assertAlmostEqual(got["thirty"][0], 30, places=6)
+        self.assertEqual(got["thirty"][1], ["w-07", "w-03"], "through node b")
+        self.assertAlmostEqual(got["along"][0], 30, places=6)
+        self.assertIsNone(got["far"], "50 m in one publication is a jump")
+        self.assertIsNone(got["apart"], "workings that do not meet: a jump")
+
+    def test_a_loader_moves_between_publications_and_its_operator_rides_along(self):
+        """observe: zone B works on; ПДМ-B returns empty at the registry's 30 m per publication, and glides those too."""
+        self.decision_art()
+        samples = self.loader_samples(act="app.ctx.sendCommand('action.execute_option', 'option-observe')", ms=12000, step=30)
+        previous, newest = {}, {}
+        between = 0
+        steps = []
+        glided = {}
+        for sample in samples:
+            if sample["runState"] != "running":
+                continue
+            for name, published in sample["pub"].items():
+                key = (published[0], published[1])
+                if newest.get(name, key) != key:
+                    previous[name] = newest[name]
+                    steps.append(path_length(previous[name], key))
+                newest[name] = key
+                drawn = sample["drawn"][name]
+                start = previous.get(name)
+                if start:
+                    # Drawn on the way from the previous published place to the newest one, never beyond it.
+                    total = path_length(start, key)
+                    done = path_length(start, (drawn[0], drawn[1]))
+                    rest = path_length((drawn[0], drawn[1]), key)
+                    self.assertAlmostEqual(done + rest, total, delta=0.05, msg=f"{name} drawn on its path: {start} -> {drawn} -> {key}")
+                    if 0.3 < done < total - 0.3:
+                        between += 1
+                        glided[round(total, 3)] = glided.get(round(total, 3), 0) + 1
+                        self.assertTrue(drawn[3], f"{name} moves")
+                # Its operator, while aboard, is drawn with it.
+                operator = {"lhd-a": "worker-a4", "lhd-b": "worker-b4"}[name]
+                rider = sample["riders"][operator]
+                if rider[0] == name:
+                    self.assertEqual(sample["at"][operator][0], drawn[0], f"{operator} rides {name}")
+                    self.assertAlmostEqual(sample["at"][operator][1], drawn[1], delta=0.01, msg=f"{operator} rides {name}")
+                    self.assertNotIn(operator, sample["feet"])
+        self.assertGreater(between, 20, "the loaders are drawn between their publications")
+        self.assertTrue(steps and max(steps) <= 30 + 1e-6, f"published steps within 30 m: {sorted(steps)[-3:]}")
+        self.assertIn(30, [round(step, 3) for step in steps], f"a step of 30 m was published: {sorted(steps)[-3:]}")
+        self.assertGreater(glided.get(30, 0), 3, f"a step of 30 m per publication glides, it is no jump: {glided}")
+        crossed = [sample for sample in samples for name, drawn in sample["drawn"].items() if drawn[0] != sample["pub"][name][0]]
+        self.assertTrue(crossed, "a loader drawn on w-07 while published on w-03: it drives through node b")
+
+    def test_the_operator_gets_off_in_the_bay_and_walks(self):
+        """withdraw_all: lhd-a trams to its bay (w-03, 75 m) and stops; its operator becomes a walking figure there."""
+        self.open_art()
+        result = self.js(f"return {APP}.ctx.sendCommand('run.start_preset', 'p-instability');")
+        self.assertTrue(result["ok"], result)
+        self.page.wait_for("document.body.dataset.runState === 'paused'", timeout=60.0)
+        self.execute("withdraw_all")
+        self.page.wait_for(f"""(async () => {{ const s = {APP}.store.getState();
+          const w = s.model.byName['worker-a4']; return !w.values.aboard; }})()""", timeout=60.0, interval=0.1,
+                           message="the operator of lhd-a gets off")
+        samples = self.loader_samples(ms=4000, step=60)
+        last = samples[-1]
+        self.assertEqual(last["pub"]["lhd-a"][:2], ["w-03", 75], "lhd-a in its bay")
+        self.assertEqual(last["pub"]["lhd-a"][4], "stopped")
+        self.assertIsNone(last["riders"]["worker-a4"][0])
+        self.assertEqual(last["riders"]["worker-a4"][3], "moving_to_exit")
+        self.assertTrue(any("worker-a4" in sample["feet"] for sample in samples), "the operator is a figure once off the machine")
+        self.assertEqual(last["art"]["lhd-a"][2], 0, "a stopped loader's lamps are dark")
+
+    def test_the_yielding_line_follows_the_publications(self):
+        self.decision_art()
+        samples = self.loader_samples(act="app.ctx.sendCommand('action.execute_option', 'option-stop_withdraw_zone')", ms=7000, step=40)
+        yielded = 0
+        for sample in samples:
+            expected = sorted([name, values[3]] for name, values in sample["pub"].items() if values[2] == "yielding" and values[3])
+            self.assertEqual(sorted(sample["yielding"]), expected, f"tick {sample['tick']}: the line exactly while published")
+            yielded += bool(expected)
+        self.assertGreater(yielded, 0, "lhd-a yields to the crew walking out ahead of it")
+        self.assertTrue(any(not sample["yielding"] for sample in samples if sample["runState"] == "running"),
+                        "the line goes with the first publication that no longer says so")
+
+    def test_nothing_moves_on_a_pause_a_failed_read_or_under_reduced_motion(self):
+        # Paused at the decision: five heartbeats, the same place, no frame.
+        self.decision_art()
+        samples = self.loader_samples(ms=5500, step=100)
+        self.assertGreaterEqual(samples[-1]["seq"] - samples[0]["seq"], 4, "heartbeats kept coming")
+        self.assertEqual({json.dumps(sample["drawn"]) for sample in samples}, {json.dumps(samples[0]["drawn"])}, "nothing moves while paused")
+        self.page.evaluate("window.__probe.raf = 0")
+        time.sleep(2.0)
+        self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "no frame while paused")
+        # A failed read while the loaders move: they stop at once on the newest published place.
+        self.execute("withdraw_all")
+        self.page.wait_for(f"(async () => {APP}.ctx.stage.info().actors.machines.some((m) => m.gliding))()", timeout=15.0, interval=0.02,
+                           message="a loader moves")
+        self.mock.fault("http_502")
+        try:
+            self.page.wait_for("document.body.dataset.link !== 'ok'", timeout=5.0)
+            sample = self.loader_samples(ms=10, step=10)[0]
+            for name, published in sample["pub"].items():
+                self.assertEqual(sample["drawn"][name][:2], published[:2], f"{name} at its newest published place")
+                self.assertFalse(sample["drawn"][name][3], f"{name} stands")
+            self.page.wait_for("document.querySelector('#stage-3d .s3').hasAttribute('data-old')", timeout=10.0)
+            self.wait_stage_size_settled()
+            self.wait_idle(timeout=3.0)
+            self.page.evaluate("window.__probe.raf = 0")
+            time.sleep(2.0)
+            self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "nothing moves while reads fail")
+        finally:
+            self.mock.fault("none")
+
+    def test_reduced_motion_puts_each_loader_at_once(self):
+        self.page.send("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+        self.decision_art()
+        samples = self.loader_samples(act="app.ctx.sendCommand('action.execute_option', 'option-withdraw_all')", ms=5000, step=30)
+        moved = 0
+        for sample in samples:
+            for name, published in sample["pub"].items():
+                drawn = sample["drawn"][name]
+                self.assertFalse(drawn[3], f"{name}: no glide under reduced motion")
+                self.assertEqual(drawn[:2], published[:2], f"{name}: drawn where published")
+            moved += sample["drawn"] != samples[0]["drawn"]
+        self.assertGreater(moved, 0, "the loaders did change place, at once")

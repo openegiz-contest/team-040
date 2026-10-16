@@ -1556,10 +1556,16 @@ class EquipmentTest(EquipmentCase):
         self.page.set_viewport(1920, 1080)
         self.open("normal")
         self.wait_loaded()
-        # The drawing and the published fields, read together while no loader glides (the model runs in `normal`).
-        self.page.wait_for(f"(async () => {APP}.ctx.stage.info().actors.glides === 0)()", timeout=5.0, interval=0.02)
-        info, published = self.js(f"""const app = {APP}; const s = app.store.getState();
-          return [app.ctx.stage.info(), Object.fromEntries((s.model.byKind.equipment || []).map((x) => [x.name, x.values]))];""")
+        # The drawing and the published fields, read together while no loader moves. The loaders play back with the
+        # people (walk.js, about one publication behind): with the publications held (a read that hangs) each one ends
+        # exactly at its newest published place and stands there.
+        self.mock.fault("hang")
+        try:
+            self.page.wait_for(f"(async () => {APP}.ctx.stage.info().actors.glides === 0)()", timeout=5.0, interval=0.02)
+            info, published = self.js(f"""const app = {APP}; const s = app.store.getState();
+              return [app.ctx.stage.info(), Object.fromEntries((s.model.byKind.equipment || []).map((x) => [x.name, x.values]))];""")
+        finally:
+            self.mock.fault("none")
         self.assertEqual(info["actors"]["glides"], 0)
         self.assertTrue(info["actors"]["equipment"], "the loaders are drawn from the equipment twins")
         self.assertEqual(sorted(entry["zone"] for entry in info["loaders"]), sorted(published), "one loader per equipment twin")
@@ -1588,8 +1594,18 @@ class EquipmentTest(EquipmentCase):
         samples = self.machines(ms=5000)
         self.assertTrue(self.moved(samples), "the published positions change in `normal`")
         self.assert_honest(samples, glide_expected=True)
-        # The step of a glide ends exactly at the published position.
-        self.page.wait_for(f"(async () => {APP}.ctx.stage.info().actors.glides === 0)()", timeout=3.0)
+        # The step of a glide ends exactly at the published position: with the publications held, every loader
+        # reaches its newest published place and stands there (nothing is extrapolated).
+        self.mock.fault("hang")
+        try:
+            self.page.wait_for(f"(async () => {APP}.ctx.stage.info().actors.glides === 0)()", timeout=3.0)
+            last = self.machines(ms=10, step=10)[0]
+            for name, published in last["p"].items():
+                if published[0] is not None and name in last["d"]:
+                    self.assertEqual(last["d"][name][0], published[0], f"{name} on its newest published working")
+                    self.assertAlmostEqual(last["d"][name][1], published[1], delta=0.01, msg=f"{name} at its newest published place")
+        finally:
+            self.mock.fault("none")
 
     def test_frozen_on_pause_and_at_once_on_a_failed_read(self):
         self.decision()

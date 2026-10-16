@@ -43,6 +43,7 @@
 // horizontal place kept) to a depth, or zooms from the overview to a depth reading (DEPTH_READ_ZOOM).
 
 import * as THREE from 'three';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {showsOldData} from '../link.js';
 import {incidentOf, isUnderground, routeOf, thingByName, thingsOfKind} from '../model.js';
 import {situationOf} from '../situation.js';
@@ -51,7 +52,7 @@ import {SCENE} from '../text3d.js';
 import * as text from '../text.js';
 import {createOrbit, FOV, placeCamera} from './camera.js';
 import {ART_ZOOM_MAX, createArtRig} from './artcamera.js';
-import {createWalk} from './walk.js';
+import {createWalk, MACHINE} from './walk.js';
 import {artSignature, loadArtEnv, loadArtMachine, readGlbHeader} from './artenv.js';
 import {labelItems, machineLines, tooltipLines} from './content.js';
 import {changesBetween, describe, groupWorkers} from './describe.js';
@@ -61,7 +62,7 @@ import {
   buildLayout, DIMS, levelY, LOADER_SCALE, loaderPlaces as placesForLoaders, pointOnWorking, sceneBounds, sceneLine, silhouette,
   toScene, verticalFactor, zoneEntrances,
 } from './layout.js';
-import {createActors, FIGURE_PX, FIGURE_PX_ART, FIGURE_SCALE} from './actors.js';
+import {createActors, FIGURE_PX, FIGURE_PX_ART, FIGURE_SCALE, machineLeg, machineLimit, sideOf} from './actors.js';
 import {createLoaders} from './loaders.js';
 import {drawAtlas, spriteGeometry, spriteMaterials, writeSprites} from './markers.js';
 import {TOKEN, TONE} from './palette.js';
@@ -97,6 +98,17 @@ const ART_LAMP_MS = 300;
 const ART_FIGURE_SCALE = 1.6;
 const ART_FIGURE_FACTOR = (5 * ART_FIGURE_SCALE) / 1.8;
 const ART_MACHINE_FACTOR = 2.2;
+/**
+ * Art mode with equipment twins (CONTRACT.md §9): the art's lhd.glb is drawn for each published loader at its published
+ * place (the art's own loaders at the zones' anchors are then hidden; the truck and the drill stay as decoration, their
+ * lamps dark). The roof of the drawn machine (lhd.glb is 4.68 m tall built 1.5× real, drawn 2.2× real): a marker of
+ * the operator riding it stands over it. Lamps by the published state: lit while working, dim while held, dark
+ * stopped or without a state. The heap in the bucket is drawn only while the loader is published `loaded`.
+ */
+const ART_LHD_TOP = 4.68 * (ART_MACHINE_FACTOR / 1.5);
+const ART_LHD_LAMP = {working: 1, parked: 0.35, stopped: 0, unknown: 0};
+/** The thin line from a yielding loader to the person it yields to (published `yielding_to`): neutral, not a hazard colour. */
+const YIELD_COLOR = '#E8E3DA';
 /** The walk cycle of the art's worker plays at most this many cycles a second (above it the feet slide a little). */
 const ART_MAX_CYCLES = 2.4;
 /**
@@ -258,6 +270,7 @@ export function createScene(host, options) {
     get layout() { return layout; }, get k() { return k; }, get view() { return view; }, get groups() { return groups; },
     get camera() { return camera; }, get height() { return height; }, position: (name) => currentPosition(name),
     viewDistance: (point) => viewDistance(point), get figurePx() { return art ? FIGURE_PX_ART : FIGURE_PX; },
+    machine: (name) => machinePlace(name), get machineTop() { return machineTop(); },
   }});
   world.add(actors.group);
   let view = null;
@@ -285,8 +298,36 @@ export function createScene(host, options) {
   let artEnv = null;
   let artEnvLoading = null;
   let artOn = false;
-  let artMachines = null;          // {group, zone: [...], decor: [...]} once loaded
+  let artMachines = null;          // {group, zone: [...], decor: [...], equip: Map} once loaded
   let artMachinesLoading = null;
+  let artMachineSources = null;    // kind -> the loaded art machine (artenv.js loadArtMachine), for the published loaders
+  let rockGeometry = null;          // the heap in a loaded bucket (art mode), built once
+  // The yielding of a loader to a person (published `activity = yielding`, `yielding_to`): a thin line between them.
+  const yieldLines = new THREE.LineSegments(new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({color: YIELD_COLOR, transparent: true, opacity: 0.85, depthTest: false}));
+  yieldLines.renderOrder = 20;
+  yieldLines.frustumCulled = false;
+  yieldLines.name = 'yield-lines';
+  yieldLines.visible = false;
+  world.add(yieldLines);
+  const orePassMaterial = new THREE.MeshBasicMaterial({vertexColors: true});
+  /** A geometry painted one colour (vertex colours), for the unlit grate of an ore pass. */
+  const painted = (geometry, colour) => {
+    const c = new THREE.Color(colour);
+    const colours = new Float32Array(geometry.attributes.position.count * 3);
+    for (let i = 0; i < colours.length; i += 3) colours.set([c.r, c.g, c.b], i);
+    geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+    geometry.deleteAttribute('uv');
+    geometry.deleteAttribute('normal');
+    return geometry;
+  };
+  let yieldDrawn = [];             // [[machine, person]] drawn now
+  // The ore passes of mine.attributes.dump_points (CONTRACT.md §9, not twins): a grate on the floor and a label.
+  const orePassGroup = new THREE.Group();
+  orePassGroup.name = 'ore-passes';
+  world.add(orePassGroup);
+  let orePassKey = null;
+  let orePasses = [];              // [{id, label, working, offsetM, point}] drawn now
   // Art mode, a withdrawal: who walks out of which zone (person -> zone), and the walk the camera follows.
   const walkOrigins = new Map();
   let walkFollow = null;
@@ -565,6 +606,7 @@ export function createScene(host, options) {
     }
     buildDesk();
     loaders.setMachines(actors.setModel(state && state.model));
+    if (gizmo && root.getAttribute('data-decor') === 'loaded') gizmo.setDecor(true, actors.equipment);
     loaderCandidates = state && state.model && !actors.equipment ? candidatesOfLoaders() : new Map();
     loaderPlaces = new Map();
     loaderRun = null;
@@ -1367,24 +1409,57 @@ export function createScene(host, options) {
       const thing = thingByName(state.model, name);
       if (thing) routes.set(name, routeSegments(thing));
     }
-    walking = walk.publish(layout, {at: performance.now(), places, routes}, motionAllowed() && previousRun === view.run && !newRun);
+    // The loaders play back with the people (walk.js): their path between two publications runs along their working
+    // or through the node it shares with the next (actors.js machineLeg), within the registry's step (machineLimit).
+    const paths = new Map();
+    const limit = machineLimit(state.attributes && state.attributes.mine, state.model.shift ? state.model.shift.values.speedup : undefined);
+    for (const [name, machine] of Object.entries(view.equipment)) {
+      if (!machine.at) continue;
+      places.set(MACHINE + name, {working: machine.at, offsetM: machine.offsetM});
+      paths.set(MACHINE + name, (from, to) => machineLeg(layout, from, to, limit));
+    }
+    walking = walk.publish(layout, {at: performance.now(), places, routes, paths}, motionAllowed() && previousRun === view.run && !newRun);
     spritesDirty = true;
     return walking;
   }
 
-  /** Where a person is drawn now: the playback buffer, else the published place. */
+  /**
+   * Where a person is drawn now: on the machine the person rides (published `aboard`: the operator is part of it, the
+   * machine's drawn place), else the playback buffer, else the published place.
+   */
   function currentPosition(name) {
+    const worker = view && view.workers[name];
+    if (worker && worker.aboard && actors.equipment) {
+      const riding = machinePlace(worker.aboard);
+      if (riding) return riding;
+    }
     const place = walk.place(name);
     if (place) return place;
-    const worker = view && view.workers[name];
     return worker && worker.at ? {working: worker.at, offsetM: worker.offsetM, facing: 1, moving: false} : null;
   }
 
-  /** Every walk and glide ends at once at the newest published place (a failed read, old data, a pause). */
+  /**
+   * Where a loader is drawn now: its playback (walk.js), facing its published `toward_node` while it stands and its
+   * travel while it moves; null without a published place.
+   */
+  function machinePlace(name) {
+    const machine = view && view.equipment[name];
+    if (!machine || !machine.at || !layout) return null;
+    const at = walk.place(MACHINE + name) || {working: machine.at, offsetM: machine.offsetM, facing: 1, moving: false};
+    const toward = at.moving ? null : sideOf(layout.workings.get(at.working), machine.toward);
+    return {working: at.working, offsetM: at.offsetM, facing: toward || at.facing || 1, moving: Boolean(at.moving)};
+  }
+
+  /** The height of the roof of a drawn loader over its floor (scene metres): the art's machine, or the variant 3 one. */
+  function machineTop() {
+    return artOn ? ART_LHD_TOP : 2.6 * LOADER_SCALE;
+  }
+
+  /** Every walk ends at once at the newest published place (a failed read, old data, a pause); loaders with them. */
   function snapMotion() {
-    if (actors.snap()) placeLoaders();
     if (!walk.snap()) return;
     walking = false;
+    placeLoaders();
     spritesDirty = true;
     invalidate();
   }
@@ -1642,6 +1717,8 @@ export function createScene(host, options) {
     }
     loaders.setPoses(poses);
     root.setAttribute('data-loaders', String(poses.size));
+    placeArtEquipment();
+    placeYieldLines();
   }
 
   /** The published work state of a zone as the look of its loader: working, stopped, or unknown. */
@@ -1679,7 +1756,9 @@ export function createScene(host, options) {
   /** Scene point of a loader's middle, a little above its roof (its label and its leader end there). */
   function loaderPoint(zone, lift = 1.2) {
     const pose = loaderPlaces.has(zone) && layout ? pointOnWorking(layout, loaderPlaces.get(zone).working, loaderPlaces.get(zone).offsetM, k) : null;
-    return pose ? [pose.point[0], pose.point[1] + lift * LOADER_SCALE, pose.point[2]] : null;
+    // Art mode: the art's machine (ART_LHD_TOP tall at its roof, lift 2.6 of variant 3's loader).
+    const rise = artOn && actors.equipment ? (lift / 2.6) * ART_LHD_TOP : lift * LOADER_SCALE;
+    return pose ? [pose.point[0], pose.point[1] + rise, pose.point[2]] : null;
   }
 
   /** The zone whose loader lies under a screen point, if any (`withDistance`: {zone, d}). */
@@ -1764,6 +1843,10 @@ export function createScene(host, options) {
     },
     exit: exitPoint,
     loader: (zone) => loaderPoint(zone, 2.6),
+    orePass: (id) => {
+      const entry = orePasses.find((item) => item.id === id);
+      return entry ? [entry.point[0], entry.point[1] + 2.5, entry.point[2]] : null;
+    },
   };
 
   /**
@@ -1779,11 +1862,54 @@ export function createScene(host, options) {
     return [minX - 18, levelY(layout, level, k) + 4, z];
   }
 
+  /**
+   * The ore passes (mine.attributes.dump_points: {id, label, level, working, offset_m}): a small grate lying on the floor
+   * of the working at the published offset, in the colours of steel (no hazard colour). Rebuilt when the layout or the
+   * vertical factor changes.
+   */
+  function placeOrePasses() {
+    const mine = state && state.attributes ? state.attributes.mine : null;
+    const list = mine && Array.isArray(mine.dump_points) ? mine.dump_points : [];
+    const key = layout ? `${layout.cx}|${layout.cy}|${k}|${JSON.stringify(list)}` : null;
+    if (key === orePassKey) return;
+    orePassKey = key;
+    for (const child of [...orePassGroup.children]) {
+      orePassGroup.remove(child);
+      child.geometry.dispose();
+    }
+    orePasses = [];
+    if (!layout) return;
+    for (const entry of list) {
+      if (!entry || typeof entry.working !== 'string' || !Number.isFinite(entry.offset_m)) continue;
+      const at = pointOnWorking(layout, entry.working, entry.offset_m, k);
+      if (!at) continue;
+      const parts = [];
+      const frame = new THREE.BoxGeometry(7, 0.2, 7).toNonIndexed();
+      parts.push(painted(frame, '#2B2824'));
+      for (const z of [-2.2, -0.75, 0.75, 2.2]) {
+        const bar = new THREE.BoxGeometry(6.4, 0.3, 0.45).toNonIndexed();
+        bar.translate(0, 0.12, z);
+        parts.push(painted(bar, '#8E877C'));
+      }
+      const geometry = mergeGeometries(parts, false);
+      parts.forEach((part) => part.dispose());
+      const mesh = new THREE.Mesh(geometry, orePassMaterial);
+      mesh.position.set(at.point[0], at.point[1] + 0.12, at.point[2]);
+      mesh.rotation.y = Math.atan2(-at.dir[2], at.dir[0]);
+      mesh.renderOrder = 2;
+      mesh.name = `ore-pass:${entry.id}`;
+      orePassGroup.add(mesh);
+      orePasses.push({id: String(entry.id), label: typeof entry.label === 'string' ? entry.label : String(entry.id), working: entry.working,
+        offsetM: entry.offset_m, point: at.point});
+    }
+  }
+
   function setLabels() {
     if (!layout || !view || !state || !state.model) return labels.set([]);
+    placeOrePasses();
     const arriving = new Set(fx ? [...fx.closed].map((name) => view.workings[name] && view.workings[name].thingId) : []);
     const placed = loaders.loaded ? [...loaderPlaces.keys()].map((zone) => ({zone, look: actors.equipment ? actors.looks(view).get(zone) : workLook(view.zones[zone]), lines: loaderLines(zone)})) : [];
-    return labels.set(labelItems({model: state.model, view, layout, groups, anchors, arriving, loaders: placed}));
+    return labels.set(labelItems({model: state.model, view, layout, groups, anchors, arriving, loaders: placed, orePasses}));
   }
 
   const v3 = new THREE.Vector3();
@@ -1957,7 +2083,7 @@ export function createScene(host, options) {
       if (artNotes) {
         vertical.textContent = SCENE.artVertical(lastFactor);
         thickness.textContent = SCENE.artDecor;
-        decor.textContent = SCENE.artFigures(artNotes.machine, artNotes.people);
+        decor.textContent = SCENE.artFigures(artNotes.machine, artNotes.people, decorMachines);
         decor.hidden = false;
         return;
       }
@@ -2042,10 +2168,10 @@ export function createScene(host, options) {
     if (cameraMoving && artOn) spritesDirty = true;
     active = cameraMoving || active;
     active = stepExplode(now) || active;
+    const wasWalking = walking;
     const people = stepWalk(now);
-    const machines = actors.step(now);
-    if (machines.moved) placeLoaders();
-    active = machines.active || active;
+    // The loaders play back with the people: placed again in every frame of the walk, and once when it ends.
+    if ((people || wasWalking) && actors.equipment) placeLoaders();
     active = stepDrawIn(now) || active;
     active = stepFx(now) || active;
     active = stepSelect(now) || active;
@@ -3354,9 +3480,25 @@ export function createScene(host, options) {
     return out.sort((p, q) => (p.name < q.name ? -1 : (p.name > q.name ? 1 : 0)));
   }
 
+  /**
+   * The loaders as drawn now, for the depth rail: [{name, thingId, z, working, moving}], z the mine elevation (m) of
+   * the place where the machine stands (the same playback as the people). Published places only.
+   */
+  function machines() {
+    if (!layout || !view || !actors.equipment) return [];
+    const out = [];
+    for (const [name, place] of loaderPlaces) {
+      const machine = view.equipment[name];
+      const at = machine ? pointOnWorking(layout, place.working, place.offsetM, k) : null;
+      if (!at) continue;
+      out.push({name, thingId: machine.thingId, z: at.point[1] / k + layout.zTop, working: place.working, moving: Boolean(place.moving)});
+    }
+    return out.sort((p, q) => (p.name < q.name ? -1 : (p.name > q.name ? 1 : 0)));
+  }
+
   /** Tell the stage (and so the depth rail) when a drawn depth changed: once per change, from the frame that drew it. */
   function announcePeople() {
-    const key = people().map((p) => `${p.name}:${p.z.toFixed(2)}`).join('|');
+    const key = [...people(), ...machines()].map((p) => `${p.name}:${p.z.toFixed(2)}`).join('|');
     if (key === peopleKey) return;
     peopleKey = key;
     options.onEvent('people');
@@ -3719,6 +3861,7 @@ export function createScene(host, options) {
     artMachinesLoading = Promise.all(kinds.map((kind) => loadArtMachine(ART_URL(`actors/${kind}.glb`)).catch(() => null))).then((loaded) => {
       if (disposed) return;
       const byKind = Object.fromEntries(kinds.map((kind, i) => [kind, loaded[i]]));
+      artMachineSources = byKind;
       const group = new THREE.Group();
       group.name = 'art-machines';
       const zone = [];
@@ -3740,19 +3883,141 @@ export function createScene(host, options) {
         else decor.push(entry);
       }
       artGroup.add(group);
-      artMachines = {group, zone, decor};
+      artMachines = {group, zone, decor, equip: new Map()};
+      placeArtEquipment();
       updateArtLamps(false);
       root.setAttribute('data-art-machines', String(zone.length + decor.length));
       invalidate();
     });
   }
 
-  /** The lamps of a zone's loader: lit while the zone's published work state is `working`, dark otherwise. */
+  /** The heap of rock in a loaded bucket: a few low facets, shaded as the art is (light from above, unlit material). */
+  function rockHeap() {
+    if (rockGeometry) return rockGeometry;
+    const parts = [];
+    // Ore heaped over the rim of the bucket (front, +X; the rim stands about 2.3 m high in lhd.glb), lighter than the
+    // gravel of the floors so that a loaded bucket reads at a glance.
+    const stones = [[6.25, 1.9, 0, 1.1], [5.85, 2.15, -1.05, 0.85], [5.9, 2.1, 1.0, 0.86], [6.75, 1.65, -0.85, 0.75],
+      [6.7, 1.65, 0.9, 0.76], [6.15, 2.7, 0.15, 0.7], [5.75, 2.6, -0.6, 0.55]];
+    const base = new THREE.Color('#9A8268');
+    const shade = new THREE.Color();
+    stones.forEach(([x, y, z, r], index) => {
+      const stone = new THREE.IcosahedronGeometry(r, 0).toNonIndexed();
+      stone.scale(1, 0.62, 1);
+      stone.rotateY(index * 0.9);
+      stone.translate(x, y, z);
+      stone.computeVertexNormals();
+      const normals = stone.attributes.normal;
+      const colours = new Float32Array(normals.count * 3);
+      for (let i = 0; i < normals.count; i += 1) {
+        // Painted light from above and a little from the front; darker facets below.
+        const light = 0.55 + 0.45 * Math.max(0, normals.getY(i) * 0.85 + normals.getX(i) * 0.15);
+        shade.copy(base).multiplyScalar(light * (0.92 + 0.08 * ((index * 7) % 3)));
+        colours.set([shade.r, shade.g, shade.b], i * 3);
+      }
+      stone.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+      stone.deleteAttribute('uv');
+      parts.push(stone);
+    });
+    rockGeometry = mergeGeometries(parts, false);
+    parts.forEach((part) => part.dispose());
+    return rockGeometry;
+  }
+
+  /**
+   * Art mode with equipment twins: the art's loader for each published machine at the place where the scene draws it
+   * (the playback), turned as its working runs; the zones' own loaders of the art are hidden. Without equipment twins,
+   * the zones' loaders as before.
+   */
+  function placeArtEquipment() {
+    if (!artMachines) return;
+    const equipment = actors.equipment && artOn;
+    for (const entry of artMachines.zone) entry.made.group.visible = !actors.equipment;
+    const places = equipment && layout ? loaderPlaces : new Map();
+    for (const [name, entry] of [...artMachines.equip]) {
+      if (places.has(name)) continue;
+      artMachines.group.remove(entry.made.group);
+      if (entry.made.lampMaterial) entry.made.lampMaterial.dispose();
+      artMachines.equip.delete(name);
+    }
+    const loaded = new Set(view ? actors.loadedOf(view) : []);
+    for (const [name, place] of places) {
+      let entry = artMachines.equip.get(name);
+      if (!entry) {
+        const source = artMachineSources && artMachineSources.lhd;
+        if (!source) continue;
+        const made = source.make();
+        const built = Number.isFinite(source.extras.scaleToReal) && source.extras.scaleToReal > 0 ? source.extras.scaleToReal : 1.5;
+        made.group.scale.setScalar(ART_MACHINE_FACTOR / built);
+        made.group.name = `art-lhd:${name}`;
+        const rock = new THREE.Mesh(rockHeap(), new THREE.MeshBasicMaterial({vertexColors: true}));
+        rock.name = 'rock';
+        rock.visible = false;
+        made.group.add(rock);
+        artMachines.group.add(made.group);
+        const thing = state && state.model ? thingByName(state.model, name) : null;
+        entry = {name, kind: 'lhd', zone: thing && typeof thing.attrs.zone === 'string' ? thing.attrs.zone : null, made, rock,
+          light: 0, fade: null, published: true};
+        artMachines.equip.set(name, entry);
+        updateArtLamps(false);
+      }
+      const at = pointOnWorking(layout, place.working, place.offsetM, k);
+      if (!at) {
+        entry.made.group.visible = false;
+        continue;
+      }
+      const dir = place.facing > 0 ? at.dir : at.dir.map((v) => -v);
+      entry.made.group.position.set(at.point[0], at.point[1] + 0.02, at.point[2]);
+      entry.made.group.rotation.set(0, Math.atan2(-dir[2], dir[0]), 0);
+      entry.made.group.visible = true;
+      entry.rock.visible = loaded.has(name);
+      entry.made.group.updateMatrixWorld(true);
+    }
+  }
+
+  /**
+   * A loader that yields (published `activity = yielding`) to a person (`yielding_to`): a thin neutral line from its
+   * roof to the marker of that person, as drawn now. It goes with the first publication that no longer says so.
+   */
+  function placeYieldLines() {
+    const pairs = [];
+    if (view && layout && actors.equipment) {
+      for (const [name, machine] of Object.entries(view.equipment)) {
+        if (machine.activity !== 'yielding' || !machine.yieldingTo || !loaderPlaces.has(name)) continue;
+        const person = view.workers[machine.yieldingTo];
+        if (!person || !person.at) continue;
+        pairs.push([name, machine.yieldingTo]);
+      }
+    }
+    // Nothing to draw and nothing drawn: no new geometry (this runs in every frame of a walk).
+    if (pairs.length === 0 && yieldDrawn.length === 0) return;
+    const points = [];
+    for (const [name, person] of pairs) {
+      const from = loaderPoint(name, 2.6);
+      const position = currentPosition(person);
+      const at = position ? pointOnWorking(layout, position.working, position.offsetM, k) : null;
+      if (!from || !at) continue;
+      const lift = artOn ? ART_FIGURE_SCALE * 5 * 0.6 : 3;
+      points.push(from, [at.point[0], at.point[1] + lift, at.point[2]]);
+    }
+    yieldDrawn = pairs;
+    yieldLines.geometry.dispose();
+    yieldLines.geometry = new THREE.BufferGeometry();
+    yieldLines.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(points.flat()), 3));
+    yieldLines.visible = points.length > 0;
+    root.setAttribute('data-yielding', pairs.map((pair) => pair.join('>')).join(' '));
+  }
+
+  /**
+   * The lamps of a zone's loader: lit while the zone's published work state is `working`, dark otherwise. The lamps of
+   * a published loader: by its own published state (ART_LHD_LAMP).
+   */
   function updateArtLamps(animate) {
     if (!artMachines) return;
-    for (const entry of artMachines.zone) {
+    const looks = view && actors.equipment ? actors.looks(view) : new Map();
+    for (const entry of [...artMachines.zone, ...artMachines.equip.values()]) {
       const zone = view && view.hasSnapshot ? view.zones[entry.zone] : null;
-      const lit = zone && zone.workState === 'working' ? 1 : 0;
+      const lit = entry.published ? ART_LHD_LAMP[looks.get(entry.name) || 'unknown'] ?? 0 : (zone && zone.workState === 'working' ? 1 : 0);
       const goal = entry.fade ? entry.fade.to : entry.light;
       if (goal === lit) continue;
       if (animate && !reduced()) entry.fade = {from: entry.light, to: lit, start: null};
@@ -3766,7 +4031,7 @@ export function createScene(host, options) {
 
   function applyArtLamps() {
     if (!artMachines) return;
-    for (const entry of [...artMachines.zone, ...artMachines.decor]) {
+    for (const entry of [...artMachines.zone, ...artMachines.decor, ...artMachines.equip.values()]) {
       const {lampMaterial, lampOn, lampOff} = entry.made;
       if (lampMaterial) lampMaterial.color.copy(lampOff).lerp(lampOn, entry.light);
     }
@@ -3776,7 +4041,7 @@ export function createScene(host, options) {
   function stepArtLamps(now) {
     if (!artMachines) return false;
     let active = false;
-    for (const entry of artMachines.zone) {
+    for (const entry of [...artMachines.zone, ...artMachines.equip.values()]) {
       if (!entry.fade) continue;
       if (entry.fade.start === null) entry.fade.start = now;
       const t = Math.min((now - entry.fade.start) / ART_LAMP_MS, 1);
@@ -3921,7 +4186,8 @@ export function createScene(host, options) {
     groups = groupWorkers(view.workers);
     publishPlaces(previousRun);
     trackWalkOrigins(previousRun);
-    if (actors.update(view, layout, motionAllowed() && previousRun === view.run)) placeLoaders();
+    actors.update(view, layout);
+    placeLoaders();
     if (!linkNowOk) snapMotion();
     if (!animate) {
       finishFx(false);
@@ -4219,9 +4485,16 @@ export function createScene(host, options) {
         distMin: orbit.limits.distMin, pan: orbit.where(), cover: orbit.limits.cover,
         // The illustrated mine: shown, its origin, its machines and their lamps (0 dark … 1 lit), the floor under each figure.
         env: artOn, origin: artOn ? {cx: layout.cx, cy: layout.cy, zTop: layout.zTop} : null,
-        machines: artMachines ? [...artMachines.zone, ...artMachines.decor].map((entry) => ({name: entry.name, kind: entry.kind, zone: entry.zone,
-          light: Math.round(entry.light * 1000) / 1000, world: entry.made.group.position.toArray().map((v) => Math.round(v * 10) / 10),
+        // The art's own machines (the zones' loaders, shown only without equipment twins, the truck and the drill) and the
+        // published loaders (`published`: drawn at the place of the model, `loaded`: the heap in the bucket).
+        machines: artMachines ? [...artMachines.zone, ...artMachines.decor, ...artMachines.equip.values()].map((entry) => ({name: entry.name,
+          kind: entry.kind, zone: entry.zone, published: Boolean(entry.published), shown: entry.made.group.visible,
+          loaded: entry.rock ? entry.rock.visible : null, light: Math.round(entry.light * 1000) / 1000,
+          world: entry.made.group.position.toArray().map((v) => Math.round(v * 10) / 10),
+          angle: Math.round(entry.made.group.rotation.y * 1000) / 1000,
           scale: Math.round(entry.made.group.scale.x * 1000) / 1000, box: machineBox(entry)})) : [],
+        machineTop: ART_LHD_TOP,
+        yielding: yieldDrawn.map((pair) => [...pair]),
         machineFactor: ART_MACHINE_FACTOR, figureScale: ART_FIGURE_SCALE,
         floorGaps: floorGaps(),
         // The state drawn over the floors: the materials of the overlay meshes (hazard decals, outlines, routes).
@@ -4284,7 +4557,7 @@ export function createScene(host, options) {
     },
     focus, overview, setExplode, setArt, measure, info, dispose,
     /** The depth rail: the people as drawn now, the depth probe and the highlight of a horizon (see above). */
-    people, setDepthProbe, setLevelHighlight, depthView, scrollDepth,
+    people, machines, setDepthProbe, setLevelHighlight, depthView, scrollDepth,
     /** Art mode is on: the orthographic camera, pan and zoom only. */
     get art() {
       return Boolean(art);

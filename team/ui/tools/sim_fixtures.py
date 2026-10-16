@@ -48,7 +48,7 @@ for path in (str(REPO_ROOT), str(TOOLS_DIR)):
         sys.path.insert(0, path)
 
 from team.sim.model import Mine                      # noqa: E402
-from team.sim.topology import NAMESPACE              # noqa: E402
+from team.sim.topology import NAMESPACE, TOPOLOGY_VERSION   # noqa: E402
 from team.sim.twins import snapshot                  # noqa: E402
 from build_fixtures import CLOCK as INVENTED_CLOCK, render   # noqa: E402  (layout and re-timing rules)
 
@@ -189,7 +189,7 @@ def fixture_for(name: str) -> dict:
     rec = record(preset_id)
     twins = rec["attributes"]
     mine_twin = twins["mine"]
-    attribute_sets = {"t1": [{"thingId": thing_id, "attributes": twins[thing_id.split(":", 1)[1]]["attributes"]}
+    attribute_sets = {TOPOLOGY_VERSION: [{"thingId": thing_id, "attributes": twins[thing_id.split(":", 1)[1]]["attributes"]}
                              for thing_id in mine_twin["attributes"]["manifest"]]}
     new_run = value_of(rec["decision"], "idSimulationRun")
 

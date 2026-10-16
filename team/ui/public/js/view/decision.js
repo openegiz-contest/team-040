@@ -9,7 +9,12 @@
 //
 // The rows of the table read as an answer (clarity pass, A3): people in danger
 // at the end, is everyone out and when, how many out, without a route,
-// exposures and downtime in minutes, and the people bar last as the summary.
+// exposures in minutes; then, as a group of its own, the cost of the option
+// (CONTRACT.md §9): tonnes not hauled of the plan, tonnes hauled, machines in
+// danger, in unknown zones and held by a closed passage, encounters with
+// walking people and the machine-seconds of yielding, the downtime of zones;
+// the people bar last as the summary. Benefit and cost stand side by side in
+// the same columns; no column is marked as better.
 
 import {h, reconcile, s, setAttrs, setText} from '../dom.js';
 import {QUESTION} from '../icons.js';
@@ -17,16 +22,32 @@ import {labelOf, thingByName, thingsOfKind} from '../model.js';
 
 /** The result metrics in reading order of the archive of runs: is everyone out, then people, then exposure, then cost. */
 export const METRIC_ORDER = ['all_out', 'last_out_s', 'out', 'in_danger', 'danger_exposure_person_s',
-  'unknown_exposure_person_s', 'no_route', 'downtime_s'];
+  'unknown_exposure_person_s', 'no_route', 'downtime_s', 'hauled_t', 'planned_t', 'production_lost_t', 'machines_in_danger',
+  'machines_unknown', 'machines_stuck', 'conflicts', 'conflict_yield_s'];
 
 /**
  * The rows of the table of options and of the fact of an executed option, in the order of the question:
  * who is in danger at the end, is everyone out (with the time, one row), how many are out, who has no route,
  * then the exposures and the downtime. `last_out_s` has no row of its own: it is the time of «все вышли».
  */
-export const DECISION_ROWS = ['in_danger', 'all_out', 'out', 'no_route', 'danger_exposure_person_s',
-  'unknown_exposure_person_s', 'downtime_s'];
+export const PEOPLE_ROWS = ['in_danger', 'all_out', 'out', 'no_route', 'danger_exposure_person_s', 'unknown_exposure_person_s'];
+/**
+ * The cost of an option (CONTRACT.md §9) in the same columns: tonnes not hauled of the plan (the plan is the same for
+ * the three options and is written once, in the heading of the group), tonnes hauled, machines at the end, encounters,
+ * yielding, and the downtime of zones (production time). `planned_t` has no row of its own.
+ */
+export const COST_ROWS = ['production_lost_t', 'hauled_t', 'machines_in_danger', 'machines_unknown', 'machines_stuck', 'conflicts',
+  'conflict_yield_s', 'downtime_s'];
+export const DECISION_ROWS = [...PEOPLE_ROWS, ...COST_ROWS];
+/** The fields of the cost the model publishes (a forecast or a fact of an option, a run of the archive). */
+export const COST_FIELDS = ['hauled_t', 'planned_t', 'production_lost_t', 'machines_in_danger', 'machines_unknown', 'machines_stuck',
+  'conflicts', 'conflict_yield_s'];
 const PER_MINUTE = new Set(['danger_exposure_person_s', 'unknown_exposure_person_s', 'downtime_s']);
+
+/** True when the twin publishes at least one field of the cost with the prefix. */
+export function hasCost(values, prefix) {
+  return COST_FIELDS.some((metric) => values[prefix + metric] !== undefined);
+}
 
 
 /** True when the twin publishes at least one result metric with the prefix ("forecast_", "actual_" or none). */
@@ -64,7 +85,13 @@ export function metricCell(text, twin, prefix, metric, interrupted = false) {
   if (metric === 'in_danger') return plain(text.num(value), value > 0 ? 'danger' : null);
   if (metric === 'no_route') return plain(text.num(value), value > 0 ? 'blocked' : null);
   if (metric === 'out') return plain(text.num(value));
-  return plain(text.quantity(value, twin.units[field]));
+  // Machines at the end: the shape of the axis they are counted on, as for people (a count above zero only).
+  if (metric === 'machines_in_danger') return plain(text.num(value), value > 0 ? 'danger' : null);
+  if (metric === 'machines_unknown') return plain(text.num(value), value > 0 ? 'unknown' : null);
+  if (metric === 'machines_stuck') return plain(text.num(value), value > 0 ? 'blocked' : null);
+  if (metric === 'conflicts') return plain(text.num(value));
+  const fallback = {hauled_t: 't', planned_t: 't', production_lost_t: 't', conflict_yield_s: 'machine*s'}[metric];
+  return plain(text.quantity(value, twin.units[field] || fallback));
 }
 
 /**
@@ -91,7 +118,14 @@ export function decisionCell(text, twin, prefix, metric) {
     const shown = text.perMinute(value, twin.units[field]);
     return {text: shown.text, badge: null, title: shown.title};
   }
-  return {...metricCell(text, twin, prefix, metric), title: ''};
+  if (metric === 'production_lost_t' && typeof value === 'number') {
+    // «56 т из 140 т»: of the plan published with it; never a financial loss (the model has no prices).
+    const planned = twin.values[`${prefix}planned_t`];
+    const unit = twin.units[field] || 't';
+    return {text: typeof planned === 'number' ? D.lostOf(text.quantity(value, unit), text.quantity(planned, twin.units[`${prefix}planned_t`] || unit))
+      : text.quantity(value, unit), badge: null, title: D.lostTitle};
+  }
+  return {...metricCell(text, twin, prefix, metric), title: D.costTitle[metric] || ''};
 }
 
 /** The class of a value: forecast (outlined) or fact (solid), and its mark. */
@@ -255,8 +289,13 @@ export function metricsTable(text, attrs, options) {
   const head = h('tr');
   const leadRow = lead ? h('tr', {'data-row': 'lead'}) : null;
   const peopleRow = h('tr', {'data-row': 'people'});
-  const rows = DECISION_ROWS.map((metric) => h('tr', {'data-metric-row': metric}));
-  const table = h('table', {class: 'metrics', ...attrs}, h('thead', null, head), h('tbody', null, leadRow, rows, peopleRow));
+  const rows = DECISION_ROWS.map((metric) => h('tr', {'data-metric-row': metric, 'data-group': COST_ROWS.includes(metric) ? 'cost' : 'people'}));
+  // Two labelled groups in the same columns: the people (the benefit) and the cost; neither is a verdict.
+  const groupHead = (name) => h('tr', {class: 'metrics__group', 'data-row': `group-${name}`}, h('th', {scope: 'colgroup'}));
+  const peopleHead = groupHead('people');
+  const costHead = groupHead('cost');
+  const table = h('table', {class: 'metrics', ...attrs}, h('thead', null, head),
+    h('tbody', null, leadRow, peopleHead, rows.slice(0, PEOPLE_ROWS.length), costHead, rows.slice(PEOPLE_ROWS.length), peopleRow));
   let peopleLabel = options.people;
   const bars = new WeakMap();
   const key = (column) => (column ? column.key : '');
@@ -312,6 +351,25 @@ export function metricsTable(text, attrs, options) {
         (td, column) => column && setAttrs(td, {text: lead.words(column), class: chosenClass(column)}));
     }
     reconcile(peopleRow, all, key, createPeople, updatePeople);
+    // The heads of the two groups span the table. The plan of the cost is the same for every option of a decision:
+    // written once when all columns publish one value, else in each cell.
+    const D = text.UI.decision;
+    const span = String(all.length);
+    setAttrs(peopleHead.firstChild, {colspan: span, text: D.groupPeople});
+    const anyCost = columns.some((column) => column.published && hasCost(column.twin.values, column.prefix));
+    const plans = [...new Set(columns.filter((column) => column.published)
+      .map((column) => column.twin.values[`${column.prefix}planned_t`]))];
+    const planUnit = columns.length ? columns[0].twin.units[`${columns[0].prefix}planned_t`] || 't' : 't';
+    const horizon = columns.map((column) => column.twin.values.forecast_horizon_s).find((value) => typeof value === 'number');
+    let costWords = D.groupCost;
+    if (!anyCost) costWords = D.groupCostNone;
+    else if (plans.length === 1 && typeof plans[0] === 'number') costWords = D.groupCostPlan(text.quantity(plans[0], planUnit), horizon);
+    setAttrs(costHead.firstChild, {colspan: span, text: costWords, title: anyCost ? D.costNote : null});
+    setAttrs(costHead, {'data-cost': anyCost ? 'published' : 'not_published'});
+    DECISION_ROWS.forEach((metric, index) => {
+      // Without any published cost only the downtime of zones (published before the loaders) keeps its row.
+      rows[index].hidden = COST_ROWS.includes(metric) && metric !== 'downtime_s' && !anyCost;
+    });
     DECISION_ROWS.forEach((metric, index) => {
       reconcile(rows[index], all, key,
         (column) => (column ? h('td', null, h('span'))
@@ -392,13 +450,88 @@ export function headline(text, values, prefix) {
   return {text: text.DASH, rule: 'none'};
 }
 
-/** At most two secondary facts of a forecast or fact: exposure in a danger zone and downtime, in minutes. */
-export function secondaryFacts(text, twin, prefix) {
+/**
+ * The secondary facts of a forecast or fact, the benefit side: exposure in a danger zone and, when `unknown` (some
+ * option of the decision publishes it above zero, or the caller wants it), in zones of unknown state, in minutes.
+ * Without the loaders' cost (an older model) the downtime of zones stays here, as before.
+ */
+export function secondaryFacts(text, twin, prefix, {unknown = false} = {}) {
   const facts = [];
   const field = (metric) => `${prefix}${metric}`;
   const exposure = text.perMinute(twin.values[field('danger_exposure_person_s')], twin.units[field('danger_exposure_person_s')] || 'person*s');
   if (exposure.text !== text.DASH) facts.push({key: 'exposure', text: text.PANEL.exposure(exposure.text), title: exposure.title});
-  const downtime = text.perMinute(twin.values[field('downtime_s')], twin.units[field('downtime_s')] || 'zone*s');
+  const fog = text.perMinute(twin.values[field('unknown_exposure_person_s')], twin.units[field('unknown_exposure_person_s')] || 'person*s');
+  if (unknown && fog.text !== text.DASH) facts.push({key: 'unknown', text: text.PANEL.unknownExposure(fog.text), title: fog.title});
+  if (!hasCost(twin.values, prefix)) {
+    const downtime = text.perMinute(twin.values[field('downtime_s')], twin.units[field('downtime_s')] || 'zone*s');
+    if (downtime.text !== text.DASH) facts.push({key: 'downtime', text: text.PANEL.downtime(downtime.text), title: downtime.title});
+  }
+  return facts;
+}
+
+/**
+ * The cost of an option in one line, on every card beside its people (CONTRACT.md §9): the tonnes not hauled of the
+ * plan, the encounters with walking people, and machines in danger, unknown or held only when there are any.
+ * «Цена: недовывезено 56 т из 140 т · встречи 2». Null without any published field of the cost.
+ * @returns {{text: string, badge: (string|null)}|null}
+ */
+export function costLine(text, twin, prefix) {
+  if (!hasCost(twin.values, prefix)) return null;
+  const P = text.PANEL.cost;
+  const value = (metric) => twin.values[prefix + metric];
+  const isNumber = (metric) => typeof value(metric) === 'number' && Number.isFinite(value(metric));
+  const t = (metric) => text.quantity(value(metric), twin.units[prefix + metric] || 't');
+  const parts = [];
+  if (isNumber('production_lost_t')) parts.push(isNumber('planned_t') ? P.shortLostOf(t('production_lost_t'), t('planned_t')) : P.shortLost(t('production_lost_t')));
+  else if (isNumber('hauled_t')) parts.push(P.hauled(t('hauled_t')));
+  if (isNumber('conflicts')) parts.push(P.shortMeet(text.num(value('conflicts'))));
+  let badge = null;
+  for (const [metric, sign] of [['machines_in_danger', 'danger'], ['machines_unknown', 'unknown'], ['machines_stuck', 'blocked']]) {
+    if (isNumber(metric) && value(metric) > 0) {
+      parts.push(P.machines[metric](text.num(value(metric))));
+      badge = badge || sign;
+    }
+  }
+  return {text: P.line(parts.join(' · ') || text.DASH), badge};
+}
+
+/**
+ * The cost of an option on its card (CONTRACT.md §9), from its published fields only, one line each:
+ *   tonnes   «Руда: вывезено 84 т из 140 т, недовывезено 56 т»
+ *   machines «ПДМ в опасной зоне: 1 · удержана проходом: 1», or «ПДМ в опасных, неизвестных зонах и удержанных: нет»
+ *   meet     «Встречи ПДМ с идущими людьми: 2, ПДМ уступала 47 маш.·с»
+ *   downtime «Простой участков 15 уч.·мин»
+ * A field that is not published is never written as 0; without any field of the cost: null («цена не опубликована»).
+ * @returns {Array<{key: string, text: string, title: string}>|null}
+ */
+export function costFacts(text, twin, prefix) {
+  if (!hasCost(twin.values, prefix)) return null;
+  const P = text.PANEL.cost;
+  const value = (metric) => twin.values[prefix + metric];
+  const unit = (metric, fallback) => twin.units[prefix + metric] || fallback;
+  const isNumber = (metric) => typeof value(metric) === 'number' && Number.isFinite(value(metric));
+  const t = (metric) => text.quantity(value(metric), unit(metric, 't'));
+  const facts = [];
+  const tonnes = [];
+  if (isNumber('hauled_t')) tonnes.push(isNumber('planned_t') ? P.hauledOf(t('hauled_t'), t('planned_t')) : P.hauled(t('hauled_t')));
+  else if (isNumber('planned_t')) tonnes.push(P.planned(t('planned_t')));
+  if (isNumber('production_lost_t')) tonnes.push(P.lost(t('production_lost_t')));
+  if (tonnes.length > 0) facts.push({key: 'tonnes', text: P.tonnes(tonnes.join(', ')), title: P.tonnesTitle});
+  const machines = ['machines_in_danger', 'machines_unknown', 'machines_stuck'].filter(isNumber);
+  if (machines.length > 0) {
+    const above = machines.filter((metric) => value(metric) > 0);
+    const words = above.length > 0 ? above.map((metric) => P.machines[metric](text.num(value(metric)))).join(' · ')
+      : P.machinesNone(machines.map((metric) => P.machinesWord[metric]));
+    facts.push({key: 'machines', text: words, title: P.machinesTitle,
+      badge: value('machines_in_danger') > 0 ? 'danger' : (value('machines_stuck') > 0 ? 'blocked' : (value('machines_unknown') > 0 ? 'unknown' : null))});
+  }
+  if (isNumber('conflicts')) {
+    const yieldS = isNumber('conflict_yield_s') ? text.quantity(value('conflict_yield_s'), unit('conflict_yield_s', 'machine*s')) : null;
+    facts.push({key: 'meet', text: P.meet(text.num(value('conflicts')), yieldS), title: P.meetTitle});
+  } else if (isNumber('conflict_yield_s')) {
+    facts.push({key: 'meet', text: P.yielded(text.quantity(value('conflict_yield_s'), unit('conflict_yield_s', 'machine*s'))), title: P.meetTitle});
+  }
+  const downtime = text.perMinute(value('downtime_s'), unit('downtime_s', 'zone*s'));
   if (downtime.text !== text.DASH) facts.push({key: 'downtime', text: text.PANEL.downtime(downtime.text), title: downtime.title});
   return facts;
 }

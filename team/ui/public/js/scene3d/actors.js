@@ -8,10 +8,19 @@
 // Loaders. With equipment twins of kind `lhd` in the attributes, each one is
 // drawn at its published `at_working` + `offset_m` (the 3D polyline fraction,
 // as people are), turned along its working: towards the published
-// `toward_node` when it stands, along its travel while it glides. Its look is
+// `toward_node` when it stands, along its travel while it moves. Its look is
 // its published `state` (working, parked, stopped; anything else unknown) and
 // its bucket carries rock when it is published `loaded`. Without equipment twins
 // the scene keeps the static symbols of the zones' work (loaders.js, scene.js).
+// A loader moves between two publications in the same playback buffer as the
+// people (walk.js, the scene gives it machineLeg as its path), so a machine and
+// a person who walks ahead of it are drawn at one moment of the model: along
+// its working, or through the node it shares with the next working of its
+// cycle, never farther than the registry allows in one publication
+// (machineLimit, CONTRACT.md §9: speedup × the faster lhd speed, 30 m with the
+// published parameters, plus 10 %); a longer step is a jump of the model.
+// An operator riding a machine (published `aboard`) is no figure of its own: the
+// machine carries the person (scene.js places the marker over it).
 //
 // People. A person's marker (a sprite of constant size) carries the three axes:
 // hazard, knowledge, reachability. Once a person would be at least FIGURE_PX
@@ -34,15 +43,15 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
-import {alongStep, pointOnWorking, stepBetween, stepLength} from './layout.js';
+import {pointOnWorking, stepBetween, stepLength} from './layout.js';
 
-/** A glide between two publications lasts as long as a person's (scene.js TWEEN_MS). */
-export const MACHINE_MS = 900;
 /**
- * A loader travels at most about 25 m between two publications of the model (fixtures/README.md, «Техника»); a longer
- * step is a jump of the model (a command moved it to a recorded state): it is shown at once, never glided.
+ * Without the registry's speeds (the invented fixtures) a loader travels at most 30 m between two publications
+ * (fixtures/README.md, «Техника»); a longer step is a jump of the model, shown at once.
  */
-const MAX_STEP_M = 30;
+export const MAX_STEP_M = 30;
+/** The registry's limit is widened by this share: a step of exactly speedup × speed is a glide, not a jump. */
+const LIMIT_MARGIN = 1.1;
 /** A position this close to an end of its working is at that node: the same point as on any working that meets there. */
 const AT_NODE_M = 0.5;
 /** The figures are drawn this many times larger than a 1.8 m person, as the loaders are (layout.js LOADER_SCALE). */
@@ -76,25 +85,44 @@ export const FADE_MS = 200;
 
 const LOOKS = new Set(['working', 'parked', 'stopped']);
 
+/**
+ * The longest step of a loader between two publications that is drawn as a move (metres): the published `speedup`
+ * (model seconds per publication; else the registry's) × the faster of `lhd_speed_empty_m_s` / `lhd_speed_loaded_m_s`
+ * of mine.attributes.parameter_registry, × 1.1. Without them, MAX_STEP_M × 1.1.
+ * @param {Object|null} mine     mine.attributes
+ * @param {number} [speedup]     the shift's published speedup
+ */
+export function machineLimit(mine, speedup) {
+  const entries = mine && mine.parameter_registry && mine.parameter_registry.entries ? mine.parameter_registry.entries : {};
+  const value = (key) => (entries[key] && Number.isFinite(entries[key].value) && entries[key].value > 0 ? entries[key].value : null);
+  const perPublication = Number.isFinite(speedup) && speedup > 0 ? speedup : value('speedup');
+  const speed = Math.max(value('lhd_speed_empty_m_s') || 0, value('lhd_speed_loaded_m_s') || 0);
+  if (!perPublication || !speed) return MAX_STEP_M * LIMIT_MARGIN;
+  return perPublication * speed * LIMIT_MARGIN;
+}
+
+/**
+ * The path of a loader between two published places (walk.js `paths`): along its working, or through the node the two
+ * workings share (a loader moves only along the workings of its cycle, CONTRACT.md §9); null (a jump) when they share
+ * none or the path is longer than `limit`.
+ * @returns {{pieces: Array<{working: string, start: number, end: number}>, length: number}|null}
+ */
+export function machineLeg(layout, from, to, limit) {
+  const pieces = stepBetween(layout, onWorkingOf(layout, from, to), to);
+  if (!pieces) return null;
+  const kept = pieces.filter((piece, index) => Math.abs(piece.end - piece.start) > 1e-6 || index === pieces.length - 1);
+  const length = stepLength(kept);
+  return length <= limit ? {pieces: kept, length} : null;
+}
+
 /** The loaders among the twins of the attributes (kind `equipment`, `equipment_kind: lhd`), local names, sorted. */
 export function machinesOf(model) {
   return (model && model.byKind.equipment ? model.byKind.equipment : [])
     .filter((thing) => thing.attrs.equipment_kind === 'lhd').map((thing) => thing.name).sort();
 }
 
-/** The piece of a stretch reached after `metres`. */
-function pieceAt(pieces, metres) {
-  let left = Math.max(metres, 0);
-  for (const piece of pieces) {
-    const span = Math.abs(piece.end - piece.start);
-    if (left <= span) return piece;
-    left -= span;
-  }
-  return pieces[pieces.length - 1];
-}
-
 /** Which way along a working a node lies: +1 towards growing offsets (its `to`), −1 towards its `from`, null. */
-function sideOf(line, node) {
+export function sideOf(line, node) {
   if (!line || typeof node !== 'string') return null;
   if (node === line.to) return 1;
   if (node === line.from) return -1;
@@ -229,7 +257,9 @@ const triangleCount = (geometry) => (geometry.index ? geometry.index.count : geo
  * @param {Object} options
  * @param {boolean} options.low                    the light quality: Lambert materials
  * @param {Object} options.source                  read when drawing: {layout, k, view, groups, camera, height,
- *                                                 position(name) -> {working, offsetM, facing, moving}, viewDistance(point)}
+ *                                                 position(name) -> {working, offsetM, facing, moving}, viewDistance(point),
+ *                                                 machine(name) -> {working, offsetM, facing, moving} (the playback),
+ *                                                 machineTop: the height of a drawn machine's roof (m)}
  * @param {() => boolean} [options.reducedMotion]   no walk cycle when true
  */
 export function createActors({low, source, reducedMotion = () => false}) {
@@ -238,19 +268,20 @@ export function createActors({low, source, reducedMotion = () => false}) {
   let names = [];                 // the loaders of the attributes; empty: the static symbols of the zones
 
   // ---- loaders of the model ----------------------------------------------------------------
-  const drawn = new Map();        // name -> {working, offsetM, facing} at its last published position
-  const glides = new Map();       // name -> {pieces, length, start}
+  const drawn = new Set();        // the loaders with a published place on a drawn working
 
-  function machineAt(name, now) {
-    const glide = glides.get(name);
-    const still = drawn.get(name) || null;
-    if (!glide) return still;
-    const t = glide.start === null ? 0 : Math.min((now - glide.start) / MACHINE_MS, 1);
-    const metres = glide.length * t;
-    const at = alongStep(glide.pieces, metres);
-    const piece = pieceAt(glide.pieces, metres);
-    return {...at, facing: Math.sign(piece.end - piece.start) || (still ? still.facing : 1)};
+  /** Where a loader is drawn now: the playback of the scene, else its published place facing its `toward_node`. */
+  function machineAt(name) {
+    const at = source.machine ? source.machine(name) : null;
+    if (at) return at;
+    const machine = source.view && source.view.equipment[name];
+    if (!machine || !machine.at) return null;
+    const line = source.layout ? source.layout.workings.get(machine.at) : null;
+    return {working: machine.at, offsetM: machine.offsetM, facing: sideOf(line, machine.toward) || 1, moving: false};
   }
+  /** An operator riding: the people of a group are all aboard a machine (no figure; the marker stands over the roof). */
+  const aboardOnly = (entry) => entry.members.length > 0 && entry.members.every((name) => source.view && source.view.workers[name]
+    && source.view.workers[name].aboard);
 
   // ---- figures of people ----------------------------------------------------------------------
   let shapes = figureGeometry();
@@ -392,6 +423,8 @@ export function createActors({low, source, reducedMotion = () => false}) {
     const items = [];
     for (const name of entry.members) {
       const person = source.view.workers[name];
+      // An operator riding a machine is drawn as part of it: no figure, no place among the figures.
+      if (person && person.aboard) continue;
       const position = person && person.at ? source.position(name) : null;
       const at = position ? pointOnWorking(layout, position.working, position.offsetM, k) : null;
       if (at) items.push({name, position, at});
@@ -433,7 +466,6 @@ export function createActors({low, source, reducedMotion = () => false}) {
     setModel(model) {
       names = machinesOf(model);
       drawn.clear();
-      glides.clear();
       return names.length > 0;
     },
     /**
@@ -505,71 +537,28 @@ export function createActors({low, source, reducedMotion = () => false}) {
     },
 
     /**
-     * New published positions of the loaders: a glide from the position drawn now to the published one when
-     * `allow` (honest motion) and the two are neighbours on the workings, else a jump. True when a loader moved.
+     * New published places of the loaders (the playback of the scene moves them): the loaders drawn are those with a
+     * place on a drawn working. True when that set changed.
      */
-    update(view, layout, allow, now = performance.now()) {
+    update(view, layout) {
       if (names.length === 0 || !layout) return false;
-      const seen = new Set();
-      let changed = false;
+      const before = [...drawn].join();
+      drawn.clear();
       for (const name of names) {
         const machine = view.equipment[name];
-        if (!machine || !machine.at || !view.hasSnapshot) continue;
-        seen.add(name);
-        const line = layout.workings.get(machine.at);
-        const current = machineAt(name, now);
-        const before = drawn.get(name);
-        glides.delete(name);
-        let facing = sideOf(line, machine.toward);
-        const moved = current && (current.working !== machine.at || Math.abs(current.offsetM - machine.offsetM) > 0.05);
-        if (moved && allow) {
-          const target = {working: machine.at, offsetM: machine.offsetM};
-          const pieces = stepBetween(layout, onWorkingOf(layout, current, target), target);
-          const length = pieces ? stepLength(pieces) : Infinity;
-          if (pieces && length <= MAX_STEP_M && length > 0.05) {
-            glides.set(name, {pieces, length, start: null});
-            const last = pieces[pieces.length - 1];
-            if (facing === null) facing = Math.sign(last.end - last.start) || null;
-          }
-        }
-        if (facing === null) facing = current && current.working === machine.at ? current.facing : 1;
-        const next = {working: machine.at, offsetM: machine.offsetM, facing};
-        if (!before || before.working !== next.working || before.offsetM !== next.offsetM || before.facing !== next.facing) changed = true;
-        drawn.set(name, next);
+        if (machine && machine.at && view.hasSnapshot) drawn.add(name);
       }
-      for (const name of [...drawn.keys()]) {
-        if (seen.has(name)) continue;
-        drawn.delete(name);
-        glides.delete(name);
-        changed = true;
-      }
-      return changed || glides.size > 0;
+      return [...drawn].join() !== before;
     },
 
-    /** Every glide ends at once at the published position (old data, a failed read, a pause). True if one ran. */
-    snap() {
-      if (glides.size === 0) return false;
-      glides.clear();
-      return true;
-    },
-
-    /** Advance the glides: `moved` when the loaders must be placed again, `active` while one still runs. */
-    step(now) {
-      if (glides.size === 0) return {moved: false, active: false};
-      for (const [name, glide] of glides) {
-        if (glide.start === null) glide.start = now;
-        if (now - glide.start >= MACHINE_MS) glides.delete(name);
-      }
-      return {moved: true, active: glides.size > 0};
-    },
-
-    /** Where each loader is drawn now, as the places of the scene: name -> {working, offsetM, facing, span}. */
-    places(now = performance.now()) {
+    /** Where each loader is drawn now, as the places of the scene: name -> {working, offsetM, facing, moving, span}. */
+    places() {
       const out = new Map();
-      for (const name of drawn.keys()) {
-        const at = machineAt(name, now);
+      for (const name of drawn) {
+        const at = machineAt(name);
         if (!at) continue;
-        out.set(name, {working: at.working, offsetM: at.offsetM, facing: at.facing, span: [at.offsetM - 6, at.offsetM + 6]});
+        out.set(name, {working: at.working, offsetM: at.offsetM, facing: at.facing || 1, moving: Boolean(at.moving),
+          span: [at.offsetM - 6, at.offsetM + 6]});
       }
       return out;
     },
@@ -590,17 +579,20 @@ export function createActors({low, source, reducedMotion = () => false}) {
       return names.find((name) => view.equipment[name] && view.equipment[name].thingId === view.selected) || null;
     },
 
-    /** How high the marker of a group stands over the floor: over the helmets when its people are drawn. */
+    /** How high the marker of a group stands over the floor: over the helmets when its people are drawn, over the
+     *  roof of the machine its people ride. */
     liftOf(group) {
-      return figured.has(group.key) ? (rig ? rig.top : FIGURE_TOP) + OVER_HELMET : MARKER_LIFT;
+      if (figured.has(group.key)) return (rig ? rig.top : FIGURE_TOP) + OVER_HELMET;
+      return aboardOnly(group) ? (source.machineTop || 0) + OVER_HELMET : MARKER_LIFT;
     },
     /** True when the people of a group are drawn as figures (the last frame). */
     figured(group) {
       return figured.has(group.key);
     },
-    /** Where the pin of a marker starts over the floor: on the helmet of a figure, else on the floor. */
+    /** Where the pin of a marker starts over the floor: on the helmet of a figure, on the roof of a machine, else on the floor. */
     pinFrom(group) {
-      return figured.has(group.key) ? (rig ? rig.top : FIGURE_TOP) : 0.3;
+      if (figured.has(group.key)) return rig ? rig.top : FIGURE_TOP;
+      return aboardOnly(group) ? source.machineTop || 0.3 : 0.3;
     },
     /** How tall the largest figure was drawn in the last frame (screen pixels; one scale for all in art mode). */
     get figurePx() {
@@ -628,7 +620,9 @@ export function createActors({low, source, reducedMotion = () => false}) {
         figureInfo = {shown: 0, people: 0, px: 0};
         return before !== '';
       }
-      const people = groups.reduce((sum, entry) => sum + entry.members.length, 0);
+      // The operators riding a machine are counted apart (aboard): they are no figures of their own.
+      const people = groups.reduce((sum, entry) => sum + entry.members.filter((name) => !(view.workers[name] && view.workers[name].aboard)).length, 0);
+      const riding = groups.reduce((sum, entry) => sum + entry.members.filter((name) => view.workers[name] && view.workers[name].aboard).length, 0);
       if (!rig) ensure(people);
       const perPixel = 2 * Math.tan((camera.fov * DEG) / 2) / Math.max(height, 1);
       const tall = rig ? rig.top : FIGURE_M * FIGURE_SCALE;
@@ -643,7 +637,7 @@ export function createActors({low, source, reducedMotion = () => false}) {
         entry.members.forEach((name) => {
           const person = view.workers[name];
           const placedAt = spread.get(name);
-          if (!person || !placedAt) return;
+          if (!person || !placedAt || person.aboard) return;
           const {position, at, across} = placedAt;
           const distance = source.viewDistance(at.point);
           const px = tall / Math.max(distance * perPixel, 1e-6);
@@ -698,21 +692,21 @@ export function createActors({low, source, reducedMotion = () => false}) {
           if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
         }
       }
-      figureInfo = {shown: n, people, px: Math.round(largest * 10) / 10, groups: [...figured].sort(), at: placed,
+      figureInfo = {shown: n, people, riding, px: Math.round(largest * 10) / 10, groups: [...figured].sort(), at: placed,
         // The walk cycle per person drawn: [weight of the walk, playback rate of the clip, ground speed scene m/s].
         walks: rig ? walks : null, feet};
       return [...figured].join() !== before;
     },
 
     /** For tests: the loaders drawn now and the figures of the last frame. */
-    info(now = performance.now()) {
+    info() {
+      const machines = names.filter((name) => drawn.has(name)).map((name) => [name, machineAt(name)]).filter(([, at]) => at)
+        .map(([name, at]) => ({name, working: at.working, offsetM: Math.round(at.offsetM * 100) / 100, facing: at.facing,
+          gliding: Boolean(at.moving)}));
       return {
         equipment: names.length > 0,
-        machines: names.filter((name) => drawn.has(name)).map((name) => {
-          const at = machineAt(name, now);
-          return {name, working: at.working, offsetM: Math.round(at.offsetM * 100) / 100, facing: at.facing, gliding: glides.has(name)};
-        }),
-        glides: glides.size,
+        machines,
+        glides: machines.filter((machine) => machine.gliding).length,
         figures: {...figureInfo, threshold: source.figurePx || FIGURE_PX, scale: rig ? rig.scale : FIGURE_SCALE,
           triangles: rig ? null : triangleCount(shapes.body) + triangleCount(shapes.lens), source: figureSource,
           rig: rig ? {strideM: rig.strideM, strideDeclared: rig.strideDeclared, walkS: rig.walk.duration, idle: Boolean(rig.idle), top: rig.top,

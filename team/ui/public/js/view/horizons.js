@@ -12,6 +12,11 @@
 //     or, without the 3D stage, at the published place. People at one depth sit side by side. Nothing moves by itself:
 //     a dot is where the stage draws its person, so on a pause, old data or a new run nothing moves here either. The
 //     people who came out are gone from the rail and counted at 0 m («вышли 3»).
+//   - The loaders (CONTRACT.md §9): a small loader glyph per machine right of the axis, at the depth where the stage
+//     draws it (ctx.stage.machines(), the same playback), else at its published place. Its look is its published
+//     state (working: solid; held: outlined, with the reason in its title; stopped: outlined with a pause bar; no
+//     state: dashed with «?»), a danger ring when its place is in a danger zone. An operator riding is drawn as part
+//     of the machine: the person's dot stands at the machine's depth, as on the stage.
 //
 // What it does:
 //   - A press on a horizon frames it in the 3D stage (ctx.stage.focus(levelLocalName)); in the scheme mode it opens
@@ -38,12 +43,12 @@
 // Contract: renders into ctx.roots.horizons (#horizons, a `.centre__bar` child of #centre: the 3D stage keeps its
 // labels and its framing clear of it). Test ids: horizon-rail (root), horizon-all, horizon-<level local name>,
 // horizon-gauge, horizon-probe (its readout horizon-probe-value), horizon-people (dots horizon-dot-<person>),
-// horizon-out, horizon-chip, horizon-cursor.
+// horizon-out, horizon-chip, horizon-cursor, horizon-machines (marks horizon-machine-<loader>).
 
 import {h, reconcile, s, setAttrs, setText} from '../dom.js';
 import * as geo from '../geometry.js';
 import {thingsOfKind} from '../model.js';
-import {workerMarker} from '../icons.js';
+import {loaderGlyph, workerMarker} from '../icons.js';
 import {createSpring, EASE_POSTER, motionAllowed, reducedMotion, springEasing, SPRING_MS, stagger} from '../motion.js';
 import {setSign} from './signs.js';
 
@@ -99,12 +104,13 @@ export function mount(root, ctx) {
     h('span', {class: 'hz__window-end hz__window-end--top'}), h('span', {class: 'hz__window-end hz__window-end--bottom'}));
   const lane = h('div', {class: 'hz__people', 'data-testid': 'horizon-people', 'aria-hidden': 'true'});
   const out = h('span', {class: 'hz__out', 'data-testid': 'horizon-out', 'aria-hidden': 'true', hidden: true});
+  const machineLane = h('div', {class: 'hz__machines', 'data-testid': 'horizon-machines', 'aria-hidden': 'true'});
   const probeValue = h('span', {class: 'hz__probe-value', 'data-testid': 'horizon-probe-value'});
   const probe = h('div', {class: 'hz__probe', 'data-testid': 'horizon-probe', 'aria-hidden': 'true', hidden: true},
     h('span', {class: 'hz__probe-line'}), probeValue);
   const chip = h('div', {class: 'hz__chip', 'data-testid': 'horizon-chip', role: 'status', hidden: true});
   const gauge = h('div', {class: 'hz__gauge', 'data-testid': 'horizon-gauge'},
-    h('span', {class: 'hz__axis', 'aria-hidden': 'true'}), ticks, win, cursor, lane, out, marks, probe, chip);
+    h('span', {class: 'hz__axis', 'aria-hidden': 'true'}), ticks, win, cursor, lane, machineLane, out, marks, probe, chip);
   root.append(head, gauge);
   setAttrs(root, {role: 'navigation', 'aria-label': Z.region, 'data-testid': 'horizon-rail'});
 
@@ -354,6 +360,66 @@ export function mount(root, ctx) {
     setText(out, gone > 0 ? Z.out(gone) : '');
     out.style.top = `${Math.min(Math.max(share(0), 0), 1) * 100}%`;
     root.setAttribute('data-people', String(people.length));
+    paintMachines(state, height);
+  }
+
+  /** The loaders as the stage draws them now, or at their published places without the 3D stage: [{name, z}]. */
+  function machinesNow(state) {
+    const drawn = ctx.stage.machines ? ctx.stage.machines() : null;
+    if (drawn) return drawn.map((machine) => ({name: machine.name, z: machine.z}));
+    if (!state.model || !state.model.hasSnapshot || !state.attributes || !state.attributes.mine) return [];
+    const nodes = state.attributes.mine.nodes || {};
+    const list = [];
+    for (const machine of thingsOfKind(state.model, 'equipment')) {
+      const {values} = machine;
+      if (typeof values.at_working !== 'string') continue;
+      const z = publishedDepth(state.model, nodes, values.at_working, values.offset_m);
+      if (Number.isFinite(z)) list.push({name: machine.name, z});
+    }
+    return list;
+  }
+
+  /** The words of a loader on the rail and in the chip: «ПДМ-A: везёт руду», «ПДМ-A: стоит: проход закрыт». */
+  function machineWords(machine) {
+    const {values} = machine;
+    if (!machine.hasState) return Z.machine(machine.label, text.UI.rail.noState);
+    const reason = typeof values.hold_reason === 'string' && values.hold_reason !== 'none' ? text.label('holdReason', values.hold_reason) : '';
+    let words = text.label('equipmentState', values.state);
+    if (values.state === 'working' && values.activity !== undefined) words = text.label('equipmentActivity', values.activity);
+    else if (values.state === 'parked' && reason) words = Z.held(reason);
+    return Z.machine(machine.label, words);
+  }
+
+  function paintMachines(state, height) {
+    const model = state.model;
+    const list = machinesNow(state).filter((machine) => model.byName[machine.name] && model.byName[machine.name].kind === 'equipment')
+      .map((machine) => ({...machine, y: share(machine.z) * height}))
+      .sort((p, q) => p.y - q.y || (p.name < q.name ? -1 : 1));
+    // Two machines at one depth stand one pitch apart, outwards from the axis.
+    let lastY = -Infinity;
+    let slot = 0;
+    for (const machine of list) {
+      slot = machine.y - lastY < 14 ? slot + 1 : 0;
+      lastY = machine.y;
+      machine.slot = slot;
+    }
+    reconcile(machineLane, list, (machine) => machine.name, (machine) => h('span', {class: 'hz__machine',
+      'data-testid': `horizon-machine-${machine.name}`, 'data-machine': machine.name}, loaderGlyph()), (node, machine) => {
+      const thing = model.byName[machine.name];
+      const values = thing.values;
+      const look = thing.hasState && ['working', 'parked', 'stopped'].includes(values.state) ? values.state : 'unknown';
+      const working = typeof values.at_working === 'string' ? model.byName[values.at_working] : null;
+      const unmonitored = values.location_hazard === 'unknown' && working && working.values.data_quality === 'none';
+      setAttrs(node, {
+        'data-state': look, 'data-z': Math.round(machine.z * 100) / 100, 'data-slot': machine.slot,
+        'data-location-hazard': values.location_hazard === undefined || unmonitored ? null : String(values.location_hazard),
+        'data-loaded': typeof values.loaded === 'boolean' ? String(values.loaded) : null,
+        title: `${machineWords(thing)} · ${Z.depth(Math.round(machine.z))}`,
+      });
+      node.style.top = `${(machine.y / height) * 100}%`;
+      node.style.setProperty('--slot', String(machine.slot));
+    });
+    root.setAttribute('data-machines', String(list.length));
   }
 
   // ---- the probe, the lens -------------------------------------------------------------------------------------
@@ -491,6 +557,11 @@ export function mount(root, ctx) {
     const rows = zones.map((zone) => ({key: zone.name, state: zoneState(zone),
       words: Z.chipZone(zone.label, zone.hasState && zone.hazard ? text.UI.rail.hazardShort[zone.hazard.state] || text.hazardText(zone.hazard)
         : text.UI.rail.noState)}));
+    // The loaders on the level (their published working) and the production of its zones (published t/h).
+    const machineRows = model.hasSnapshot ? thingsOfKind(model, 'equipment').filter((machine) => onLevel.has(machine.values.at_working))
+      .map((machine) => ({key: machine.name, words: machineWords(machine), state: machine.values.location_hazard === 'danger' ? 'danger' : 'normal'})) : [];
+    const production = model.hasSnapshot ? zones.filter((zone) => typeof zone.values.production_rate === 'number')
+      .map((zone) => ({key: zone.name, words: Z.production(zone.label, text.quantity(zone.values.production_rate, zone.units.production_rate || 't/h'))})) : [];
     chip.replaceChildren(
       h('span', {class: 'hz__chip-title', text: level.label}),
       h('span', {class: 'hz__chip-line', 'data-chip': 'people', text: people === null ? text.UI.rail.noState : Z.chipPeople(people)}),
@@ -499,6 +570,14 @@ export function mount(root, ctx) {
         if (row.state !== 'normal') setSign(holder, row.state);
         return h('span', {class: 'hz__chip-line', 'data-chip': 'zone', 'data-zone': row.key, 'data-state': row.state}, holder, h('span', {text: row.words}));
       }) : [h('span', {class: 'hz__chip-line hz__chip-line--quiet', text: Z.chipNoZones})]),
+      ...production.map((row) => h('span', {class: 'hz__chip-line hz__chip-line--quiet', 'data-chip': 'production', 'data-zone': row.key,
+        text: row.words})),
+      ...machineRows.map((row) => {
+        const holder = h('span', {class: 'hz__chip-sign', 'aria-hidden': 'true'});
+        if (row.state === 'danger') setSign(holder, 'danger');
+        return h('span', {class: 'hz__chip-line', 'data-chip': 'machine', 'data-machine': row.key, 'data-state': row.state}, holder,
+          h('span', {text: row.words}));
+      }),
     );
     chip.style.top = at(level.elevation);
     chip.setAttribute('data-level', level.name);

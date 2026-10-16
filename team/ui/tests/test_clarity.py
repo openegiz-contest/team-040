@@ -472,5 +472,7 @@ class FormattersTest(ClarityTestCase):
         self.assertEqual(nb(got["minutes"][0]["title"]), "2700 чел.·с, опубликовано в человеко-секундах")
         self.assertEqual([nb(item) for item in got["cells"]], ["да, за 9 мин 40 с", "да", "нет", "неизвестно (maybe)", "—"],
                          "a time only next to a published all_out = true; never «нет: не все вышли»")
+        # The people, then the cost of the option (CONTRACT.md §9), the downtime of zones among the cost.
         self.assertEqual(got["rows"], ["in_danger", "all_out", "out", "no_route", "danger_exposure_person_s",
-                                       "unknown_exposure_person_s", "downtime_s"])
+                                       "unknown_exposure_person_s", "production_lost_t", "hauled_t", "machines_in_danger",
+                                       "machines_unknown", "machines_stuck", "conflicts", "conflict_yield_s", "downtime_s"])

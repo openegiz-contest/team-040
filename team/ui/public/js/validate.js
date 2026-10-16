@@ -48,6 +48,8 @@ const KIND_REQUIRED = {
   incident: {state: 'string'},
   option: {state: 'string'},
   journal: {last_seq: 'number', events: 'array'},
+  // Equipment twins (CONTRACT.md §9): a machine always has a state and a place on a working (it never leaves the mine).
+  equipment: {state: 'string', at_working: 'string', offset_m: 'number'},
 };
 
 /** A worker with one of these statuses has no position on a working. */

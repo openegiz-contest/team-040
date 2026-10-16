@@ -7,7 +7,10 @@ Three layers, each against the real thing:
   frames of that option, through to the end;
 * the page, in headless Chrome: every recorded frame passes the interface's own snapshot validation
   (public/js/validate.js), and each scenario is opened, started by its preset, decided by each of the
-  three options through the real controls, and followed to the end, with no console error.
+  three options through the real controls, and followed to the end, with no console error. On the way the
+  cost of each option (CONTRACT.md §9: tonnes, machines, encounters, yielding) is read off the cards and the
+  table of options and compared with the published forecast, and the fact with the actual values; no word
+  ranks the options.
 
     python -m unittest discover -s team/ui/tests -t team/ui -p "test_sim_fixtures.py" -v
 """
@@ -45,6 +48,31 @@ STATES = {"initial", "preset_run", "decision", *(f"{short}_{part}" for short in 
                                                  for part in ("exec", "done"))}
 SWIFTSHADER = ("--use-angle=swiftshader", "--enable-unsafe-swiftshader")
 PUBLICATION_MS = "100"
+TOPOLOGY = "t2"
+# The cost of an option (CONTRACT.md §9): the eight fields next to the people's metrics.
+COST = ["hauled_t", "planned_t", "production_lost_t", "machines_in_danger", "machines_unknown", "machines_stuck", "conflicts",
+        "conflict_yield_s"]
+# Words that would rank or recommend an option; none of them may appear on the decision panel.
+RANKING = ["лучш", "худш", "оптимал", "выгодн", "дешевл", "дороже", "рекомендуем", "советуем", "предпочт", "эффективн"]
+
+
+def num(value):
+    """A number as text.js num() writes it: whole without decimals, else at most two decimals with a comma."""
+    if float(value) == int(value):
+        return str(int(value))
+    return f"{value:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
+def cost_cell(values, prefix, metric):
+    """The text of a cost cell of the table of options (view/decision.js decisionCell) from the published values."""
+    value = values[prefix + metric]
+    if metric == "production_lost_t":
+        return f"{num(value)} т из {num(values[prefix + 'planned_t'])} т"
+    if metric in ("hauled_t", "planned_t"):
+        return f"{num(value)} т"
+    if metric == "conflict_yield_s":
+        return f"{num(value)} маш.·с"
+    return num(value)
 
 
 def load(name):
@@ -95,10 +123,21 @@ class SimFixtureFilesTest(unittest.TestCase):
     def test_the_topology_is_the_simulations(self):
         for name, fx in self.fixtures.items():
             with self.subTest(name):
-                things = {t["thingId"].split(":")[1]: t["attributes"] for t in fx["attribute_sets"]["t1"]}
+                things = {t["thingId"].split(":")[1]: t["attributes"] for t in fx["attribute_sets"][TOPOLOGY]}
                 mine = things["mine"]
-                self.assertEqual(len(mine["manifest"]), 34)
-                self.assertEqual(len(mine["dynamic_ids"]), 29)
+                # CONTRACT.md §9: 38 twins, 33 in the scene; two loaders and two operators added, the geometry kept.
+                self.assertEqual(mine["topology_version"], TOPOLOGY)
+                self.assertEqual(len(mine["manifest"]), 38)
+                self.assertEqual(len(mine["dynamic_ids"]), 33)
+                self.assertEqual(sorted(k for k, a in things.items() if a["kind"] == "equipment"), ["lhd-a", "lhd-b"])
+                self.assertEqual(sorted(k for k, a in things.items() if a["kind"] == "worker"),
+                                 ["worker-a1", "worker-a2", "worker-a3", "worker-a4", "worker-b1", "worker-b2", "worker-b3", "worker-b4"])
+                self.assertEqual({k: a.get("role") for k, a in things.items() if a["kind"] == "worker" and a.get("role") != "crew"},
+                                 {"worker-a4": "lhd_operator", "worker-b4": "lhd_operator"})
+                self.assertEqual([(d["id"], d["working"], d["offset_m"]) for d in mine["dump_points"]],
+                                 [("op-120", "w-03", 75), ("op-240", "w-10", 75)])
+                self.assertEqual(mine["counts"]["equipment"], 2)
+                self.assertEqual(mine["counts"]["worker"], 8)
                 self.assertEqual(sorted(k for k, a in things.items() if a["kind"] == "level"),
                                  ["level-120", "level-240", "surface"])
                 self.assertEqual(sorted(k for k, a in things.items() if a["kind"] == "working"),
@@ -107,11 +146,11 @@ class SimFixtureFilesTest(unittest.TestCase):
                                  ["p-instability", "p-detour", "p-trapped", "p-sensor"])
                 self.assertEqual(things["w-01"]["points"], [[-240, 0, -60]])
                 # the manifest, in the twin's own order, is what the attribute set lists
-                self.assertEqual([t["thingId"] for t in fx["attribute_sets"]["t1"]], mine["manifest"])
+                self.assertEqual([t["thingId"] for t in fx["attribute_sets"][TOPOLOGY]], mine["manifest"])
 
     def test_every_frame_is_a_published_snapshot_of_one_run(self):
         for name, fx in self.fixtures.items():
-            mine = next(t for t in fx["attribute_sets"]["t1"] if t["thingId"] == f"{NS}:mine")["attributes"]
+            mine = next(t for t in fx["attribute_sets"][TOPOLOGY] if t["thingId"] == f"{NS}:mine")["attributes"]
             dynamic = mine["dynamic_ids"]
             for state_name, state in fx["states"].items():
                 runs = {value_of(f, "idSimulationRun") for f in state["frames"]}
@@ -182,15 +221,57 @@ class SimFixtureFilesTest(unittest.TestCase):
         """The simulation's own promise, seen through the recording: each option's forecast at the decision
         equals its actual result at the horizon."""
         fields = ["out", "all_out", "in_danger", "no_route", "unknown", "danger_exposure_person_s",
-                  "unknown_exposure_person_s", "downtime_s", "last_out_s"]
+                  "unknown_exposure_person_s", "downtime_s", "last_out_s", *COST]
         for name, fx in self.fixtures.items():
             decision = fx["states"]["decision"]["frames"][0]
             for kind, short in OPTIONS.items():
                 end = fx["states"][f"{short}_done"]["frames"][0]
                 forecast, actual = element(decision, f"option-{kind}"), element(end, f"option-{kind}")
                 for field in fields:
+                    if field == "last_out_s" and "forecast_last_out_s" not in forecast:
+                        self.assertNotIn("actual_last_out_s", actual, f"{name} {kind}: no time without everyone out")
+                        continue
+                    self.assertIn("forecast_" + field, forecast, f"{name} {kind} {field}")
                     self.assertEqual(value_of(forecast, "forecast_" + field), value_of(actual, "actual_" + field),
                                      f"{name} {kind} {field}")
+            # The plan is the same for the three options of a decision (CONTRACT.md §9).
+            plans = {value_of(element(decision, f"option-{kind}"), "forecast_planned_t") for kind in OPTIONS}
+            self.assertEqual(len(plans), 1, f"{name}: one plan for the three options")
+
+    def test_the_loaders_move_along_their_cycle_within_the_published_step(self):
+        """What the stage relies on: a loader is always on a working of its cycle (or its bay's), moves at most
+        speedup × the faster lhd speed per publication (30 m), and an operator riding it is at its place."""
+        for name, fx in self.fixtures.items():
+            things = {t["thingId"].split(":")[1]: t["attributes"] for t in fx["attribute_sets"][TOPOLOGY]}
+            registry = things["mine"]["parameter_registry"]["entries"]
+            step = registry["speedup"]["value"] * max(registry["lhd_speed_empty_m_s"]["value"], registry["lhd_speed_loaded_m_s"]["value"])
+            self.assertEqual(step, 30)
+            for state_name, state in fx["states"].items():
+                frames = state["frames"]
+                for i, frame in enumerate(frames):
+                    for machine in ("lhd-a", "lhd-b"):
+                        values = element(frame, machine)
+                        attrs = things[machine]
+                        where = f"{name}/{state_name}[{i}] {machine}"
+                        self.assertIn(value_of(values, "at_working"), attrs["cycle_route"], where)
+                        operator = element(frame, attrs["operator"])
+                        if value_of(values, "operator_aboard"):
+                            self.assertEqual(value_of(operator, "aboard"), machine, where)
+                            self.assertEqual((value_of(operator, "at_working"), value_of(operator, "offset_m")),
+                                             (value_of(values, "at_working"), value_of(values, "offset_m")), where)
+                        else:
+                            self.assertNotIn("aboard", operator, where)
+                        if i == 0:
+                            continue
+                        before = element(frames[i - 1], machine)
+                        a, b = value_of(before, "at_working"), value_of(values, "at_working")
+                        if a == b:
+                            moved = abs(value_of(values, "offset_m") - value_of(before, "offset_m"))
+                        else:
+                            # Through node b of w-07/w-03 (or f of w-12/w-10): w-07 and w-12 start there, w-03 and w-10 end there.
+                            ends = {"w-07": 0, "w-12": 0, "w-03": 150, "w-10": 150}
+                            moved = abs(value_of(before, "offset_m") - ends[a]) + abs(value_of(values, "offset_m") - ends[b])
+                        self.assertLessEqual(moved, step + 1e-6, where)
 
     def test_generator_reproduces_committed_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -308,7 +389,7 @@ class SimValidationTest(BrowserTestCase):
         total = 0
         for name in SCENARIOS:
             fx = load(name)
-            things = fx["attribute_sets"]["t1"]
+            things = fx["attribute_sets"][TOPOLOGY]
             attributes = self.page.evaluate("(async () => {"
                                             "const V = await import('/js/validate.js');"
                                             f"const things = {json.dumps(things)};"
@@ -404,15 +485,26 @@ class SimReadersTest(BrowserTestCase):
           const R = await import('/js/view/runs.js');
           const codes = ['run.started', 'run.finished', 'decision.opened', 'decision.selected', 'command.applied',
             'sensor.state_changed', 'hazard.transition', 'work.changed', 'withdrawal.changed', 'worker.exited',
-            'route.changed', 'worker.state_changed', 'condition.set'];
+            'route.changed', 'worker.state_changed', 'condition.set', 'equipment.state_changed', 'equipment.hazard_changed',
+            'equipment.conflict', 'model.migrated'];
           const run = (reason) => ({name: reason, values: {state: 'finished', completion_reason: reason, comparison_key: 'k', comparable: true}});
           const groups = R.groupRuns([run('horizon'), run('horizon_reached'), run('reset')], ['horizon', 'horizon_reached', 'reset']);
           return {
             unknown: codes.filter((code) => !T.VOCAB.journalCode[code]),
+            // CONTRACT.md §9: every activity, hold reason, role and unit of the loaders has Russian words.
+            words: [...['loading', 'hauling', 'dumping', 'returning', 'tramming', 'yielding', 'idle'].map((code) => T.label('equipmentActivity', code)),
+              ...['zone_stopped', 'entry_blocked', 'path_closed', 'crew_absent'].map((code) => T.label('holdReason', code)),
+              ...['working', 'parked', 'stopped'].map((code) => T.label('equipmentState', code)),
+              ...['crew', 'lhd_operator'].map((code) => T.label('workerRole', code)), T.unit('t'), T.unit('machine*s')],
+            odd: T.label('holdReason', 'tyres_flat'),
             ending: T.codeLabel('completionReason', 'horizon'),
             flags: groups.flatMap((g) => g.runs.map((item) => [item.run.name, item.interrupted, item.unclassified, item.takesPart])),
           };""")
         self.assertEqual(got["unknown"], [])
+        self.assertTrue(all(word and not word.startswith("неизвестно") and not any(c.isascii() and c.isalpha() for c in word)
+                            for word in got["words"]), got["words"])
+        self.assertEqual(got["words"][-2:], ["т", "маш.·с"])
+        self.assertEqual(got["odd"], "неизвестно (tyres_flat)", "an unknown code is shown as is, never hidden")
         self.assertEqual(got["ending"], "достигнут горизонт расчёта")
         self.assertEqual(sorted(got["flags"]), [["horizon", False, False, True], ["horizon_reached", False, False, True],
                                                 ["reset", True, False, False]])
@@ -441,6 +533,7 @@ class SimScenarioTest(BrowserTestCase):
         super().setUpClass()
         cls.mock = MockServer("sim_instability", extra_args=("--publication-ms", PUBLICATION_MS)).start()
         cls.addClassCleanup(cls.mock.stop)
+        cls.fixtures = {name: load(name) for name in SCENARIOS}
 
     # ---- helpers ----------------------------------------------------------------------------
 
@@ -456,8 +549,10 @@ class SimScenarioTest(BrowserTestCase):
                                " && s.levels === '3' && s.workings === '12'; })()", timeout=60,
                                message="the 3D stage draws the simulation's mine")
         else:
+            # Eight people (two of them the loaders' operators) and the two loaders.
             self.page.wait_for("document.querySelector('[data-testid=\"scheme-svg\"]')?.dataset.drawn === 'true'"
-                               " && document.querySelectorAll('#scheme .worker').length === 6", timeout=30)
+                               " && document.querySelectorAll('#scheme .worker').length === 8"
+                               " && document.querySelectorAll('#scheme .machine').length === 2", timeout=30)
         self.assertEqual(self.page.evaluate("document.body.dataset.situation"), "norm")
 
     def start_preset(self, preset):
@@ -486,6 +581,62 @@ class SimScenarioTest(BrowserTestCase):
         page.wait_for("!!document.querySelector('[data-testid=dialog-confirm]')", timeout=5)
         page.click('[data-testid="dialog-confirm"]')
 
+    def panel_text(self):
+        return self.page.evaluate("document.querySelector('#panel').textContent").replace("\u00a0", " ")
+
+    def table_cell(self, testid, option, field):
+        return self.page.evaluate(f"(document.querySelector('[data-testid={testid}] td[data-option=\"{option}\"][data-metric={field}]')"
+                                  "?.textContent || '').replace(/\u00a0/g, ' ')")
+
+    def check_cost_offered(self, scenario):
+        """The cards and the table of options show the published cost of each option beside its people, with units,
+        and nothing ranks them (CONTRACT.md §9)."""
+        fx = self.fixtures[scenario]
+        decision = fx["states"]["decision"]["frames"][0]
+        page = self.page
+        costs = page.evaluate("""[...document.querySelectorAll('#panel .dp-card')].map((card) => [card.dataset.optionKind,
+          card.querySelector('[data-testid=option-cost]').dataset.cost,
+          (card.querySelector('[data-testid=option-cost]').textContent || '').replace(/\u00a0/g, ' '),
+          card.getAttribute('aria-describedby')])""")
+        for kind, published, words, described in costs:
+            values = {k: v["properties"]["value"] for k, v in element(decision, f"option-{kind}").items()}
+            self.assertEqual(published, "published", kind)
+            self.assertIn(f"вывезено {num(values['forecast_hauled_t'])} т из {num(values['forecast_planned_t'])} т", words, kind)
+            self.assertIn(f"недовывезено {num(values['forecast_production_lost_t'])} т", words, kind)
+            self.assertIn(f"Встречи ПДМ с идущими людьми: {num(values['forecast_conflicts'])}", words, kind)
+            self.assertIn(f"ПДМ уступала {num(values['forecast_conflict_yield_s'])} маш.·с", words, kind)
+            machines = [values[f"forecast_{m}"] for m in ("machines_in_danger", "machines_unknown", "machines_stuck")]
+            if not any(machines):
+                self.assertIn("ПДМ в опасной зоне, в неизвестной зоне, удержаны проходом: 0", words, kind)
+            self.assertIn(f"dp-cost-option-{kind}", described, "the cost is part of the card's description")
+            # The table of options: every cost metric of every option as published, with its unit.
+            for metric in COST:
+                if metric == "planned_t":
+                    continue
+                self.assertEqual(self.table_cell("decide-table", f"option-{kind}", f"forecast_{metric}"),
+                                 cost_cell(values, "forecast_", metric), f"{scenario} {kind} {metric}")
+        head = page.evaluate("(document.querySelector('[data-testid=decide-table] tr[data-row=group-cost] th')?.textContent || '')"
+                             ".replace(/\u00a0/g, ' ')")
+        plan = value_of(element(decision, "option-observe"), "forecast_planned_t")
+        self.assertIn(f"план вывоза за 15 мин: {num(plan)} т", head, "the plan once, in the head of the cost")
+        text = self.panel_text().lower()
+        for word in RANKING:
+            self.assertNotIn(word, text, f"no ranking word on the panel: {word}")
+        self.assertFalse(page.evaluate("!!document.querySelector('#panel [data-best], #panel .is-best, #panel [data-rank-option]')"))
+
+    def check_cost_fact(self, scenario, kind):
+        """The result: the fact of each cost metric beside the forecast, as published at the horizon."""
+        fx = self.fixtures[scenario]
+        short = OPTIONS[kind]
+        end = fx["states"][f"{short}_done"]["frames"][0]
+        values = {k: v["properties"]["value"] for k, v in element(end, f"option-{kind}").items()}
+        for metric in COST:
+            if metric == "planned_t":
+                continue
+            for prefix in ("forecast_", "actual_"):
+                self.assertEqual(self.table_cell("result-table", f"option-{kind}", prefix + metric), cost_cell(values, prefix, metric),
+                                 f"{scenario} {kind} {prefix}{metric}")
+
     def commands(self, type_):
         return [e for e in self.mock.log()["entries"]
                 if e.get("kind") == "command" and (e.get("body") or {}).get("type") == type_]
@@ -506,6 +657,7 @@ class SimScenarioTest(BrowserTestCase):
         self.assertEqual([c["kind"] for c in cards], ["observe", "stop_withdraw_zone", "withdraw_all"])
         self.assertEqual({c["state"] for c in cards}, {"offered"}, cards)
         self.assertFalse(any(c["unpublished"] or c["unavailable"] for c in cards), cards)
+        self.check_cost_offered(scenario)
 
         self.launch(kind)
         page.wait_for("document.body.dataset.situation === 'executing'", timeout=15, message="the option executes")
@@ -522,6 +674,7 @@ class SimScenarioTest(BrowserTestCase):
         self.assertEqual(page.evaluate("document.body.dataset.runState"), "paused")
         wait_until(lambda: page.evaluate("document.querySelector('#panel .dp__title')?.textContent.startsWith('Итог')"),
                    timeout=5, message="the result is on the panel")
+        self.check_cost_fact(scenario, kind)
 
         # the archive: the run just finished is the option's, the first one was cut short by the preset
         archive = self.mock.request("GET", f"/ditto/api/2/things/{NS}:run-0002?fields=features")

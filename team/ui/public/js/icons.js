@@ -43,6 +43,19 @@ export function sign(name, scale = 1) {
     (SIGNS[name] || SIGNS.unknown).map(([tag, attrs]) => s(tag, attrs)));
 }
 
+/**
+ * A loader in 22 × 14 px (the depth rail): the body, the bucket ahead (+x), two wheels; the ring of a danger place and
+ * the pause bar of a stopped machine are drawn by its state (poster.css). Distinct from the round marker of a person.
+ */
+export function loaderGlyph() {
+  return s('svg', {class: 'hz__machine-pic', viewBox: '-12 -8 24 16', width: 22, height: 14, 'aria-hidden': 'true', focusable: 'false'},
+    s('rect', {class: 'loader__ring', x: -11, y: -7.5, width: 22, height: 15, rx: 3}),
+    s('path', {class: 'loader__body', d: 'M-8 2.5V-2.5h3.5l1.5-3h4.5v5.5h3.5l3 -2.5h1.5v5z'}),
+    s('circle', {class: 'loader__wheel', cx: -4.5, cy: 3.6, r: 2.1}), s('circle', {class: 'loader__wheel', cx: 3.5, cy: 3.6, r: 2.1}),
+    s('path', {class: 'loader__pause', d: 'M-1.5 -5.5v5M1.5 -5.5v5'}),
+    s('path', {class: 'loader__question', d: 'M-1.4 -5.6a1.6 1.6 0 1 1 2.3 1.4c-.5.3-.7.6-.7 1.1M0 -0.7v.4'}));
+}
+
 /** The sign of a displayed hazard state; nothing for «норма». */
 export function hazardSign(state) {
   return {attention: 'attention', danger: 'danger', unknown: 'unknown'}[state] || null;

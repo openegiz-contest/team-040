@@ -19,6 +19,11 @@
 // pause, old data, a failed read, reduced motion, a hidden page, and clears the
 // buffer on a new run or topology. Facing follows the travel along the path.
 //
+// The loaders of the model play back in the same buffer (names MACHINE + local
+// name), so a machine and the person walking ahead of it are drawn at one
+// moment of the model; their path between two publications is given by the
+// caller (publication.paths: actors.js machineLeg). moving() lists people only.
+//
 // Pure: no three.js, no DOM. Distances of the model are never changed: places
 // are offsets of length_m on the workings of the layout (layout.js).
 
@@ -26,6 +31,8 @@ import {alongStep} from './layout.js';
 
 /** A stretch between two publications longer than this (metres) is a jump of the model, not a walk. */
 export const MAX_STEP_M = 80;
+/** The names of the loaders in the buffer: MACHINE + the local name of the equipment twin. */
+export const MACHINE = 'machine:';
 /** A place this close to an end of its working stands at that node. */
 const AT_NODE_M = 0.5;
 /** A move shorter than this (metres) is no move. */
@@ -188,11 +195,13 @@ export function createWalk() {
      * `allow`: motion is allowed (the model runs, fresh data, the same run, no reduced motion, the page shown); else
      * the buffer is reset to this publication and everyone stands where published. True while someone walks.
      * @param {Object} layout
-     * @param {{at: number, places: Map<string, {working: string, offsetM: number}>, routes: Map<string, Array>}} publication
+     * @param {{at: number, places: Map<string, {working: string, offsetM: number}>, routes: Map<string, Array>,
+     *          paths?: Map<string, (from: Object, to: Object) => ({pieces: Array, length: number}|null)>}} publication
+     *        paths: the path of a name between its two places, instead of a published route (the loaders)
      * @param {boolean} allow
      */
     publish(layout, publication, allow) {
-      const {at, places, routes} = publication;
+      const {at, places, routes, paths = null} = publication;
       const prev = snaps[snaps.length - 1] || null;
       if (prev) {
         const gap = at - prev.at;
@@ -212,7 +221,8 @@ export function createWalk() {
       for (const [name, place] of places) {
         const before = prev.places.get(name);
         if (!before || samePlace(before, place)) continue;
-        legs.set(name, legBetween(layout, before, place, prev.routes.get(name) || null));
+        const path = paths ? paths.get(name) : null;
+        legs.set(name, path ? path(before, place) : legBetween(layout, before, place, prev.routes.get(name) || null));
       }
       const wasIdle = !pending();
       snaps.push({at, places, routes, legs});
@@ -287,7 +297,7 @@ export function createWalk() {
     moving() {
       const j = bracket(playT);
       if (j < 0) return [];
-      return [...snaps[j].legs].filter(([, leg]) => leg && leg.length > STILL_M).map(([name]) => name).sort();
+      return [...snaps[j].legs].filter(([name, leg]) => leg && leg.length > STILL_M && !name.startsWith(MACHINE)).map(([name]) => name).sort();
     },
 
     /** For tests: the buffer as it is. */

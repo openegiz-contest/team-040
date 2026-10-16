@@ -15,7 +15,7 @@ import {ID_PATTERN, LOCAL_NAME_PATTERN} from './config.js';
 const VIEWS = ['scheme', 'list', 'runs'];
 const PROJECTIONS = ['axo', 'plan'];
 const STAGE_MODES = ['3d', 'scheme'];
-export const LIST_TYPES = ['all', 'level', 'working', 'zone', 'sensor', 'worker', 'exit', 'incident', 'option', 'journal'];
+export const LIST_TYPES = ['all', 'level', 'working', 'zone', 'sensor', 'worker', 'equipment', 'exit', 'incident', 'option', 'journal'];
 
 /**
  * The UI state a hash asks for. Anything unreadable falls back to the default
