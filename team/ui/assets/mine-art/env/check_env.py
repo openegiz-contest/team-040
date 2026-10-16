@@ -13,6 +13,8 @@ ROOT = os.path.normpath(os.path.join(HERE, "..", "..", "..", "..", ".."))
 ART = os.path.join(ROOT, "team", "ui", "public", "models", "mine-art")
 GLB = os.path.join(ART, "env.glb")
 TOPO = os.path.join(HERE, "build", "topology.json")
+sys.path.insert(0, HERE)
+import mine_map  # noqa: E402  (stdlib only)
 
 BUDGET_TRIS = 100_000
 AIM_TRIS = 60_000
@@ -67,7 +69,7 @@ def main():
     print("scene extras:", json.dumps(extras, ensure_ascii=False))
     topo = json.load(open(TOPO, encoding="utf-8")) if os.path.exists(TOPO) else None
     check(extras.get("mineArt") == 1, "extras.mineArt == 1")
-    check(abs(extras.get("k", 0) - 1.6) < 1e-9, "extras.k == 1.6")
+    check(abs(extras.get("k", 0) - mine_map.K) < 1e-9, f"extras.k == {mine_map.K}")
     check(extras.get("zTop") == 0, "extras.zTop == 0")
     check(extras.get("camera") == "MainView", "extras.camera == MainView")
     if topo:

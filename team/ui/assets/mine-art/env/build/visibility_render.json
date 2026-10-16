@@ -1,18 +1,18 @@
 {
  "w-01": {
-  "samples": 259,
-  "bodyHiddenPct": 4.6,
-  "feetHiddenPct": 3.9,
-  "longestBodyHiddenM": 24.0,
+  "samples": 253,
+  "bodyHiddenPct": 3.6,
+  "feetHiddenPct": 3.2,
+  "longestBodyHiddenM": 18.0,
   "hiddenOffsetRangesM": [
    [
-    220.5,
-    241.6
+    225.8,
+    241.5
    ]
   ]
  },
  "w-02": {
-  "samples": 248,
+  "samples": 242,
   "bodyHiddenPct": 0.0,
   "feetHiddenPct": 0.0,
   "longestBodyHiddenM": 0.0,
@@ -41,15 +41,10 @@
  },
  "w-06": {
   "samples": 110,
-  "bodyHiddenPct": 0.9,
+  "bodyHiddenPct": 0.0,
   "feetHiddenPct": 0.0,
-  "longestBodyHiddenM": 2.0,
-  "hiddenOffsetRangesM": [
-   [
-    213.3,
-    213.3
-   ]
-  ]
+  "longestBodyHiddenM": 0.0,
+  "hiddenOffsetRangesM": []
  },
  "w-07": {
   "samples": 41,
@@ -59,38 +54,34 @@
   "hiddenOffsetRangesM": []
  },
  "w-08": {
-  "samples": 205,
-  "bodyHiddenPct": 10.2,
-  "feetHiddenPct": 9.3,
-  "longestBodyHiddenM": 22.0,
+  "samples": 197,
+  "bodyHiddenPct": 8.1,
+  "feetHiddenPct": 6.6,
+  "longestBodyHiddenM": 18.0,
   "hiddenOffsetRangesM": [
    [
-    9.3,
-    27.9
+    9.7,
+    25.2
    ],
    [
-    195.3,
-    210.2
-   ],
-   [
-    377.6,
-    377.6
+    195.5,
+    207.2
    ]
   ]
  },
  "w-09": {
-  "samples": 205,
-  "bodyHiddenPct": 8.3,
-  "feetHiddenPct": 7.3,
-  "longestBodyHiddenM": 18.0,
+  "samples": 197,
+  "bodyHiddenPct": 7.6,
+  "feetHiddenPct": 6.1,
+  "longestBodyHiddenM": 16.0,
   "hiddenOffsetRangesM": [
    [
-    7.4,
-    22.3
+    7.7,
+    21.3
    ],
    [
-    199.0,
-    212.1
+    197.5,
+    209.1
    ]
   ]
  },

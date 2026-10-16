@@ -19,6 +19,7 @@ makes its stride match the ground speed, and fades out when the person stops (ac
 import base64
 import json
 import math
+import os
 import struct
 import time
 import unittest
@@ -31,6 +32,8 @@ except ImportError:  # run as a top-level module from the tests directory
 from browser_support import MockServer  # noqa: F401  (same module object as tests.browser_support)
 
 ART = "?art=ortho"
+# The vertical factor of art mode without the art's GLB (scene.js ART_DEFAULT, SPEC §3); with the GLB its own k.
+ART_DEFAULT_K = 1.35
 
 # The camera of the stage, as info() gives it, read in one evaluation.
 CAMERA = f"(async () => {{ const i = {APP}.ctx.stage.info(); return {{camera: i.camera, art: i.art, frames: i.frames}}; }})()"
@@ -280,7 +283,7 @@ class ArtCameraTest(ArtCase):
         start = self.home()
         self.assert_view_fixed(start["camera"], "at the overview")
         self.assertAlmostEqual(start["art"]["zoom"], 1, places=6, msg="the overview is the zoom of 1×")
-        self.assertAlmostEqual(start["art"]["k"], 1.6, places=6, msg="the vertical factor of the art")
+        self.assertAlmostEqual(start["art"]["k"], ART_DEFAULT_K, places=6, msg="the vertical factor of the art (SPEC §3 default)")
         self.focus_canvas()
         target = start["camera"]["target"]
         for key, shift in (("ArrowLeft", False), ("ArrowUp", False), ("ArrowRight", True), ("ArrowDown", True)):
@@ -353,7 +356,7 @@ class ArtCameraTest(ArtCase):
             self.assertAlmostEqual(value, box[side], places=3, msg=f"{key} ends at the edge of the mine ({side})")
 
     def test_a_glide_to_a_zone_never_overshoots_and_ends(self):
-        """Glides to a zone, a level and a person (art mode frames them at up to 3x)."""
+        """Glides to a zone, a level and a person (art mode frames a zone at up to 3x, a person at 4x)."""
         self.open_quiet(1920, 1080)
         self.home()
         for target in (thing("zone-b"), "level-380", thing("worker-11")):
@@ -378,7 +381,7 @@ class ArtCameraTest(ArtCase):
                 if b != goal[index]:
                     self.assertEqual(math.copysign(1, b - goal[index]), sign, f"component {index} never crosses its goal")
         if target.endswith("worker-11"):
-            self.assertAlmostEqual(self.cam()["art"]["zoom"], 3, places=4, msg="a person with a small surrounding, at 3x")
+            self.assertAlmostEqual(self.cam()["art"]["zoom"], 4, places=4, msg="a person with a small surrounding, at 4x (the figures are part of the picture)")
         self.assertTrue(1 - 1e-6 <= self.cam()["art"]["zoom"] <= 4 + 1e-6)
         self.wait_idle()
         self.page.evaluate("window.__probe.raf = 0")
@@ -433,7 +436,7 @@ class ArtCameraTest(ArtCase):
         time.sleep(0.8)
         self.wait_idle()
         after = self.info()
-        self.assertEqual(after["art"]["k"], 1.6)
+        self.assertAlmostEqual(after["art"]["k"], ART_DEFAULT_K, places=6)
         self.assertEqual([level["screenY"] for level in after["levels"]], [level["screenY"] for level in before["levels"]],
                          "the horizons stay where they are")
         self.assertEqual(after["model"], before["model"])
@@ -861,9 +864,27 @@ class WalkCycleTest(ArtCase):
 
 # ---- the illustrated mine (env.glb of the art, phase II) --------------------------------------------------------
 
+ENV_GLB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public", "models", "mine-art", "env.glb")
+
+
+def art_extras():
+    """scene.extras of the art's env.glb (SPEC §5): the browser takes k, cx, cy, zTop from there, so do the tests."""
+    with open(ENV_GLB, "rb") as handle:
+        head = handle.read(20)
+        length = struct.unpack("<I", head[12:16])[0]
+        gltf = json.loads(handle.read(length))
+    return gltf["scenes"][gltf.get("scene", 0)].get("extras", {})
+
+
 def art_point(x, y, z):
-    """A mine point in the art's scene (env README: X = x - 150, Y = 1.6 z, Z = 50 - y)."""
-    return [x - 150.0, 1.6 * z, 50.0 - y]
+    """A mine point in the art's scene (SPEC §3: X = x - cx, Y = k (z - zTop), Z = cy - y, the values of env.glb)."""
+    extras = art_extras()
+    return [x - extras["cx"], extras["k"] * (z - extras.get("zTop", 0)), extras["cy"] - y]
+
+
+def decimal(value):
+    """A factor as the scale note writes it: one decimal, a comma («1,6»)."""
+    return f"{value:.1f}".replace(".", ",")
 
 
 LAMPS = """(async () => {
@@ -910,8 +931,9 @@ class ArtEnvTest(ArtEnvCase):
         info = self.info()
         art = info["art"]
         self.assertTrue(art["env"], art)
-        self.assertEqual(art["origin"], {"cx": 150, "cy": 50, "zTop": 0}, "the GLB's origin")
-        self.assertAlmostEqual(art["k"], 1.6, places=6)
+        extras = art_extras()
+        self.assertEqual(art["origin"], {"cx": extras["cx"], "cy": extras["cy"], "zTop": extras.get("zTop", 0)}, "the GLB's origin")
+        self.assertAlmostEqual(art["k"], extras["k"], places=6, msg="the vertical factor read from the GLB")
         self.assertAlmostEqual(art["az"], 12, places=3, msg="MainView's azimuth")
         self.assertAlmostEqual(art["el"], 23, places=3, msg="MainView's elevation")
         self.assertAlmostEqual(art["zoom"], 1, places=6)
@@ -921,7 +943,8 @@ class ArtEnvTest(ArtEnvCase):
                          [("drill", "drill"), ("lhd_zone-a", "lhd"), ("lhd_zone-b", "lhd"), ("truck", "truck")])
         self.assertEqual(self.page.evaluate("document.querySelector('#stage-3d .s3').dataset.artFigure"), "worker.glb")
         notes = self.page.evaluate("document.querySelector('[data-testid=\"scene3d-gizmo\"]').textContent")
-        for words in ("вертикаль ×1,6", "шире настоящих", "оформление", "только работу своего участка", "фигуры людей ×2,8"):
+        for words in (f"вертикаль ×{decimal(extras['k'])}", "шире настоящих", "оформление", "только работу своего участка",
+                      "машины ×2,2 настоящих", "фигуры людей ×4,4"):
             self.assertIn(words, notes)
         # An invented fixture (another topology): the procedural scene of variant 3, perspective, no art.
         self.page.set_viewport(1280, 720)
@@ -1030,6 +1053,125 @@ class ArtEnvTest(ArtEnvCase):
             self.assertTrue(fading, f"{name}: the lamps fade")
             self.assertLessEqual(fading[-1] - fading[0], 450, f"{name}: about 300 ms")
         self.assertTrue(all(sample["l"]["truck"] == 0 and sample["l"]["drill"] == 0 for sample in samples))
+
+
+# ---- the sizes of the art: people bigger, machines to match, nobody walks through a machine -----------------------
+
+# Puts worker-a2 and worker-a3 at the published place of worker-a1 (w-07, 20 m; a3 one metre on) in every /ditto/
+# answer: three people at one place.
+CROWD = """
+(() => {
+  const at = {'team040.mine:worker-a2': 20, 'team040.mine:worker-a3': 21};
+  const visit = (value) => {
+    if (Array.isArray(value)) { value.forEach(visit); return value; }
+    if (value !== null && typeof value === 'object') {
+      if (typeof value.thingId === 'string' && value.thingId in at && value.features && value.features.offset_m
+        && value.features.offset_m.properties) value.features.offset_m.properties.value = at[value.thingId];
+      Object.values(value).forEach(visit);
+    }
+    return value;
+  };
+  const original = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const response = await original(...args);
+    const url = String((args[0] && args[0].url) || args[0]);
+    if (!url.includes('/ditto/')) return response;
+    const body = await response.text();
+    let out = body;
+    try { out = JSON.stringify(visit(JSON.parse(body))); } catch (error) { /* not JSON */ }
+    return new Response(out, {status: response.status, statusText: response.statusText, headers: response.headers});
+  };
+})();
+"""
+
+
+class ArtSizeTest(ArtEnvCase):
+    """The worker of the art is drawn 8 m tall (1.6 × worker.glb), a figure from the overview of a 1920×1080 stage on;
+    the machines 2.2× real; the people of one place stand apart; no walking line runs through a machine."""
+
+    def test_figures_show_at_the_overview_and_the_pin_stays_over_the_helmet(self):
+        self.open_art()
+        info = self.info()
+        self.assertAlmostEqual(info["art"]["zoom"], 1, places=3, msg="the overview")
+        figures = info["actors"]["figures"]
+        self.assertEqual(figures["source"], "worker.glb")
+        self.assertAlmostEqual(figures["scale"], 1.6, places=6, msg="the worker drawn 1.6 × its 5 m")
+        self.assertAlmostEqual(figures["rig"]["top"], 1.6 * 5.02, delta=0.05, msg="8 m tall")
+        self.assertLessEqual(figures["threshold"], 10, "a figure from about 10 px on")
+        self.assertGreaterEqual(figures["px"], 10, f"at least 10 px tall at the overview: {figures['px']}")
+        self.assertEqual(figures["shown"], figures["people"], "every person is a figure at the overview, not a disc")
+        # The small state pin stands over the helmet of its figure.
+        for name in ("worker-a1", "worker-b2"):
+            feet = figures["feet"][name]
+            mark = self.js(f"return {APP}.ctx.stage.screenOf({json.dumps(thing(name))});")
+            self.assertGreater(mark["world"][1] - feet[1], figures["rig"]["top"], f"{name}: the pin over the helmet")
+            self.assertLess(mark["world"][1] - feet[1], figures["rig"]["top"] + 6, f"{name}: the pin close over the helmet")
+        # A person framed close: up to four times the overview.
+        self.js(f"return {APP}.ctx.stage.focus({json.dumps(thing('worker-a2'))});")
+        self.wait_idle()
+        self.assertAlmostEqual(self.info()["art"]["zoom"], 4, delta=0.05, msg="a person framed at 4×")
+
+    def test_people_of_one_place_stand_apart(self):
+        self.page.add_init_script(CROWD)
+        self.open_art()
+        published = self.js(f"""const s = {APP}.store.getState();
+          return Object.fromEntries(s.model.byKind.worker.map((w) => [w.name, w.values.offset_m]));""")
+        self.assertEqual((published["worker-a1"], published["worker-a2"], published["worker-a3"]), (20, 20, 21), "three people at one place")
+        self.js(f"return {APP}.ctx.stage.focus({json.dumps(thing('zone-a'))});")
+        self.wait_idle()
+        figures = self.info()["actors"]["figures"]
+        feet = [figures["feet"][name] for name in ("worker-a1", "worker-a2", "worker-a3")]
+        tall = figures["rig"]["top"]
+        for i in range(3):
+            for j in range(i + 1, 3):
+                apart = math.hypot(feet[i][0] - feet[j][0], feet[i][2] - feet[j][2])
+                self.assertGreater(apart, 0.4 * tall, f"figures {i} and {j} stand apart: {apart:.2f} m")
+        # Their places as published are kept (the figures stand apart, the data do not move).
+        self.assertEqual([figures["at"][name][:2] for name in ("worker-a1", "worker-a2", "worker-a3")],
+                         [["w-07", 20], ["w-07", 20], ["w-07", 21]])
+        # One pin for the place, with the count (the markers of the scene: a single group).
+        marks = [self.js(f"return {APP}.ctx.stage.screenOf({json.dumps(thing(name))});")["world"] for name in ("worker-a1", "worker-a2", "worker-a3")]
+        self.assertTrue(all(mark == marks[0] for mark in marks), "one pin over the three")
+        # The floor under each figure is the drawn floor.
+        for name, gap in self.info()["art"]["floorGaps"].items():
+            if name in ("worker-a1", "worker-a2", "worker-a3"):
+                self.assertIsNotNone(gap, f"{name} stands on the drawn floor")
+                self.assertLess(abs(gap), 0.6, f"{name} stands on the drawn floor: {gap}")
+
+    def test_machines_are_twice_real_and_clear_of_every_walking_line(self):
+        self.open_art()
+        info = self.info()
+        machines = info["art"]["machines"]
+        self.assertEqual(info["art"]["machineFactor"], 2.2)
+        self.assertEqual(len(machines), 4)
+        for machine in machines:
+            self.assertAlmostEqual(machine["scale"], 2.2 / 1.5, delta=0.002, msg=f"{machine['name']}: 2.2× real (built 1.5×)")
+        lines = self.js(f"""const s = {APP}.store.getState(); const nodes = s.attributes.mine.nodes;
+          return s.model.byKind.working.map((w) => [w.name, [[nodes[w.attrs.from].x, nodes[w.attrs.from].y, nodes[w.attrs.from].z],
+            ...(w.attrs.points || []), [nodes[w.attrs.to].x, nodes[w.attrs.to].y, nodes[w.attrs.to].z]]]);""")
+        tall = info["actors"]["figures"]["rig"]["top"]
+        # A person drawn on a walking line takes up to 4.5 m to its side (people of one place stand apart) and half a
+        # body (about 1.6 m at this size): the machine keeps clear of that.
+        need = 4.5 + 1.6
+        nearest = {}
+        for machine in machines:
+            x0, y0, z0, x1, y1, z1 = machine["box"]
+            best = math.inf
+            for name, points in lines:
+                scene = [art_point(*p) for p in points]
+                for a, b in zip(scene, scene[1:]):
+                    steps = max(1, int(math.dist(a, b)))
+                    for i in range(steps + 1):
+                        p = [a[k] + (b[k] - a[k]) * i / steps for k in range(3)]
+                        # A person standing there: from the floor to the top of the head.
+                        if p[1] + tall < y0 or p[1] > y1:
+                            continue
+                        dx = max(x0 - p[0], 0, p[0] - x1)
+                        dz = max(z0 - p[2], 0, p[2] - z1)
+                        best = min(best, math.hypot(dx, dz))
+            nearest[machine["name"]] = round(best, 2)
+            self.assertGreaterEqual(best, need, f"{machine['name']}: {best:.1f} m from the nearest walking line (box {machine['box']})")
+        print(f"\n[art sizes] machines 2.2x real; nearest walking line: {nearest}")
 
 
 if __name__ == "__main__":

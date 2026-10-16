@@ -97,3 +97,56 @@ export function slideValue(slot, value, before, duration = 380) {
   value.animate([{transform: 'translateY(100%)', opacity: 0}, {transform: 'translateY(0)', opacity: 1}],
     {duration, easing: EASE_POSTER, iterations: 1, fill: 'backwards'});
 }
+
+/**
+ * A spring as a CSS easing (linear() of a slightly underdamped spring, damping ratio `zeta`, sampled at `steps`
+ * points): it lands past its goal by a hair (about 2 % at the default) and settles within the duration of the
+ * animation that uses it. EASE_POSTER where the browser has no linear() easing.
+ */
+export function springEasing(zeta = 0.78, steps = 28) {
+  if (typeof CSS === 'undefined' || !CSS.supports || !CSS.supports('transition-timing-function', 'linear(0, 1)')) return EASE_POSTER;
+  // Natural frequency chosen so that the spring is settled (within 0.2 %) at t = 1.
+  const omega = 7.5;
+  const damped = omega * Math.sqrt(1 - zeta * zeta);
+  const at = (t) => 1 - Math.exp(-zeta * omega * t) * (Math.cos(damped * t) + ((zeta * omega) / damped) * Math.sin(damped * t));
+  const points = [];
+  for (let i = 0; i <= steps; i += 1) points.push(i === steps ? '1' : String(Math.round(at(i / steps) * 10000) / 10000));
+  return `linear(${points.join(', ')})`;
+}
+
+/** The spring of the poster style: a marker that slides to its new place (view/horizons.js). */
+export const SPRING_MS = 380;
+
+/**
+ * A critically damped spring followed frame by frame (a value that chases a goal the pointer moves): `step(dt)`
+ * moves it, true while it still moves; never overshoots, ends exactly on the goal.
+ * @param {number} value
+ * @param {number} [omega] stiffness, 1/s (about 4/omega seconds to settle)
+ */
+export function createSpring(value, omega = 18) {
+  return {
+    value, goal: value, velocity: 0,
+    set(goal, jump = false) {
+      this.goal = goal;
+      if (jump) {
+        this.value = goal;
+        this.velocity = 0;
+      }
+    },
+    step(dtMs) {
+      const dt = Math.min(Math.max(dtMs, 0), 50) / 1000;
+      const delta = this.value - this.goal;
+      // The exact step of a critically damped oscillator over dt.
+      const e = Math.exp(-omega * dt);
+      const next = (delta + (this.velocity + omega * delta) * dt) * e;
+      this.velocity = (this.velocity - omega * (this.velocity + omega * delta) * dt) * e;
+      this.value = this.goal + next;
+      const settled = Math.abs(next) < 1e-3 * Math.max(1, Math.abs(this.goal)) && Math.abs(this.velocity) < 1e-2;
+      if (settled) {
+        this.value = this.goal;
+        this.velocity = 0;
+      }
+      return !settled;
+    },
+  };
+}

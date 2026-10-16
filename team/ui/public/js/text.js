@@ -1248,4 +1248,15 @@ export const HORIZON = {
   plan: (label) => `План: ${label}`,
   hazard: (words) => `на горизонте: ${words}`,
   elevation: (value) => `${value < 0 ? '−' : ''}${num(Math.abs(value))}`,
+  /** The readout of the depth probe under the pointer: «−173 м». */
+  depth: (value) => `${value < 0 ? '−' : ''}${num(Math.abs(value))} м`,
+  /** The people who came out, counted at 0 m (they are no longer on the rail). */
+  out: (count) => `вышли ${num(count)}`,
+  /** The keys of the rail (the accessible description of each horizon). */
+  keys: '↑ ↓ — другой горизонт, Enter — показать, Esc — общий вид',
+  /** The chip of a hovered horizon: its published summary. */
+  chipPeople: (count) => (count > 0 ? `на горизонте ${counted(count, FORMS.worker)}` : 'на горизонте никого'),
+  chipZone: (zone, words) => `${zone} — ${words}`,
+  chipNoZones: 'участков с датчиками нет',
+  person: (code, depth) => `${code}: ${depth}`,
 };

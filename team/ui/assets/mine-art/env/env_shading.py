@@ -1,4 +1,12 @@
-"""Materials (procedural, rendered into the projected textures), world and lights."""
+"""Materials (procedural, rendered into the projected textures), world and lights.
+
+Painted light: every surface carries a painted key light in its emission, a value set
+by the orientation of its flat facet to a soft key from the upper left (KEY), so the
+rock reads in 3-4 values per orientation like the references (upper planes light,
+undersides dark), independent of shadows. The warm lamps (2700 K) are real lights on
+top of that (diffuse only): pools on floors and walls, facets warming up near them.
+No sun; emissive surfaces are not sampled as lights (emission_sampling NONE).
+"""
 
 import math
 
@@ -7,8 +15,7 @@ from mathutils import Vector
 
 LAMP_RGB = (1.0, 0.546, 0.195)          # #FFC37A in linear
 LAMP_POWER = 11000.0                      # W, spot lights of drift lamps
-FILL_RGB = (0.62, 0.72, 0.95)
-FILL_STRENGTH = 4.0
+KEY = Vector((-0.35, -0.45, 0.82)).normalized()   # toward the painted key light
 
 _lamp_specs = []    # (location, direction, power, kind) collected by props
 
@@ -24,6 +31,10 @@ class NB:
 
     def __init__(self, mat):
         mat.use_nodes = True
+        try:
+            mat.emission_sampling = "NONE"
+        except AttributeError:
+            pass
         self.nt = mat.node_tree
         self.nt.nodes.clear()
         self.x = 0
@@ -45,31 +56,31 @@ class NB:
     def link(self, a, b):
         self.nt.links.new(a, b)
 
+    def _set(self, sock, v):
+        if isinstance(v, (int, float)):
+            sock.default_value = v
+        elif isinstance(v, tuple):
+            sock.default_value = tuple(v) + (1.0,) * (4 - len(v)) if len(sock.default_value) == 4 else v[:3]
+        else:
+            self.link(v, sock)
+
     def math(self, op, a, b=None, clamp=False):
         m = self.n("ShaderNodeMath", operation=op, use_clamp=clamp)
         for i, v in enumerate((a, b)):
-            if v is None:
-                continue
-            if isinstance(v, (int, float)):
-                m.inputs[i].default_value = v
-            else:
-                self.link(v, m.inputs[i])
+            if v is not None:
+                self._set(m.inputs[i], v)
         return m.outputs[0]
 
     def mix(self, fac, a, b, blend="MIX"):
         m = self.n("ShaderNodeMix", data_type="RGBA", blend_type=blend)
         for sock, v in ((m.inputs[0], fac), (m.inputs[6], a), (m.inputs[7], b)):
-            if isinstance(v, (int, float)):
-                sock.default_value = v
-            elif isinstance(v, tuple):
-                sock.default_value = tuple(v) + (1.0,) * (4 - len(v))
-            else:
-                self.link(v, sock)
+            self._set(sock, v)
         return m.outputs[2]
 
-    def ramp(self, fac, stops):
+    def ramp(self, fac, stops, interp="LINEAR"):
         r = self.n("ShaderNodeValToRGB")
         cr = r.color_ramp
+        cr.interpolation = interp
         while len(cr.elements) < len(stops):
             cr.elements.new(0.5)
         for el, (pos, col) in zip(cr.elements, stops):
@@ -78,63 +89,64 @@ class NB:
         self.link(fac, r.inputs[0])
         return r.outputs[0]
 
-    def out_diffuse(self, color, emission=None, strength=1.0, normal=None):
+    def scale(self, col, f):
+        """Colour times a scalar socket or number."""
+        m = self.n("ShaderNodeVectorMath", operation="SCALE")
+        self._set(m.inputs[0], col)
+        self._set(m.inputs["Scale"], f)
+        return m.outputs[0]
+
+    def out(self, albedo, emission):
+        """Diffuse (lamps only, no gloss) plus the painted emission."""
         bsdf = self.n("ShaderNodeBsdfDiffuse")
         bsdf.inputs["Roughness"].default_value = 1.0
-        self.link(color, bsdf.inputs["Color"])
-        if normal is not None:
-            self.link(normal, bsdf.inputs["Normal"])
-        shader = bsdf.outputs[0]
-        if emission is not None:
-            em = self.n("ShaderNodeEmission")
-            em.inputs["Strength"].default_value = strength
-            self.link(emission, em.inputs["Color"])
-            add = self.n("ShaderNodeAddShader")
-            self.link(shader, add.inputs[0])
-            self.link(em.outputs[0], add.inputs[1])
-            shader = add.outputs[0]
-        out = self.n("ShaderNodeOutputMaterial")
-        self.link(shader, out.inputs["Surface"])
+        self._set(bsdf.inputs["Color"], albedo)
+        em = self.n("ShaderNodeEmission")
+        em.inputs["Strength"].default_value = 1.0
+        self._set(em.inputs["Color"], emission)
+        add = self.n("ShaderNodeAddShader")
+        self.link(bsdf.outputs[0], add.inputs[0])
+        self.link(em.outputs[0], add.inputs[1])
+        o = self.n("ShaderNodeOutputMaterial")
+        self.link(add.outputs[0], o.inputs["Surface"])
 
 
 def _coords(nb, kind="Object"):
-    tc = nb.n("ShaderNodeTexCoord")
-    return tc.outputs[kind]
+    return nb.n("ShaderNodeTexCoord").outputs[kind]
 
 
-def facet_normal(nb, co, scale, strength, scale2=None, strength2=0.0):
-    """Normal tilted per Voronoi cell: flat crystalline facets that catch the light."""
+def key_t(nb):
+    """0.5 + 0.5 * (flat facet normal . KEY): the painted key light of a facet."""
     geo = nb.n("ShaderNodeNewGeometry")
-    vor = nb.n("ShaderNodeTexVoronoi", feature="F1", in_Scale=scale, in_Randomness=1.0)
-    nb.link(co, vor.inputs["Vector"])
-    off = nb.n("ShaderNodeVectorMath", operation="MULTIPLY_ADD")
-    nb.link(vor.outputs["Color"], off.inputs[0])
-    off.inputs[1].default_value = (2 * strength, 2 * strength, 2 * strength)
-    off.inputs[2].default_value = (-strength, -strength, -strength)
-    add = nb.n("ShaderNodeVectorMath", operation="ADD")
-    nb.link(geo.outputs["Normal"], add.inputs[0])
-    nb.link(off.outputs[0], add.inputs[1])
-    last = add.outputs[0]
-    if scale2:
-        vor2 = nb.n("ShaderNodeTexVoronoi", feature="F1", in_Scale=scale2, in_Randomness=1.0)
-        nb.link(co, vor2.inputs["Vector"])
-        off2 = nb.n("ShaderNodeVectorMath", operation="MULTIPLY_ADD")
-        nb.link(vor2.outputs["Color"], off2.inputs[0])
-        off2.inputs[1].default_value = (2 * strength2,) * 3
-        off2.inputs[2].default_value = (-strength2,) * 3
-        add2 = nb.n("ShaderNodeVectorMath", operation="ADD")
-        nb.link(last, add2.inputs[0])
-        nb.link(off2.outputs[0], add2.inputs[1])
-        last = add2.outputs[0]
-    nrm = nb.n("ShaderNodeVectorMath", operation="NORMALIZE")
-    nb.link(last, nrm.inputs[0])
-    return nrm.outputs[0], vor
+    dot = nb.n("ShaderNodeVectorMath", operation="DOT_PRODUCT")
+    nb.link(geo.outputs["True Normal"], dot.inputs[0])
+    dot.inputs[1].default_value = tuple(KEY)
+    return nb.math("ADD", nb.math("MULTIPLY", dot.outputs["Value"], 0.5), 0.5)
+
+
+def facet_rand(nb):
+    """Per-facet random colour (face attribute `fr`, see env_geom.facet_attributes)."""
+    a = nb.n("ShaderNodeAttribute", attribute_type="GEOMETRY", attribute_name="fr")
+    sep = nb.n("ShaderNodeSeparateColor")
+    nb.link(a.outputs["Color"], sep.inputs[0])
+    return sep.outputs[0], sep.outputs[1], sep.outputs[2]
+
+
+def facet_jitter(nb, col, r, g, amount=0.12, hue=0.07):
+    """Slight value and hue shift per facet."""
+    v = nb.math("ADD", 1.0 - amount, nb.math("MULTIPLY", r, 2.0 * amount))
+    col = nb.scale(col, v)
+    warm = nb.mix(g, (1.0 - hue, 1.0, 1.0 + hue), (1.0 + hue, 1.0, 1.0 - hue * 1.3))
+    m = nb.n("ShaderNodeVectorMath", operation="MULTIPLY")
+    nb.link(col, m.inputs[0])
+    nb.link(warm, m.inputs[1])
+    return m.outputs[0]
 
 
 ORE_POINTS = []      # Blender positions of the two zone faces: ore-rich rock around them
 
 
-def _ore_mask(nb, co, radius=75.0):
+def _ore_mask(nb, co, radius=80.0):
     m = None
     for p in ORE_POINTS:
         vd = nb.n("ShaderNodeVectorMath", operation="DISTANCE")
@@ -145,103 +157,145 @@ def _ore_mask(nb, co, radius=75.0):
     return m
 
 
-def rock_shader(mat, base_lo, base_hi, vein=True, facet=0.6, tint=(1, 1, 1, 1), vein_amt=1.0):
+def _noise(nb, co, scale, w=0.0, detail=0.0):
+    nz = nb.n("ShaderNodeTexNoise", noise_dimensions="4D", in_Scale=scale, in_Detail=detail,
+              in_Roughness=0.5, in_W=w)
+    nb.link(co, nz.inputs["Vector"])
+    return nz.outputs["Fac"]
+
+
+def vein_bands(nb, co, amount=1.0):
+    """Copper veins: continuous diagonal bands (rising to the east) that run across many
+    facets. Each family is a set of parallel planes warped by a smooth noise; a band is
+    present only on stretches of 60-200 m and tapers at both ends; its width swells
+    (0.5-3 m); thin broken streaks run beside it. Returns (core, rim) masks."""
+    ore = _ore_mask(nb, co) if ORE_POINTS else None
+    cores, rims = [], []
+    for ang, period, w0, wv, thr, wseed, tilt in ((28.0, 92.0, 0.5, 2.4, 0.53, 1.3, 0.30),
+                                                  (-14.0, 150.0, 0.4, 1.8, 0.58, 4.1, -0.22),
+                                                  (58.0, 210.0, 0.4, 1.4, 0.60, 7.7, 0.15)):
+        a = math.radians(ang)
+        n = Vector((-math.sin(a), tilt, math.cos(a))).normalized()
+        dot = nb.n("ShaderNodeVectorMath", operation="DOT_PRODUCT")
+        nb.link(co, dot.inputs[0])
+        dot.inputs[1].default_value = tuple(n)
+        warp = nb.math("MULTIPLY", nb.math("SUBTRACT", _noise(nb, co, 0.0055, wseed), 0.5), 85.0)
+        wob = nb.math("MULTIPLY", nb.math("SUBTRACT", _noise(nb, co, 0.045, wseed + 3.0), 0.5), 3.0)
+        s_ = nb.math("ADD", nb.math("ADD", dot.outputs["Value"], warp), wob)
+        f = nb.math("FRACT", nb.math("DIVIDE", s_, period))
+        d = nb.math("MULTIPLY", nb.math("ABSOLUTE", nb.math("SUBTRACT", f, 0.5)), period)
+        pres = _noise(nb, co, 0.010, wseed + 5.0, 1.0)
+        t = thr / max(amount, 1e-3) if amount < 1.0 else thr
+        if ore is not None:
+            pres = nb.math("ADD", pres, nb.math("MULTIPLY", ore, 0.5))
+        taper = nb.math("DIVIDE", nb.math("SUBTRACT", pres, t), 0.07, clamp=True)
+        width = nb.math("ADD", w0, nb.math("MULTIPLY", _noise(nb, co, 0.025, wseed + 2.0), wv))
+        if ore is not None:
+            width = nb.math("MULTIPLY", width, nb.math("ADD", 1.0, nb.math("MULTIPLY", ore, 0.8)))
+        width = nb.math("MULTIPLY", width, taper)
+        core = nb.math("LESS_THAN", d, width)
+        # thin broken streaks beside the band
+        zone = nb.math("LESS_THAN", d, nb.math("ADD", nb.math("MULTIPLY", width, 2.4), 1.2))
+        sub = nb.math("LESS_THAN", nb.math("ABSOLUTE", nb.math("SUBTRACT", nb.math("FRACT", nb.math("DIVIDE", s_, 2.9)), 0.5)), 0.11)
+        dash = nb.math("GREATER_THAN", _noise(nb, co, 0.06, wseed + 8.0), 0.60)
+        sat = nb.math("MULTIPLY", nb.math("MULTIPLY", zone, sub), nb.math("MULTIPLY", dash, nb.math("GREATER_THAN", taper, 0.3)))
+        core = nb.math("MAXIMUM", core, sat)
+        rim = nb.math("LESS_THAN", d, nb.math("MULTIPLY", nb.math("ADD", width, 0.7), nb.math("GREATER_THAN", taper, 0.0)))
+        cores.append(core)
+        rims.append(rim)
+    core = cores[0]
+    rim = rims[0]
+    for c, r in zip(cores[1:], rims[1:]):
+        core = nb.math("MAXIMUM", core, c)
+        rim = nb.math("MAXIMUM", rim, r)
+    return core, rim
+
+
+ROCK_STOPS = [(0.30, "#0e0d0d"), (0.50, "#141312"), (0.60, "#1b1919"), (0.68, "#232120"), (0.75, "#2c2928"),
+              (0.82, "#393433"), (0.88, "#4a4441"), (0.95, "#625a55")]
+VEIN_STOPS = [(0.30, "#2a1a12"), (0.55, "#47281a"), (0.70, "#6e3d22"), (0.82, "#96582f"), (0.92, "#b8743f")]
+
+
+def rock_shader(mat, stops=ROCK_STOPS, tint=(1.0, 1.0, 1.0), vein_amt=1.0, albedo="#3b3836"):
+    """Faceted rock: painted key value per facet (orientation), slight per-facet hue
+    shift, darkened in crevices (local AO), copper vein bands that take the facet value."""
     nb = NB(mat)
     co = _coords(nb)
-    normal, vor = facet_normal(nb, co, 0.085, facet, 0.24, facet * 0.35)
-    cell = nb.n("ShaderNodeSeparateColor")
-    nb.link(vor.outputs["Color"], cell.inputs[0])
-    fine = nb.n("ShaderNodeTexVoronoi", feature="F1", in_Scale=0.34)
-    nb.link(co, fine.inputs["Vector"])
-    fc = nb.n("ShaderNodeSeparateColor")
-    nb.link(fine.outputs["Color"], fc.inputs[0])
-    tone = nb.math("ADD", nb.math("MULTIPLY", cell.outputs[0], 0.8), nb.math("MULTIPLY", fc.outputs[1], 0.2))
-    col = nb.ramp(tone, [(0.0, base_lo), (1.0, base_hi)])
-    ore = _ore_mask(nb, co) if ORE_POINTS else None
-    if vein:
-        # copper veins: isolines of two smooth noises, only inside vein-rich zones,
-        # broken into chips
-        vmask = None
-        for sc_, off_ in ((0.0065, 0.0), (0.0048, 3.7)):
-            nz = nb.n("ShaderNodeTexNoise", noise_dimensions="4D", in_Scale=sc_, in_Detail=1.5,
-                      in_Roughness=0.4, in_W=off_)
-            nb.link(co, nz.inputs["Vector"])
-            thr = 0.012 * vein_amt
-            if ore is not None:
-                thr = nb.math("MULTIPLY", nb.math("ADD", 1.0, nb.math("MULTIPLY", ore, 2.6)), thr)
-            iso = nb.math("LESS_THAN", nb.math("ABSOLUTE", nb.math("SUBTRACT", nz.outputs["Fac"], 0.5)), thr)
-            vmask = iso if vmask is None else nb.math("MAXIMUM", vmask, iso)
-        zone = nb.n("ShaderNodeTexNoise", in_Scale=0.0035, in_Detail=1.0)
-        nb.link(co, zone.inputs["Vector"])
-        zm = nb.math("GREATER_THAN", zone.outputs["Fac"], 0.55)
-        if ore is not None:
-            zm = nb.math("MAXIMUM", zm, nb.math("GREATER_THAN", ore, 0.05))
-        vmask = nb.math("MULTIPLY", vmask, zm)
-        vmask = nb.math("MULTIPLY", vmask, nb.math("GREATER_THAN", fc.outputs[2], 0.45))
-        vcol = nb.ramp(fc.outputs[0], [(0.0, srgb("#5e2e16")), (0.5, srgb("#94501f")), (1.0, srgb("#c8783a"))])
-        col = nb.mix(vmask, col, vcol)
-    ln = nb.n("ShaderNodeTexNoise", in_Scale=0.006, in_Detail=1.0)
-    nb.link(co, ln.inputs["Vector"])
-    f = nb.math("ADD", 0.80, nb.math("MULTIPLY", ln.outputs["Fac"], 0.40))
-    col = _mul_scalar(nb, col, f)
+    t = key_t(nb)
+    r, g, b = facet_rand(nb)
+    col = nb.ramp(t, [(p, srgb(h)) for p, h in stops])
+    col = facet_jitter(nb, col, r, g)
     col = nb.mix(1.0, col, tint, blend="MULTIPLY")
-    nb.out_diffuse(col, normal=normal)
-
-
-def _mul_scalar(nb, col, f):
-    cm = nb.n("ShaderNodeMix", data_type="RGBA", blend_type="MULTIPLY")
-    cm.inputs[0].default_value = 1.0
-    nb.link(col, cm.inputs[6])
-    comb = nb.n("ShaderNodeCombineColor")
-    for i in range(3):
-        nb.link(f, comb.inputs[i])
-    nb.link(comb.outputs[0], cm.inputs[7])
-    return cm.outputs[2]
+    ao = nb.n("ShaderNodeAmbientOcclusion", samples=8, only_local=True, in_Distance=7.0)
+    aof = nb.math("ADD", 0.30, nb.math("MULTIPLY", nb.math("POWER", ao.outputs["AO"], 1.6), 0.70))
+    alb = facet_jitter(nb, srgb(albedo)[:3], r, g)
+    if vein_amt > 0:
+        core, rim = vein_bands(nb, co, vein_amt)
+        vt = nb.math("ADD", t, nb.math("MULTIPLY", nb.math("SUBTRACT", b, 0.5), 0.10))
+        vcol = nb.ramp(vt, [(p, srgb(h)) for p, h in VEIN_STOPS])
+        col = nb.mix(nb.math("MULTIPLY", nb.math("SUBTRACT", rim, core), 0.40, clamp=True), col, srgb("#100c0b"))
+        vcol = nb.scale(vcol, nb.math("ADD", 0.78, nb.math("MULTIPLY", _noise(nb, co, 0.12, 3.3), 0.44)))
+        col = nb.mix(core, col, vcol)
+        alb = nb.mix(core, alb, srgb("#b0602e"))
+    # crevices (point attribute `crev` of the massif front) sink into darkness
+    cv = nb.n("ShaderNodeAttribute", attribute_type="GEOMETRY", attribute_name="crev")
+    aof = nb.math("MULTIPLY", aof, nb.math("SUBTRACT", 1.0, nb.math("MULTIPLY", nb.math("POWER", cv.outputs["Fac"], 0.7), 0.72)))
+    # large painted masses: some regions of the massif a little lighter and browner,
+    # others darker and cooler (~250 m)
+    lv = _noise(nb, co, 0.004, 6.6, 1.0)
+    aof = nb.math("MULTIPLY", aof, nb.math("ADD", 0.80, nb.math("MULTIPLY", lv, 0.40)))
+    col = nb.mix(nb.math("MULTIPLY", lv, 0.6), col, nb.mix(1.0, col, (1.10, 0.98, 0.88), blend="MULTIPLY"))
+    # the rock right under the surface is weathered darker, so the pit walls and the top
+    # band sink under the dark ground instead of standing up from it
+    sep = nb.n("ShaderNodeSeparateXYZ")
+    nb.link(co, sep.inputs[0])
+    top = nb.math("DIVIDE", nb.math("ADD", sep.outputs["Z"], 75.0), 75.0, clamp=True)
+    aof = nb.math("MULTIPLY", aof, nb.math("SUBTRACT", 1.0, nb.math("MULTIPLY", top, 0.38)))
+    col = nb.scale(col, aof)
+    alb = nb.scale(alb, aof)
+    nb.out(alb, col)
 
 
 def wall_shader(mat):
-    """Back walls of workings: lighter faceted rock with bolting mesh up to wall height."""
+    """Walls of the workings: lighter beige-grey rock in small flat facets (the render
+    skin), lit by the lamps; bolting mesh up to wall height, copper staining along the
+    vein bands."""
     nb = NB(mat)
     co = _coords(nb)
     uv = nb.n("ShaderNodeUVMap", uv_map="UVMap")
     sep = nb.n("ShaderNodeSeparateXYZ")
     nb.link(uv.outputs[0], sep.inputs[0])
     u, v = sep.outputs[0], sep.outputs[1]
-    chips = nb.n("ShaderNodeTexVoronoi", feature="F1", in_Scale=0.42)
-    nb.link(co, chips.inputs["Vector"])
-    edges = nb.n("ShaderNodeTexVoronoi", feature="DISTANCE_TO_EDGE", in_Scale=0.42)
-    nb.link(co, edges.inputs["Vector"])
-    sc = nb.n("ShaderNodeSeparateColor")
-    nb.link(chips.outputs["Color"], sc.inputs[0])
-    col = nb.ramp(sc.outputs[0], [(0.0, srgb("#5a564e")), (0.5, srgb("#716b61")), (1.0, srgb("#877f72"))])
-    crack = nb.math("GREATER_THAN", edges.outputs["Distance"], 0.03)
-    col = nb.mix(nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0, crack), 0.3), col, srgb("#26241f"))
-    # copper staining on a few chips
-    stain = nb.math("GREATER_THAN", sc.outputs[2], 0.965)
-    col = nb.mix(nb.math("MULTIPLY", stain, 0.4), col, srgb("#7a4528"))
-    # bolting mesh: diamond lattice in (u, v) metres
+    t = key_t(nb)
+    r, g, b = facet_rand(nb)
+    alb = nb.ramp(b, [(0.0, srgb("#6e665b")), (0.5, srgb("#7e7568")), (1.0, srgb("#8f8576"))])
+    alb = facet_jitter(nb, alb, r, g, amount=0.16, hue=0.05)
+    # facets turned toward the key are lighter, turned away darker (painted, +-22 %)
+    k = nb.math("ADD", 1.0, nb.math("MULTIPLY", nb.math("SUBTRACT", t, 0.72), 1.6))
+    alb = nb.scale(alb, nb.math("MINIMUM", nb.math("MAXIMUM", k, 0.78), 1.25))
+    core, rim = vein_bands(nb, co, 0.8)
+    alb = nb.mix(nb.math("MULTIPLY", core, 0.75), alb, srgb("#8c4a26"))
+    # bolting mesh: diamond lattice in (u, v) metres, in panels, up to 11 m
     p = 1.05
-    a = nb.math("FRACT", nb.math("DIVIDE", nb.math("ADD", u, v), p))
-    b = nb.math("FRACT", nb.math("DIVIDE", nb.math("SUBTRACT", u, v), p))
-    la = nb.math("LESS_THAN", nb.math("ABSOLUTE", nb.math("SUBTRACT", a, 0.5)), 0.05)
-    lb = nb.math("LESS_THAN", nb.math("ABSOLUTE", nb.math("SUBTRACT", b, 0.5)), 0.05)
+    a_ = nb.math("FRACT", nb.math("DIVIDE", nb.math("ADD", u, v), p))
+    b_ = nb.math("FRACT", nb.math("DIVIDE", nb.math("SUBTRACT", u, v), p))
+    la = nb.math("LESS_THAN", nb.math("ABSOLUTE", nb.math("SUBTRACT", a_, 0.5)), 0.05)
+    lb = nb.math("LESS_THAN", nb.math("ABSOLUTE", nb.math("SUBTRACT", b_, 0.5)), 0.05)
     lat = nb.math("MAXIMUM", la, lb)
     band = nb.math("MULTIPLY", nb.math("GREATER_THAN", v, 0.9), nb.math("LESS_THAN", v, 11.2))
     panel = nb.math("GREATER_THAN", nb.math("FRACT", nb.math("DIVIDE", u, 23.0)), 0.18)
     mesh = nb.math("MULTIPLY", nb.math("MULTIPLY", lat, band), panel)
-    col = nb.mix(nb.math("MULTIPLY", mesh, 0.8), col, srgb("#2a2c2e"))
-    # bolt plates
+    alb = nb.mix(nb.math("MULTIPLY", mesh, 0.55), alb, srgb("#2a2c2e"))
     bu = nb.math("LESS_THAN", nb.math("ABSOLUTE", nb.math("SUBTRACT", nb.math("FRACT", nb.math("DIVIDE", u, 2.1)), 0.5)), 0.07)
     bv = nb.math("LESS_THAN", nb.math("ABSOLUTE", nb.math("SUBTRACT", nb.math("FRACT", nb.math("DIVIDE", v, 1.9)), 0.5)), 0.08)
-    bolt = nb.math("MULTIPLY", nb.math("MULTIPLY", bu, bv), band)
-    col = nb.mix(bolt, col, srgb("#8d8f8c"))
-    # above the mesh band: the tall gallery wall, light grey-beige faceted rock
-    upper = nb.ramp(sc.outputs[1], [(0.0, srgb("#6a6257")), (0.5, srgb("#857b6d")), (1.0, srgb("#9c9180"))])
-    upper = nb.mix(nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0, crack), 0.28), upper, srgb("#3a352f"))
-    upper = nb.mix(nb.math("MULTIPLY", stain, 0.35), upper, srgb("#8a4a26"))
-    above = nb.math("GREATER_THAN", v, 11.6)
-    col = nb.mix(above, col, upper)
-    nb.out_diffuse(col, normal=facet_normal(nb, co, 0.3, 0.32)[0])
+    alb = nb.mix(nb.math("MULTIPLY", nb.math("MULTIPLY", bu, bv), band), alb, srgb("#8d8f8c"))
+    # painted ambient: a dim version of the albedo by facet orientation (lamps do the rest)
+    amb = nb.ramp(t, [(0.30, (0.10,) * 3 + (1.0,)), (0.62, (0.17,) * 3 + (1.0,)), (0.75, (0.24,) * 3 + (1.0,)),
+                      (0.90, (0.32,) * 3 + (1.0,))])
+    em = nb.mix(1.0, alb, amb, blend="MULTIPLY")
+    ao = nb.n("ShaderNodeAmbientOcclusion", samples=8, only_local=True, in_Distance=3.0)
+    aof = nb.math("ADD", 0.55, nb.math("MULTIPLY", ao.outputs["AO"], 0.45))
+    nb.out(nb.scale(alb, aof), nb.scale(em, aof))
 
 
 def floor_shader(mat):
@@ -256,52 +310,55 @@ def floor_shader(mat):
     ed = nb.n("ShaderNodeTexVoronoi", feature="DISTANCE_TO_EDGE", in_Scale=2.2)
     nb.link(co, ed.inputs["Vector"])
     col = nb.mix(nb.math("MULTIPLY", nb.math("LESS_THAN", ed.outputs["Distance"], 0.05), 0.35), col, srgb("#4d463e"))
-    ln = nb.n("ShaderNodeTexNoise", in_Scale=0.05, in_Detail=3.0)
-    nb.link(co, ln.inputs["Vector"])
-    f = nb.math("ADD", 0.80, nb.math("MULTIPLY", ln.outputs["Fac"], 0.40))
-    col = _mul_scalar(nb, col, f)
-    nb.out_diffuse(col)
+    ln = _noise(nb, co, 0.05, 0.0, 3.0)
+    col = nb.scale(col, nb.math("ADD", 0.80, nb.math("MULTIPLY", ln, 0.40)))
+    nb.out(col, nb.scale(col, 0.30))
 
 
 def ground_shader(mat):
+    """The surface: dark, quiet ground (no patches), a hint of large-scale variation."""
     nb = NB(mat)
     co = _coords(nb)
-    peb = nb.n("ShaderNodeTexVoronoi", feature="F1", in_Scale=0.9)
-    nb.link(co, peb.inputs["Vector"])
-    sc = nb.n("ShaderNodeSeparateColor")
-    nb.link(peb.outputs["Color"], sc.inputs[0])
-    col = nb.ramp(sc.outputs[0], [(0.0, srgb("#24221f")), (0.6, srgb("#2c2925")), (1.0, srgb("#36322c"))])
-    ln = nb.n("ShaderNodeTexNoise", in_Scale=0.02, in_Detail=4.0)
-    nb.link(co, ln.inputs["Vector"])
-    patch = nb.math("GREATER_THAN", ln.outputs["Fac"], 0.58)
-    col = nb.mix(nb.math("MULTIPLY", patch, 0.5), col, srgb("#2e2b27"))
-    f = nb.math("ADD", 0.82, nb.math("MULTIPLY", ln.outputs["Fac"], 0.36))
-    col = _mul_scalar(nb, col, f)
-    nb.out_diffuse(col)
+    t = key_t(nb)
+    ln = _noise(nb, co, 0.004, 2.0, 1.0)
+    col = nb.ramp(ln, [(0.3, srgb("#24221f")), (0.7, srgb("#2c2925"))])
+    lit = nb.math("ADD", 0.86, nb.math("MULTIPLY", nb.math("SUBTRACT", t, 0.905), 2.8))
+    lit = nb.math("MINIMUM", nb.math("MAXIMUM", lit, 0.72), 0.96)
+    em = nb.scale(col, lit)
+    nb.out(nb.scale(col, 1.4), em)
+
+
+def _flat_shader(mat, hexcol, emission=None, strength=1.0):
+    nb = NB(mat)
+    t = key_t(nb)
+    base = srgb(hexcol)
+    amb = nb.ramp(t, [(0.25, (0.16,) * 3 + (1.0,)), (0.60, (0.30,) * 3 + (1.0,)), (0.92, (0.62,) * 3 + (1.0,))])
+    em = nb.mix(1.0, base, amb, blend="MULTIPLY")
+    if emission:
+        glow = nb.scale(srgb(emission)[:3], strength)
+        add = nb.n("ShaderNodeVectorMath", operation="ADD")
+        nb.link(em, add.inputs[0])
+        nb.link(glow, add.inputs[1])
+        em = add.outputs[0]
+    nb.out(base, em)
 
 
 def flat_material(name, hexcol, emission=None, strength=1.0):
     mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
-    nb = NB(mat)
-    rgb = nb.n("ShaderNodeRGB")
-    rgb.outputs[0].default_value = srgb(hexcol)
-    if emission:
-        em = nb.n("ShaderNodeRGB")
-        em.outputs[0].default_value = srgb(emission)
-        nb.out_diffuse(rgb.outputs[0], em.outputs[0], strength)
-    else:
-        nb.out_diffuse(rgb.outputs[0])
+    _flat_shader(mat, hexcol, emission, strength)
     return mat
 
 
 def emissive_material(name, hexcol, strength):
     mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
-    nb = NB(mat)
-    em = nb.n("ShaderNodeEmission")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    em = nt.nodes.new("ShaderNodeEmission")
     em.inputs["Color"].default_value = srgb(hexcol)
     em.inputs["Strength"].default_value = strength
-    out = nb.n("ShaderNodeOutputMaterial")
-    nb.link(em.outputs[0], out.inputs["Surface"])
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    nt.links.new(em.outputs[0], out.inputs["Surface"])
     return mat
 
 
@@ -313,11 +370,11 @@ def rock_materials(ore_points=()):
     wall = bpy.data.materials.new("wall")
     wall_shader(wall)
     rock = bpy.data.materials.new("rock")
-    rock_shader(rock, srgb("#252326"), srgb("#5e585d"))
+    rock_shader(rock)
     ground = bpy.data.materials.new("ground")
     ground_shader(ground)
     cut = bpy.data.materials.new("rockcut")
-    rock_shader(cut, srgb("#262427"), srgb("#635c62"), tint=(1.0, 0.97, 0.94, 1.0), vein_amt=0.9)
+    rock_shader(cut, tint=(1.0, 0.97, 0.94), vein_amt=0.9)
     return [floor, wall, rock, ground, cut]
 
 
@@ -335,24 +392,6 @@ def world_and_lights(mine):
     bg.inputs["Strength"].default_value = 1.0
     coll = bpy.data.collections.new("LIGHTS")
     sc.collection.children.link(coll)
-    # cool fill: a soft sun from the upper left, in front
-    sun = bpy.data.lights.new("FILL_SUN", "SUN")
-    sun.energy = FILL_STRENGTH
-    sun.color = FILL_RGB
-    sun.angle = math.radians(12.0)
-    ob = bpy.data.objects.new("FILL_SUN", sun)
-    d = Vector((0.62, 0.40, -0.68)).normalized()      # light travel direction
-    ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
-    coll.objects.link(ob)
-    # second, weaker fill from the right to keep the east faces readable
-    sun2 = bpy.data.lights.new("FILL_SUN2", "SUN")
-    sun2.energy = FILL_STRENGTH * 0.3
-    sun2.color = (0.70, 0.74, 0.86)
-    sun2.angle = math.radians(20.0)
-    ob2 = bpy.data.objects.new("FILL_SUN2", sun2)
-    d2 = Vector((-0.62, 0.48, -0.62)).normalized()
-    ob2.rotation_euler = d2.to_track_quat("-Z", "Y").to_euler()
-    coll.objects.link(ob2)
     for i, (loc, direction, power, kind, radius, color, angle) in enumerate(_lamp_specs):
         if kind == "point":
             li = bpy.data.lights.new(f"LAMP_{i:03d}", "POINT")

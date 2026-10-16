@@ -66,7 +66,7 @@ Scene metres, three.js axes (Y up): `X = x − cx`, `Y = (z − zTop)·k`,
 
 - `cx`, `cy`: centre of the bounding box of all nodes and polyline points in
   plan; `zTop` = 0 (the surface).
-- `k = 1.6` (vertical exaggeration). The value is written into the GLB (section
+- `k = 1.35` (vertical exaggeration; 1.6 until the third art pass). The value is written into the GLB (section
   5) and the browser uses the value it reads there, never its own explode
   slider, while the art is shown.
 - The same transform for workings, people, sensors, routes, hazard overlays and
@@ -95,7 +95,7 @@ the mapped polyline (Y of the floor = mapped z).
 Files: `team/ui/public/models/mine-art/env.glb` plus its textures in the same
 folder (`*.jpg` / `*.png`, referenced by the GLB or by extras).
 
-- Scene extras (`scene.extras` in glTF): `{"mineArt": 1, "k": 1.6, "cx": …,
+- Scene extras (`scene.extras` in glTF): `{"mineArt": 1, "k": 1.35, "cx": …,
   "cy": …, "zTop": 0, "topology": "<sha1 of the sorted list of working ids with
   their from/to nodes and rounded polyline points>", "workings": [ids], "camera":
   "MainView"}`. The browser computes the same signature from the live twins;

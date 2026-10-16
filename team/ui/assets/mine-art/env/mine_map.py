@@ -12,7 +12,7 @@ import json
 import math
 import os
 
-K = 1.6
+K = 1.35
 ZTOP = 0.0
 
 # Main view (SPEC section 4): orthographic, from the south, azimuth toward the east,

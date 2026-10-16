@@ -52,10 +52,17 @@ const FIGURE_M = 1.8;
 export const FIGURE_PX = 28;
 /**
  * Art mode (one orthographic view, at most 4× the overview): people are part of the illustration, drawn once they
- * are this tall; the scene gives its threshold as source.figurePx.
+ * are this tall (the 8 m worker of the art is about 11 px tall at the overview of a 1920×1080 stage, so the figures
+ * show from the first picture); the scene gives its threshold as source.figurePx.
  */
-export const FIGURE_PX_ART = 14;
-/** People of one group (one stretch of a working) stand side by side across the channel, this far apart (scene m). */
+export const FIGURE_PX_ART = 10;
+/**
+ * People drawn close together (one place, or places closer than CLOSE of the figure's height) stand apart: side by
+ * side across the channel and a step along it, diagonally, so that neither a working running across the view nor
+ * one running towards it puts one figure over another. In shares of the figure's height (the rigged figure), or
+ * scene metres for the small miner.
+ */
+const SPREAD = {close: 0.4, across: 0.42, along: 0.5, sideMax: 4.5};
 const SIDE_STEP = 2.4;
 const SIDE_MAX = 3.6;
 /** A marker stands this high over the floor (scene.js), and over the helmet of its figure when one is drawn. */
@@ -373,6 +380,52 @@ export function createActors({low, source, reducedMotion = () => false}) {
     return entry.weight > 0 && entry.weight < 1;
   }
 
+  /**
+   * Where the people of a group are drawn: each at its drawn place (source.position), and people closer together
+   * than SPREAD.close of a figure's height stand apart (SPREAD): name -> {position, at, across}. The published
+   * places are never changed; only the figures of one place are set side by side.
+   */
+  function spreadOf(entry, layout, k) {
+    const out = new Map();
+    const tall = rig ? rig.top : FIGURE_M * FIGURE_SCALE;
+    const close = rig ? tall * SPREAD.close : SIDE_STEP;
+    const items = [];
+    for (const name of entry.members) {
+      const person = source.view.workers[name];
+      const position = person && person.at ? source.position(name) : null;
+      const at = position ? pointOnWorking(layout, position.working, position.offsetM, k) : null;
+      if (at) items.push({name, position, at});
+    }
+    // Clusters of figures that would stand on one another, in the order of their places along the working.
+    items.sort((p, q) => (p.position.working === q.position.working ? p.position.offsetM - q.position.offsetM : (p.name < q.name ? -1 : 1)));
+    const clusters = [];
+    for (const item of items) {
+      const last = clusters[clusters.length - 1];
+      const near = last && last.some((other) => Math.hypot(other.at.point[0] - item.at.point[0], other.at.point[2] - item.at.point[2]) < close
+        && Math.abs(other.at.point[1] - item.at.point[1]) < tall);
+      if (near) last.push(item);
+      else clusters.push([item]);
+    }
+    for (const cluster of clusters) {
+      cluster.forEach((item, index) => {
+        const t = index - (cluster.length - 1) / 2;
+        if (t === 0) {
+          out.set(item.name, {position: item.position, at: item.at, across: 0});
+          return;
+        }
+        const sideMax = rig ? SPREAD.sideMax : SIDE_MAX;
+        const across = Math.max(-sideMax, Math.min(sideMax, t * (rig ? tall * SPREAD.across : SIDE_STEP)));
+        const line = layout.workings.get(item.position.working);
+        // A step along the working, kept on it (the ends of the working bound it); on a ramp the floor rises with it.
+        const along = rig ? t * tall * SPREAD.along * (line && line.total > 0 ? line.lengthM / line.total : 1) : 0;
+        const offsetM = line ? Math.min(Math.max(item.position.offsetM + along, 0), line.lengthM) : item.position.offsetM;
+        const at = along ? pointOnWorking(layout, item.position.working, offsetM, k) || item.at : item.at;
+        out.set(item.name, {position: item.position, at, across});
+      });
+    }
+    return out;
+  }
+
   return {
     group,
 
@@ -549,6 +602,10 @@ export function createActors({low, source, reducedMotion = () => false}) {
     pinFrom(group) {
       return figured.has(group.key) ? (rig ? rig.top : FIGURE_TOP) : 0.3;
     },
+    /** How tall the largest figure was drawn in the last frame (screen pixels; one scale for all in art mode). */
+    get figurePx() {
+      return figureInfo.px || 0;
+    },
     /** True while a walk cycle fades in or out (frames are needed although nobody moves). */
     get animating() {
       return fading;
@@ -582,12 +639,12 @@ export function createActors({low, source, reducedMotion = () => false}) {
       const feet = {};
       const shown = new Set();
       for (const entry of groups) {
-        entry.members.forEach((name, index) => {
+        const spread = spreadOf(entry, layout, k);
+        entry.members.forEach((name) => {
           const person = view.workers[name];
-          const position = person && person.at ? source.position(name) : null;
-          if (!position) return;
-          const at = pointOnWorking(layout, position.working, position.offsetM, k);
-          if (!at) return;
+          const placedAt = spread.get(name);
+          if (!person || !placedAt) return;
+          const {position, at, across} = placedAt;
           const distance = source.viewDistance(at.point);
           const px = tall / Math.max(distance * perPixel, 1e-6);
           largest = Math.max(largest, px);
@@ -596,7 +653,6 @@ export function createActors({low, source, reducedMotion = () => false}) {
           const facing = position.facing || 1;
           const side = [-at.dir[2], at.dir[0]];
           const sideLength = Math.hypot(side[0], side[1]) || 1;
-          const across = Math.max(-SIDE_MAX, Math.min(SIDE_MAX, (index - (entry.members.length - 1) / 2) * SIDE_STEP));
           where.set(at.point[0] + (side[0] / sideLength) * across, at.point[1] + 0.05, at.point[2] + (side[1] / sideLength) * across);
           rotation.setFromAxisAngle(up, Math.atan2(-at.dir[2] * facing, at.dir[0] * facing));
           const look = !person.posQuality || person.posQuality === 'fresh' ? FRESH : DIMMED;

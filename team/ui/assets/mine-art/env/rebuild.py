@@ -5,7 +5,8 @@
 1. dump_topology.py           -> build/topology.json (team.sim.topology.build_attributes)
 2. Blender build_env.py       -> build/env_scene.blend, public/models/mine-art/env.glb,
                                  env_far.jpg, env_near.jpg, previews/*.png
-3. Blender check_unlit.py     -> previews/unlit_*.png (GLB re-imported, emission only, no lights)
+3. Blender check_unlit.py     -> previews/unlit_*.png (GLB re-imported, emission only, no lights):
+                                 overview, zone A/B at 3x, and the 1x overview on a 21:9 and a 4:3 stage
 4. check_env.py               -> prints the contract and budget numbers, exit code 1 on failure
 Blender always runs as a separate background process with --factory-startup.
 """

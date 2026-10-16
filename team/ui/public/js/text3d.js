@@ -108,6 +108,6 @@ export const SCENE = {
   /** The notes of the illustrated mine (art mode with the art's GLB): what is to scale and what is decoration. */
   artVertical: (factor) => `вертикаль ×${num(factor, 1)}; выработки нарисованы шире настоящих`,
   artDecor: 'порода, крепь, лампы, оборудование, самосвал и буровая — оформление',
-  artFigures: (machine, people) => `ПДМ (×${num(machine, 1)}) показывает только работу своего участка; фигуры людей ×${num(people, 1)}`,
+  artFigures: (machine, people) => `машины ×${num(machine, 1)} настоящих, фигуры людей ×${num(people, 1)}; ПДМ показывает только работу своего участка`,
   decorEquipment: (factor, people) => `ПДМ — по данным модели, ×${num(factor, 1)}; фигуры людей ×${num(people, 1)}`,
 };

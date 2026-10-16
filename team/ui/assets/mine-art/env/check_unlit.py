@@ -68,10 +68,21 @@ def main():
         a, b = Vector(mine_map.to_blender(w["polyline"][0], cx, cy)), Vector(mine_map.to_blender(w["polyline"][-1], cx, cy))
         return a.lerp(b, 0.6)
 
-    views = [("unlit_overview.png", 1.0, None), ("unlit_zone_a_3x.png", 3.0, focus("w-07")),
-             ("unlit_zone_b_3x.png", 3.0, focus("w-12"))]
-    for name, zoom, f in views:
-        cam.data.ortho_scale = base_scale / zoom
+    # (file, zoom, focus, resolution): the 16:9 overview, the 3x zone views, and the 1x
+    # overview on a 21:9 stage (MainView's height, wider) and on a 4:3 stage (MainView's
+    # width, taller), both 1920 px wide as on the stand
+    views = [("unlit_overview.png", 1.0, None, (1920, 1080)),
+             ("unlit_zone_a_3x.png", 3.0, focus("w-07"), (1920, 1080)),
+             ("unlit_zone_b_3x.png", 3.0, focus("w-12"), (1920, 1080)),
+             ("unlit_overview_21x9.png", 1.0, None, (1920, 823)),
+             ("unlit_overview_4x3.png", 1.0, None, (1920, 1440))]
+    ymag = base_scale * 9 / 16
+    for name, zoom, f, res in views:
+        sc.render.resolution_x, sc.render.resolution_y = res
+        aspect = res[0] / res[1]
+        width = max(base_scale, 2 * ymag / 2 * aspect) if aspect > 16 / 9 else base_scale
+        cam.data.sensor_fit = "HORIZONTAL"
+        cam.data.ortho_scale = width / zoom
         cam.location = loc0
         if f is not None:
             d = f - loc0
@@ -82,7 +93,7 @@ def main():
             cam.location = loc0 + right * sx + up * sy
         sc.render.filepath = os.path.join(OUT, name)
         bpy.ops.render.render(write_still=True)
-        print("rendered", name)
+        print("rendered", name, "frame width", round(width / zoom, 1), "m")
 
 
 main()

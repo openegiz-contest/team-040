@@ -83,25 +83,31 @@ def build_geometry(mine, mats):
     log("pillar and spurs")
     rocks = [block, G.pillar(mine, back, mats, c_rock), G.spur(mine, "w-07", mats, c_rock),
              G.spur(mine, "w-12", mats, c_rock)]
-    # coarse copies are the depth proxies exported to the GLB; the render uses faceted skins
+    # the faceted rock is real geometry; the GLB gets copies of it as depth proxies, the
+    # render additionally gets a facet skin on the working walls
     c_proxy = coll("PROXY")
-    _, right, up = mine_map.cam_basis()
     from mathutils import Vector
 
     def want(f):
-        """Refine only faces that face the camera inside the overview frame (+margin)."""
+        """Refine only rock faces that face the camera inside the widest stage (+margin)."""
         if f.normal.dot(Vector(back)) < -0.05:
             return False
-        c = f.calc_center_median()
-        sx, sy = mine_map.to_screen(c)
-        return -520 < sx < 500 and -480 < sy < 120
+        sx, sy = mine_map.to_screen(f.calc_center_median())
+        return -680 < sx < 660 and -600 < sy < 220
+    for ob in rocks:
+        if len(ob.data.polygons) < 50:     # an exact boolean that failed returns an empty mesh
+            raise SystemExit(f"[env] {ob.name}: boolean result is empty ({len(ob.data.polygons)} faces)")
     for i, ob in enumerate(rocks):
         px = ob.copy()
         px.data = ob.data.copy()
         px.name = "PROXY_" + ob.name
         c_proxy.objects.link(px)
-        n = G.facet_rock(ob, seed=float(i) * 3.1, want=want)
-        log("faceted", ob.name, n, "faces")
+        G.facet_attributes(ob, seed=i)       # before the skins: their pieces inherit it
+        n = G.wall_skin(ob, seed=i * 17 + 3)
+        G.facet_attributes(ob, seed=i, only=(G.M_WALL,))   # every wall piece on its own
+        n += G.rock_skin(ob, seed=i * 17 + 5, want=want)
+        ob.pass_index = 1
+        log("wall skin", ob.name, n, "vertices moved,", len(ob.data.polygons), "faces")
     c_proxy.hide_render = True
     return slope
 

@@ -88,13 +88,36 @@ async function parseGlb(buffer, url) {
 }
 
 /**
+ * The contour of the depth probe on the rock (scene.js setDepthProbe): where the drawn surface crosses the height
+ * uProbe.x, a line about 1.5 px wide with a soft halo, its width measured in pixels of the screen (derivatives), on
+ * steep surfaces only (a floor at that height does not flood with it). uProbe.y: 0 off, 1 on.
+ */
+const PROBE_UNIFORMS = `uniform vec4 uProbe;
+uniform vec3 uProbeColor;
+uniform vec3 uProbeHalo;
+`;
+const PROBE_FRAGMENT = `
+            if (uProbe.y > 0.0) {
+              float probeDy = fwidth(vArtPos.y);
+              float probeDxz = length(vec2(fwidth(vArtPos.x), fwidth(vArtPos.z)));
+              float probeSteep = smoothstep(0.04, 0.22, probeDy / max(probeDxz, 1e-5));
+              float probePx = abs(vArtPos.y - uProbe.x) / max(probeDy, 1e-5);
+              float probeCore = 1.0 - smoothstep(0.7, 1.7, probePx);
+              float probeHalo = exp(-probePx / 4.0) * 0.55;
+              float probeAmount = uProbe.y * probeSteep;
+              diffuseColor.rgb = mix(diffuseColor.rgb, uProbeHalo, probeHalo * probeAmount);
+              diffuseColor.rgb = mix(diffuseColor.rgb, uProbeColor, probeCore * probeAmount);
+            }`;
+
+/**
  * The environment of the art: its visible meshes (unlit, sRGB, mipmapped), the invisible pick meshes per working,
  * the anchors of decor, and the main view: {az, el} (radians, the scene's azimuth convention of camera.js) and its
  * rectangle as four scene points (frame) with its half sizes.
  * @param {{buffer: ArrayBuffer, url: string, extras: Object}} header readGlbHeader
- * @param {{anisotropy: number}} options
+ * @param {{anisotropy?: number, edgeColor?: string, light?: boolean, probe?: Object}} options  probe: the uniforms
+ *        {uProbe, uProbeColor, uProbeHalo} of the depth probe, shared with the scene
  */
-export async function loadArtEnv(header, {anisotropy = 1, edgeColor = '#000000', light = false} = {}) {
+export async function loadArtEnv(header, {anisotropy = 1, edgeColor = '#000000', light = false, probe = null} = {}) {
   const gltf = await parseGlb(header.buffer, header.url);
   const root = gltf.scene;
   root.updateMatrixWorld(true);
@@ -115,6 +138,8 @@ export async function loadArtEnv(header, {anisotropy = 1, edgeColor = '#000000',
     if (object.isCamera && (object.name === header.extras.camera || object.parent && object.parent.name === header.extras.camera)) mainView = object;
   });
   if (!mainView) root.traverse((object) => { if (!mainView && object.isOrthographicCamera) mainView = object; });
+  // The axes of MainView's screen (its right and up, scene units): an atlas's blocks are rectangles in metres of it.
+  const screenAxes = {uScreenRight: {value: new THREE.Vector3(1, 0, 0)}, uScreenUp: {value: new THREE.Vector3(0, 1, 0)}};
   for (const mesh of meshes) {
     const node = mesh.userData && mesh.userData.pick ? mesh : (mesh.parent && mesh.parent.userData && mesh.parent.userData.pick ? mesh.parent : null);
     const geometry = mesh.geometry.clone();
@@ -137,18 +162,49 @@ export async function loadArtEnv(header, {anisotropy = 1, edgeColor = '#000000',
         material.map.needsUpdate = true;
       }
       material.toneMapped = false;
-      // Beyond the window of its texture (a stage wider than the frame, a pan to the edge) the rock fades into the
-      // background instead of smearing the clamped edge texels.
+      // Beyond what its texture covers (a stage wider than the frame, a pan to the edge) the rock fades into the
+      // background instead of smearing the clamped edge texels. A window texture (extras.windowScreenM) covers its
+      // UV square: the fade follows the UV. An atlas (extras.atlas: blocks of the picture packed into one texture,
+      // their screen rectangles in metres of MainView) covers the union of its blocks: the fade follows the position
+      // on the screen of MainView, never the borders of the texture (those lie inside the picture).
+      const blocks = material.userData && Array.isArray(material.userData.atlas)
+        ? material.userData.atlas.filter((block) => Array.isArray(block.screenM) && block.screenM.length === 4 && block.screenM.every(Number.isFinite))
+        : null;
+      const atlas = blocks && blocks.length > 0;
+      const fade = atlas ? `
+            vec2 atlasAt = vec2(dot(vArtPos, uScreenRight), dot(vArtPos, uScreenUp));
+            float atlasIn = 0.0;
+            for (int i = 0; i < ${blocks.length}; i++) {
+              vec2 atlasD = min(atlasAt - uAtlas[i].xy, uAtlas[i].xy + uAtlas[i].zw - atlasAt);
+              atlasIn = max(atlasIn, smoothstep(-0.25, 2.5, min(atlasD.x, atlasD.y)));
+            }
+            diffuseColor.rgb = mix(uEdgeColor, diffuseColor.rgb, atlasIn);` : `
+            vec2 edgeUv = min(vMapUv, 1.0 - vMapUv);
+            float edgeFade = smoothstep(-0.002, 0.012, min(edgeUv.x, edgeUv.y));
+            diffuseColor.rgb = mix(uEdgeColor, diffuseColor.rgb, edgeFade);`;
       if (material.map) {
         material.onBeforeCompile = (shader) => {
           shader.uniforms.uEdgeColor = {value: new THREE.Color(edgeColor)};
-          shader.fragmentShader = `uniform vec3 uEdgeColor;
-${shader.fragmentShader}`.replace('#include <map_fragment>', `#include <map_fragment>
-            vec2 edgeUv = min(vMapUv, 1.0 - vMapUv);
-            float edgeFade = smoothstep(-0.002, 0.012, min(edgeUv.x, edgeUv.y));
-            diffuseColor.rgb = mix(uEdgeColor, diffuseColor.rgb, edgeFade);`);
+          if (probe) Object.assign(shader.uniforms, probe);
+          if (atlas) {
+            Object.assign(shader.uniforms, screenAxes);
+            shader.uniforms.uAtlas = {value: blocks.map((block) => new THREE.Vector4(...block.screenM))};
+          }
+          if (probe || atlas) {
+            shader.vertexShader = `varying vec3 vArtPos;
+${shader.vertexShader}`.replace('#include <begin_vertex>', `#include <begin_vertex>
+            vArtPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+          }
+          const head = `uniform vec3 uEdgeColor;
+${probe || atlas ? 'varying vec3 vArtPos;' : ''}
+${probe ? PROBE_UNIFORMS : ''}${atlas ? `uniform vec3 uScreenRight;
+uniform vec3 uScreenUp;
+uniform vec4 uAtlas[${blocks.length}];
+` : ''}`;
+          shader.fragmentShader = `${head}${shader.fragmentShader}`
+            .replace('#include <map_fragment>', `#include <map_fragment>${fade}${probe ? PROBE_FRAGMENT : ''}`);
         };
-        material.customProgramCacheKey = () => 'art-edge-fade';
+        material.customProgramCacheKey = () => `art${atlas ? `-atlas${blocks.length}` : '-edge-fade'}${probe ? '-probe' : ''}`;
       }
     }
     group.add(copy);
@@ -160,6 +216,8 @@ ${shader.fragmentShader}`.replace('#include <map_fragment>', `#include <map_frag
   const back = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion);
   const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
   const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
+  screenAxes.uScreenRight.value.copy(right);
+  screenAxes.uScreenUp.value.copy(up);
   const halfW = mainView.right !== undefined ? (mainView.right - mainView.left) / 2 : 462;
   const halfH = mainView.top !== undefined ? (mainView.top - mainView.bottom) / 2 : 259.875;
   // The frame at the depth of the scene's origin (any depth gives the same rectangle on the screen).

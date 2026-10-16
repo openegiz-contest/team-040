@@ -22,10 +22,22 @@ OUT_DIR = os.path.join(ROOT, "team", "ui", "public", "models", "mine-art")
 # Overview frame in screen metres (orthographic, relative to the world origin).
 FRAME_W = 924.0
 ASPECT = 16.0 / 9.0
-# Projected texture windows: (centre sx, centre sy, side) in screen metres, 2048 px square.
+# Projected textures, 2048 px square each, windows in screen metres of MainView.
 TEX_SIZE = 2048
-NEAR_WIN = None     # set by frame()
-FAR_WIN = None
+NEAR_WIN = None     # (centre sx, centre sy, side): both zone faces, for the 3x zoom; set by frame()
+# The far texture is an atlas (set by frame()): a main block 980 m x 712 m (rows 0..1487,
+# 0.4785 m/texel) covering every 1x stage from 16:9 to 4:3 (taller stages show more top and
+# bottom), and two side wings 136 m x 540 m (rows 1492..1767 and 1772..2047, stored rotated:
+# screen x along the rows at 0.493 m/texel, screen y along the columns at 0.264 m/texel)
+# that a stage wider than 16:9 (up to 21:9) shows left and right of it.
+FAR_MAIN = None     # (left, bottom, width, height)
+FAR_WINGS = None    # [(left, bottom, width, height) west, east]
+MAIN_W, MAIN_H = 980.0, 712.0
+MAIN_ROWS = 1488
+WING_W, WING_H = 136.0, 540.0
+WING_ROWS = 276
+WING_ROW0 = (1492, 1772)
+WING_SPLIT = 487.0  # |sx - frame centre| where the main block hands over to a wing
 
 
 def log(*a):
@@ -34,7 +46,7 @@ def log(*a):
 
 def frame(mine):
     """Frame centre (sx, sy) from the screen bounds of all workings, plus windows."""
-    global NEAR_WIN, FAR_WIN
+    global NEAR_WIN, FAR_MAIN, FAR_WINGS
     xs, ys = [], []
     for w in mine.workings.values():
         for p in w["pts"]:
@@ -42,9 +54,10 @@ def frame(mine):
             xs.append(sx)
             ys.append(sy)
     cx = (min(xs) + max(xs)) / 2.0
-    # vertical: bottom margin below the lowest face, top margin above the surface
-    bottom = min(ys) - 46.0
-    top = bottom + FRAME_W / ASPECT
+    # vertical: 50 m above the highest working point (the portal B road end) holds the
+    # gantries, lamp rooms and masts; the rest of the 16:9 height goes below the faces
+    top = max(ys) + 50.0
+    bottom = top - FRAME_W / ASPECT
     cy = (bottom + top) / 2.0
     fa = mine_map.to_screen(mine.nodes["face-a"])
     fb = mine_map.to_screen(mine.nodes["face-b"])
@@ -52,7 +65,9 @@ def frame(mine):
     ncx = (fa[0] + fb[0]) / 2.0 + 8.0
     ncy = max(bottom + side / 2.0, (fa[1] + fb[1]) / 2.0)
     NEAR_WIN = (ncx, ncy, side)
-    FAR_WIN = (cx, cy, 980.0)
+    FAR_MAIN = (cx - MAIN_W / 2.0, cy - MAIN_H / 2.0, MAIN_W, MAIN_H)
+    FAR_WINGS = [(cx - 620.0, cy - WING_H / 2.0, WING_W, WING_H),
+                 (cx + 620.0 - WING_W, cy - WING_H / 2.0, WING_W, WING_H)]
     return cx, cy, (min(xs), max(xs), min(ys), max(ys))
 
 

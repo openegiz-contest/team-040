@@ -88,7 +88,7 @@ body[data-panel="shown"] .headline[data-length="long"] { --hl-size: clamp(32px, 
 /* The panel takes over the right of the stage: the headline keeps to the part left free. */
 body[data-panel="shown"] .headline { max-width: min(900px, var(--hl-room, 9999px), calc(100% - var(--cover-left) - var(--cover-right) - 190px)); }
 
-/* ---- the horizon rail: a borehole log at the right edge of the stage ------------------------------ */
+/* ---- the horizon rail: a borehole log at the right edge of the stage, the depth instrument of the shift ---------- */
 
 .hz {
   position: absolute; z-index: 5;
@@ -99,9 +99,11 @@ body[data-panel="shown"] .headline { max-width: min(900px, var(--hl-room, 9999px
   display: flex; flex-direction: column;
   pointer-events: none;
 }
+/* The scrim reaches past the box: the horizons' numbers stand left of the people's lane, over the scene. */
 .hz::before {
-  content: ""; position: absolute; z-index: -1; left: -32px; right: -20px; top: -24px; bottom: -24px;
-  background: linear-gradient(to left, rgba(10, 11, 13, .78) 0, rgba(10, 11, 13, .5) 60%, rgba(10, 11, 13, 0) 100%);
+  content: ""; position: absolute; z-index: -1; left: -84px; right: -20px; top: -24px; bottom: -24px;
+  background: linear-gradient(to left, rgba(10, 11, 13, .8) 0, rgba(10, 11, 13, .56) 66%, rgba(10, 11, 13, 0) 100%);
+  pointer-events: none;
 }
 .hz__head {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
@@ -119,27 +121,40 @@ body[data-panel="shown"] .headline { max-width: min(900px, var(--hl-room, 9999px
 .hz__all:hover { border-color: var(--dust-2); color: var(--dust-1); }
 .hz__all[aria-current="true"] { border-color: var(--accent); color: var(--accent); }
 
-/* The gauge: the axis at 44 px from the right edge, metres to its right, horizons to its left. */
-.hz__gauge { --axis: 44px; position: relative; flex: 1 1 auto; min-height: 120px; margin: var(--sp-5) 0 var(--sp-3); }
+/* The gauge: the axis at --axis from the right edge, metres to its right; to its left the lane of the people (--lane)
+   and the horizons, whose bar runs through the lane to the axis (people on a horizon stand on its line). */
+.hz__gauge {
+  --axis: 44px; --lane: 68px; --pitch: 17px; --dot: 22px;
+  position: relative; flex: 1 1 auto; min-height: 120px; margin: var(--sp-5) 0 var(--sp-3);
+  pointer-events: auto; cursor: crosshair; touch-action: none;
+}
 .hz__axis { position: absolute; right: var(--axis); top: 0; bottom: 0; width: 1px; background: var(--dust-3); transform-origin: top center; }
-.hz__ticks { position: absolute; inset: 0; }
-.hz__tick { position: absolute; left: calc(100% - var(--axis)); width: 5px; height: 1px; background: var(--dust-3); }
-.hz__tick--major { width: 11px; background: var(--dust-2); }
+.hz__ticks { position: absolute; inset: 0; pointer-events: none; }
+.hz__tick { position: absolute; left: calc(100% - var(--axis)); width: 0; height: 1px; }
+/* The lens (view/horizons.js sets --lens 0…1 near the pointer): the tick line grows, its label grows and brightens. */
+.hz__tick-line { position: absolute; left: 0; top: 0; width: 5px; height: 1px; background: var(--dust-3); transform-origin: left center;
+  transform: scaleX(calc(1 + var(--lens, 0) * 1.1)); }
+.hz__tick--major .hz__tick-line { width: 11px; background: var(--dust-2); }
 .hz__tick-label {
   position: absolute; left: 15px; top: -7px;
   color: var(--dust-3); font-family: var(--font-mono); font-size: 10px; line-height: 14px; letter-spacing: .02em; white-space: nowrap;
+  transform-origin: left center;
+  transform: translateX(calc(var(--lens, 0) * 10px)) scale(calc(1 + var(--lens, 0) * .55));
 }
-.hz__levels { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
+.hz__tick[data-near] .hz__tick-line { background: var(--dust-1); }
+.hz__tick[data-near] .hz__tick-label { color: var(--dust-1); }
+
+.hz__levels { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; pointer-events: none; }
 .hz__item { position: absolute; right: calc(var(--axis) - 10px); transform: translateY(-50%); }
 .hz__level {
-  display: grid; grid-template-columns: auto auto 48px; grid-template-areas: "sign elev bar" "name name bar";
+  display: grid; grid-template-columns: auto auto calc(var(--lane) + 18px); grid-template-areas: "sign elev bar" "name name bar";
   align-items: center; column-gap: 8px; row-gap: 0;
   padding: 6px 0 6px 10px;
   border: 0; background: transparent;
   color: var(--dust-2); text-align: right;
   cursor: pointer; pointer-events: auto;
 }
-.hz__elev { grid-area: elev; font-family: var(--font-sans); font-size: 34px; font-weight: 600; line-height: 1; letter-spacing: -.04em;
+.hz__elev { grid-area: elev; font-family: var(--font-sans); font-size: 30px; font-weight: 600; line-height: 1; letter-spacing: -.04em;
   font-variant-numeric: tabular-nums; transition: color 120ms var(--ease); }
 .hz__bar { grid-area: bar; align-self: center; height: 3px; background: var(--dust-3); transform-origin: right center;
   transition: background-color 120ms var(--ease), height 120ms var(--ease); }
@@ -147,23 +162,85 @@ body[data-panel="shown"] .headline { max-width: min(900px, var(--hl-room, 9999px
   text-transform: uppercase; white-space: nowrap; }
 .hz__sign { grid-area: sign; display: inline-flex; }
 .hz__sign .glyph { width: 18px; height: 18px; }
-.hz__level:hover { color: var(--dust-1); }
-.hz__level:hover .hz__bar { background: var(--dust-1); }
+.hz__level:hover, .hz__level:focus-visible { color: var(--dust-1); }
+.hz__level:hover .hz__bar, .hz__level:focus-visible .hz__bar { background: var(--dust-1); }
+.hz__level:focus-visible { outline: var(--ring); outline-offset: 2px; }
 .hz__level[aria-current="true"] { color: var(--dust-1); }
-.hz__level[aria-current="true"] .hz__bar { height: 6px; background: var(--accent); }
+.hz__level[aria-current="true"] .hz__bar { height: 5px; background: var(--accent); }
 .hz__level[aria-current="true"] .hz__name { color: var(--accent); }
 .hz__level[data-hazard="danger"] .hz__sign { color: var(--danger); }
 .hz__level[data-hazard="attention"] .hz__sign { color: var(--attention); }
 .hz__level[data-hazard="unknown"] .hz__sign { color: var(--unknown); }
 .hz__level[data-hazard="danger"] .hz__bar { box-shadow: 0 0 0 1px var(--danger); }
 
-/* While the panel takes over the right of the stage, the rail keeps only its horizons: a slim column of depths. */
+/* The cursor: the horizon in view on the axis (a short accent bar), or a bracket over all of them; it slides on a
+   spring (view/horizons.js). Drawn as a 1 px bar scaled to its height. */
+.hz__cursor {
+  position: absolute; right: calc(var(--axis) - 2px); top: 0; width: 5px; height: 1px;
+  background: var(--accent); transform-origin: top center; pointer-events: none;
+}
+.hz__cursor[data-at="all"] { right: calc(var(--axis) - 1px); width: 3px; opacity: .55; }
+
+/* The people: the marker of the stage, small, at the depth where the stage draws the person; side by side from the axis. */
+.hz__people { position: absolute; inset: 0; pointer-events: none; }
+.hz__dot {
+  position: absolute; right: calc(var(--axis) + 3px + var(--slot, 0) * var(--pitch));
+  width: var(--dot); height: var(--dot); margin-top: calc(var(--dot) / -2);
+  display: grid; place-items: center;
+}
+.hz__dot-pic { display: block; width: var(--dot); height: var(--dot); overflow: visible; }
+.hz__dot .worker .worker__ok { stroke-width: 2.4; }
+.hz__dot .worker[data-location-hazard="unknown"] .worker__danger { display: inline; stroke: var(--unknown); stroke-width: 1.6; stroke-dasharray: 2.4 2; }
+.hz__more {
+  position: absolute; left: 50%; bottom: calc(100% - 3px); transform: translateX(-50%);
+  color: var(--dust-1); font-family: var(--font-mono); font-size: 10px; line-height: 1; white-space: nowrap;
+}
+.hz__more:empty { display: none; }
+.hz__out {
+  position: absolute; left: calc(100% - var(--axis) + 15px); margin-top: 8px;
+  padding: 1px 5px; border: 1px solid var(--accent);
+  color: var(--accent); font-family: var(--font-mono); font-size: 10px; line-height: 14px; letter-spacing: .04em; text-transform: uppercase;
+  white-space: nowrap; pointer-events: none;
+}
+
+/* The probe: a line across the gauge at the depth under the pointer, its readout left of the axis. */
+.hz__probe { position: absolute; left: -24px; right: 0; height: 0; pointer-events: none; }
+.hz__probe-line { position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--accent);
+  box-shadow: 0 0 6px rgba(46, 242, 194, .55); }
+.hz__probe-value {
+  position: absolute; right: calc(var(--axis) + 6px); bottom: 3px;
+  padding: 1px 6px; background: rgba(10, 11, 13, .9);
+  color: var(--accent); font-family: var(--font-mono); font-size: 12px; font-weight: 500; line-height: 16px; letter-spacing: .02em;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* The chip of a hovered (or focused) horizon: its published summary, left of the rail, at its depth. */
+.hz__chip {
+  position: absolute; right: calc(100% + 18px); transform: translateY(-50%);
+  display: grid; gap: 3px; min-width: 190px; padding: 8px 12px 9px;
+  background: rgba(10, 11, 13, .92); border: 1px solid var(--line); border-left: 2px solid var(--accent);
+  color: var(--dust-1); font-size: 13px; line-height: 1.3; pointer-events: none; white-space: nowrap;
+}
+.hz__chip-title { color: var(--dust-2); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: var(--track-caps); text-transform: uppercase; }
+.hz__chip-line { display: flex; align-items: center; gap: 6px; }
+.hz__chip-line--quiet { color: var(--dust-2); }
+.hz__chip-sign { display: inline-flex; width: 14px; }
+.hz__chip-sign:empty::before { content: ""; width: 6px; height: 2px; margin: 0 4px; background: var(--dust-3); }
+.hz__chip-sign .glyph { width: 14px; height: 14px; }
+.hz__chip-line[data-state="danger"] { color: var(--danger-ink); }
+.hz__chip-line[data-state="danger"] .hz__chip-sign { color: var(--danger); }
+.hz__chip-line[data-state="attention"] .hz__chip-sign { color: var(--attention); }
+.hz__chip-line[data-state="unknown"] { font-style: italic; }
+.hz__chip-line[data-state="unknown"] .hz__chip-sign { color: var(--unknown); }
+
+/* While the panel takes over the right of the stage, the rail keeps its horizons and its people: a slim column of depths. */
 body[data-panel="shown"] .hz { width: 112px; }
 body[data-panel="shown"] .hz__title, body[data-panel="shown"] .hz__tick-label, body[data-panel="shown"] .hz__name { display: none; }
 body[data-panel="shown"] .hz__head { justify-content: flex-end; }
-body[data-panel="shown"] .hz__gauge { --axis: 12px; }
-body[data-panel="shown"] .hz__elev { font-size: 26px; }
-body[data-panel="shown"] .hz__level { grid-template-columns: auto auto 28px; grid-template-areas: "sign elev bar"; }
+body[data-panel="shown"] .hz__gauge { --axis: 12px; --lane: 56px; --pitch: 14px; --dot: 18px; }
+body[data-panel="shown"] .hz__elev { font-size: 24px; }
+body[data-panel="shown"] .hz__level { grid-template-columns: auto auto calc(var(--lane) + 12px); grid-template-areas: "sign elev bar"; }
+body[data-panel="shown"] .hz__out { left: auto; right: calc(var(--axis) + 3px); margin-top: -22px; }
 
 /* The object card floats beside the rail, never over it (--hz-w: the room the rail takes at the right edge). */
 .centre { --hz-w: 200px; }
@@ -202,16 +279,24 @@ body[data-panel="shown"] .stage[data-stage-mode="scheme"] > .scheme { right: cal
   .hz { width: 112px; top: calc(var(--notices-h, 0px) + 72px); bottom: 96px; right: calc(var(--cover-right) + 12px); }
   .hz__title { display: none; }
   .hz__head { justify-content: flex-end; }
-  .hz__gauge { --axis: 34px; margin-top: var(--sp-3); }
-  .hz__elev { font-size: 24px; }
+  .hz__gauge { --axis: 34px; --lane: 56px; --pitch: 14px; --dot: 18px; margin-top: var(--sp-3); }
+  .hz__elev { font-size: 22px; }
   .hz__name { display: none; }
   .hz__level { grid-template-areas: "sign elev bar"; }
-  .hz__level { grid-template-columns: auto auto 36px; padding: 4px 0 4px 8px; }
+  .hz__level { grid-template-columns: auto auto calc(var(--lane) + 12px); padding: 4px 0 4px 8px; }
   .hz__tick:not(.hz__tick--major) { display: none; }
+  /* A short stage: the label of the lens grows in place, within the rail. */
+  .hz__tick-label { left: 13px; transform: scale(calc(1 + var(--lens, 0) * .25)); }
+  .hz__chip { min-width: 170px; font-size: 12px; }
   /* The panel takes the right of a small stage: the rail gives way while it is shown. */
   body[data-panel="shown"] .hz { display: none; }
   .centre { --hz-w: 124px; }
   body[data-panel="shown"] .centre { --hz-w: 0px; }
   .stage[data-stage-mode="scheme"] > .scheme { right: calc(var(--cover-right) + 124px); bottom: 56px; }
   body[data-panel="shown"] .stage[data-stage-mode="scheme"] > .scheme { right: var(--cover-right); }
+}
+
+/* Reduced motion: the rail never moves by itself (the cursor jumps, no lens: view/horizons.js); no glow either. */
+@media (prefers-reduced-motion: reduce) {
+  .hz__elev, .hz__bar { transition: none; }
 }

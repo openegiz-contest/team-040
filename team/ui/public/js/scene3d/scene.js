@@ -31,6 +31,12 @@
 // data-framing (how the last zone framing was chosen), data-scope (zones of the hovered option), data-loaders
 // (loaders placed), data-loader-fx-count (fades of their lights), data-choreo and data-choreo-count (the camera
 // moves that followed the situation), data-intro (waiting | running | done | cut), data-compact (a short stage).
+//
+// The depth rail of the stage (view/horizons.js) reads and drives three things here: people() gives the depth of
+// the place where each person is drawn now (the same playback as the figures), announced by onEvent('people') when
+// it changes; setDepthProbe(z) draws a thin glowing guide at a depth across the massif (a contour line on the art's
+// rock, a slice outline over the slabs of variant 3); setLevelHighlight(level) glows the outlines of one horizon's
+// workings. Each is drawn in one frame per call: nothing is drawn while the pointer rests.
 
 import * as THREE from 'three';
 import {showsOldData} from '../link.js';
@@ -66,25 +72,37 @@ export const DEFAULT_VIEW = {az: 30 * DEG, el: 23 * DEG};
 /**
  * Art mode (mine-art SPEC §3–4): the stage seen by one orthographic camera from a fixed direction, pan and zoom only
  * (artcamera.js), the vertical factor fixed by the art. Defaults of the spec until the art's GLB gives its MainView:
- * from the south, azimuth 12°, elevation 28°, k = 1.6.
+ * from the south, azimuth 12°, elevation 28°, k = 1.35 (the vertical factor of SPEC §3; the art's GLB carries its own).
  */
-export const ART_DEFAULT = {az: 12 * DEG, el: 28 * DEG, k: 1.6};
+export const ART_DEFAULT = {az: 12 * DEG, el: 28 * DEG, k: 1.35};
 /** The art of the mine (mine-art SPEC §5–6), next to the other models. */
 const ART_URL = (name) => new URL(`../../models/mine-art/${name}`, import.meta.url).href;
-/** «Показать» a zone or a person in art mode frames it at most this many times the overview. */
+/** «Показать» a zone in art mode frames it at most this many times the overview; a person and a walk at most ART_PERSON_ZOOM. */
 const ART_FRAME_ZOOM = 3;
+const ART_PERSON_ZOOM = 4;
 /** The intro of the art: from about 0.85× to the overview, this long. */
 const ART_INTRO = {from: 0.85, ms: 1100};
 /** The lamps of a zone's loader fade once in this time when the zone's published work state changes. */
 const ART_LAMP_MS = 300;
-/** The art's worker is 5 m tall for a person of about 1.8 m; its machines are 1.5× real (actors README). */
-const ART_FIGURE_FACTOR = 5 / 1.8;
-const ART_MACHINE_FACTOR = 1.5;
+/**
+ * Conventional sizes of the art (the scale note says so): the worker of worker.glb (5 m tall) is drawn ART_FIGURE_SCALE
+ * times larger, 8 m for a person of about 1.8 m; the machines (built 1.5× real, their extras.scaleToReal) are drawn
+ * ART_MACHINE_FACTOR times real, so that they do not look like toys next to the people. Their anchors in env.glb keep
+ * them clear of every walking line at these sizes (tests/test_art_mode.py, ArtSizeTest).
+ */
+const ART_FIGURE_SCALE = 1.6;
+const ART_FIGURE_FACTOR = (5 * ART_FIGURE_SCALE) / 1.8;
+const ART_MACHINE_FACTOR = 2.2;
 /** The walk cycle of the art's worker plays at most this many cycles a second (above it the feet slide a little). */
 const ART_MAX_CYCLES = 2.4;
-/** Art mode: the markers of people at the overview (of the poster size), and their pins over the figures close up. */
+/**
+ * Art mode: the markers of people at the overview (of the poster size), and their pins over the figures: at most
+ * ART_PIN of a poster marker, and never much larger than the figure under it (ART_PIN_PX: a pin over a figure of
+ * about 11 px at the overview is about 12 px, so the pins do not hide the figures).
+ */
 const ART_MARK = 0.62;
 const ART_PIN = 0.4;
+const ART_PIN_PX = {min: 12, perFigurePx: 1.05};
 /** Art mode, a withdrawal: the stretch of the walkers' routes ahead that is framed with them (m), the glide of a re-frame. */
 const ART_WALK_AHEAD_M = 90;
 const ART_FOLLOW_MS = 900;
@@ -266,6 +284,18 @@ export function createScene(host, options) {
   // Art mode, a withdrawal: who walks out of which zone (person -> zone), and the walk the camera follows.
   const walkOrigins = new Map();
   let walkFollow = null;
+  // The depth rail: the drawn depths last announced, the depth probe and the highlighted horizon (setDepthProbe, ...).
+  let peopleKey = null;
+  let depthProbe = null;            // {z, y}: the mine elevation and the scene height of the guide, or null
+  let levelLit = null;              // the local name of the highlighted horizon, or null
+  const probeUniforms = {uProbe: {value: new THREE.Vector4(0, 0, 0, 0)}, uProbeColor: {value: new THREE.Color(TOKEN.verdigrisCore)},
+    uProbeHalo: {value: new THREE.Color(TOKEN.verdigris)}};
+  const probeGroup = new THREE.Group();
+  probeGroup.name = 'depth-probe';
+  probeGroup.visible = false;
+  const highlightGroup = new THREE.Group();
+  highlightGroup.name = 'level-highlight';
+  const highlightLoops = new Map(); // level|mode -> {loops, plans} of this layout
   const artGroup = new THREE.Group();
   artGroup.name = 'art';
   artGroup.visible = false;
@@ -293,6 +323,7 @@ export function createScene(host, options) {
   const ghosts = [];               // routes no longer published, fading out (M7)
   const ghostGroup = new THREE.Group();
   world.add(ghostGroup);
+  world.add(probeGroup, highlightGroup);
   // The camera: what it frames, and when the user last moved it (an incident is framed by itself only after a pause).
   let focusId = null;              // the object the camera was last asked to frame, until the user moves it
   let lastTouch = -Infinity;
@@ -386,6 +417,19 @@ export function createScene(host, options) {
       pin: new THREE.LineBasicMaterial({color: TOKEN.dust2, transparent: true, opacity: 0.75}),
       // The crisp edges of the stone (shapes.edgeLines): the lips of the cuts, the outline of the horizons.
       edge: edgeMaterial(TOKEN.verdigrisCore),
+      // The depth rail: the slice of the depth probe over the slabs (a faint sheet and its glowing rim), and the
+      // glow of a hovered horizon's outlines (the accent-tinted outline of a horizon, variant 3). Never a hazard colour.
+      probeFill: new THREE.MeshBasicMaterial({color: TOKEN.verdigris, transparent: true, opacity: 0.05, depthTest: false, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide}),
+      probeHalo: new THREE.MeshBasicMaterial({color: TOKEN.verdigris, transparent: true, opacity: 0.22, depthTest: false, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide}),
+      probeCore: new THREE.MeshBasicMaterial({color: TOKEN.verdigrisCore, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false,
+        side: THREE.DoubleSide}),
+      // The glow shows through the rock in front (soft, like a light behind the wall); the crisp line only where seen.
+      levelHalo: flat(TOKEN.edgeAccent, 0.2, {blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false}),
+      levelGhost: flat(TOKEN.edgeAccent, 0.4, {blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false}),
+      levelCore: flat(TOKEN.edgeAccent, 1, {depthWrite: false}),
+      levelWash: flat(TOKEN.edgeAccent, 0.1, {blending: THREE.AdditiveBlending, depthWrite: false}),
     };
   }
 
@@ -630,6 +674,8 @@ export function createScene(host, options) {
       orbit.limits.distMax = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ, 400) * 5;
     }
     gizmo.setVertical(k);
+    if (levelLit) buildLevelHighlight();
+    if (depthProbe) placeDepthProbe(depthProbe.z);
   }
 
   // ---- state overlays (per level, local frame) ---------------------------------------------
@@ -1452,13 +1498,14 @@ export function createScene(host, options) {
     }
     // People last: on top of every other sprite.
     const scopeWorkers = new Set(scopeDrawn.workers);
+    const pinScale = Math.min(ART_PIN, Math.max(ART_PIN_PX.min, actors.figurePx * ART_PIN_PX.perFigurePx) / (SPRITE_PX.worker * spriteScale));
     const rank = (group) => ({ok: 0, none: 2}[view.workers[group.front].egress] ?? 1);
     for (const group of [...(artOn ? artGroups() : groups)].sort((a, b) => rank(a) - rank(b))) {
       const at = groupPoint(group);
       if (!at) continue;
       // Art mode: a person drawn as a figure (the worker of the art) is the figure; its marker is a small pin over the
       // helmet. Below the figure's size the markers are smaller than the poster markers of variant 3.
-      const k0 = artOn ? (actors.figured(group) ? ART_PIN : ART_MARK) : 1;
+      const k0 = artOn ? (actors.figured(group) ? pinScale : ART_MARK) : 1;
       // The intro drops the marker onto its published place from above (only its height moves).
       const p = introPins < 1 ? [at[0], at[1] + (1 - introPins) * INTRO_DROP, at[2]] : at;
       const front = view.workers[group.front];
@@ -2004,6 +2051,8 @@ export function createScene(host, options) {
     if (loaders.loaded) loaders.setDetail(loaderDetail());
     // The figures of people close up first: a marker over a figure stands over its helmet.
     if (actors.drawFigures(now)) spritesDirty = true;
+    // The depth rail follows the people where they are drawn (the same playback): told when a drawn depth changed.
+    announcePeople();
     // A walk cycle fading in or out after a person started or stopped (actors.js, FADE_MS).
     const cycles = actors.animating;
     if (spritesDirty) buildSprites();
@@ -2491,13 +2540,13 @@ export function createScene(host, options) {
     return fitted;
   }
 
-  /** Art mode: the view of `points` in the free stage, at most ART_FRAME_ZOOM times the overview, centred when it fits. */
-  function artFit(points, rects) {
-    const minDist = orbit.limits.distMax / ART_FRAME_ZOOM;
+  /** Art mode: the view of `points` in the free stage, at most `zoom` times the overview, centred when it fits. */
+  function artFit(points, rects, zoom = ART_FRAME_ZOOM) {
+    const minDist = orbit.limits.distMax / zoom;
     let fitted = frameView(points, orbit.state.az, orbit.state.el, focusPad(rects), rects);
     {
       // The middle of what is framed in the middle of the free stage (below the headline, beside the panel and the
-      // rail), at the distance found, never closer than ART_FRAME_ZOOM.
+      // rail), at the distance found, never closer than `zoom`.
       const {right, up, forward} = orbit.axes;
       const vectors = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
       const range = (axis) => [Math.min(...vectors.map((v) => v.dot(axis))), Math.max(...vectors.map((v) => v.dot(axis)))];
@@ -2540,7 +2589,7 @@ export function createScene(host, options) {
       }
     }
     if (points.length === 0) return null;
-    const fitted = artFit(points, rects);
+    const fitted = artFit(points, rects, ART_PERSON_ZOOM);
     root.setAttribute('data-framing', `walk:${zoneName} art:${Math.round((orbit.limits.distMax / fitted.dist) * 100) / 100}`);
     return fitted;
   }
@@ -2645,7 +2694,7 @@ export function createScene(host, options) {
     if (points.length === 0) return null;
     // One mark (a person, a sensor, an exit): in the middle of the free stage at the smallest distance of its kind; in
     // art mode with a small surrounding, at ART_FRAME_ZOOM times the overview.
-    if (points.length === 1) return centreIn(points[0], art ? orbit.limits.distMax / ART_FRAME_ZOOM : minDist, rects);
+    if (points.length === 1) return centreIn(points[0], art ? orbit.limits.distMax / (thing.kind === 'worker' ? ART_PERSON_ZOOM : ART_FRAME_ZOOM) : minDist, rects);
     return fitPoints(points, minDist, rects);
   }
 
@@ -3226,6 +3275,160 @@ export function createScene(host, options) {
     invalidate();
   }
 
+  // ---- the depth rail (view/horizons.js) -------------------------------------------------------
+
+  /**
+   * The people as drawn now, for the depth rail: [{name, thingId, z, working, moving}], z the mine elevation (m) of
+   * the place where the figure stands (the playback of walk.js, as the figures and markers). Published places only.
+   */
+  function people() {
+    if (!layout || !view) return [];
+    const out = [];
+    for (const [name, worker] of Object.entries(view.workers)) {
+      if (!worker.at) continue;
+      const position = currentPosition(name);
+      const at = position ? pointOnWorking(layout, position.working, position.offsetM, k) : null;
+      if (!at) continue;
+      out.push({name, thingId: worker.thingId, z: at.point[1] / k + layout.zTop, working: position.working, moving: Boolean(position.moving)});
+    }
+    return out.sort((p, q) => (p.name < q.name ? -1 : (p.name > q.name ? 1 : 0)));
+  }
+
+  /** Tell the stage (and so the depth rail) when a drawn depth changed: once per change, from the frame that drew it. */
+  function announcePeople() {
+    const key = people().map((p) => `${p.name}:${p.z.toFixed(2)}`).join('|');
+    if (key === peopleKey) return;
+    peopleKey = key;
+    options.onEvent('people');
+  }
+
+  /** The scene height of a mine elevation (the one transform of layout.js). */
+  const depthY = (z) => (z - layout.zTop) * k;
+
+  /**
+   * The depth probe: a thin glowing guide at the mine elevation `z` (m) across the massif, or none (null). Over the
+   * art a contour line where that depth meets the drawn rock (artenv.js, the probe uniforms); over the slabs of
+   * variant 3 a faint sheet at that depth with a glowing rim. One frame per call; true when drawn.
+   */
+  function setDepthProbe(z) {
+    const next = Number.isFinite(z) && layout ? z : null;
+    if (next === null && depthProbe === null) return false;
+    if (next !== null && depthProbe && Math.abs(depthProbe.z - next) < 1e-6) return true;
+    placeDepthProbe(next);
+    invalidate();
+    return next !== null;
+  }
+
+  function placeDepthProbe(z) {
+    for (const mesh of [...probeGroup.children]) {
+      probeGroup.remove(mesh);
+      mesh.geometry.dispose();
+    }
+    if (z === null || !layout) {
+      depthProbe = null;
+      probeGroup.visible = false;
+      probeUniforms.uProbe.value.set(0, 0, 0, 0);
+      root.removeAttribute('data-depth-probe');
+      return;
+    }
+    const y = depthY(z);
+    depthProbe = {z, y};
+    root.setAttribute('data-depth-probe', String(Math.round(z * 10) / 10));
+    if (artOn) {
+      // The art's rock draws its own contour at this height (artenv.js).
+      probeUniforms.uProbe.value.set(y, 1, 0, 0);
+      probeGroup.visible = false;
+      return;
+    }
+    probeUniforms.uProbe.value.set(0, 0, 0, 0);
+    // The slabs of variant 3: the plan of the mine with a margin, at that height; its rim about 2 px wide.
+    const xs = [];
+    const zs = [];
+    for (const level of layout.levels) {
+      xs.push(level.box.minX, level.box.maxX);
+      zs.push(level.box.minZ, level.box.maxZ);
+    }
+    for (const line of layout.workings.values()) {
+      for (const p of line.plan) {
+        xs.push(p[0]);
+        zs.push(p[1]);
+      }
+    }
+    const m = 24;
+    const [x0, x1, z0, z1] = [Math.min(...xs) - m, Math.max(...xs) + m, Math.min(...zs) - m, Math.max(...zs) + m];
+    const loop = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+    const perPixel = (2 * orbit.state.dist * Math.tan((camera.fov * DEG) / 2)) / Math.max(height, 1);
+    const parts = [[plane(x0, x1, z0, z1, 0), materials.probeFill, 30], [ribbon(loop, perPixel * 7, 0, {closed: true}), materials.probeHalo, 31],
+      [ribbon(loop, perPixel * 1.6, 0, {closed: true}), materials.probeCore, 32]];
+    for (const [geometry, material, order] of parts) {
+      const mesh = meshOf(geometry, material, order);
+      if (mesh) {
+        mesh.frustumCulled = false;
+        probeGroup.add(mesh);
+      }
+    }
+    probeGroup.position.y = y;
+    probeGroup.visible = true;
+  }
+
+  /**
+   * The outlines of a horizon's workings glow softly (the accent-tinted outline of a horizon), the rest untouched;
+   * null takes it away. A horizon without workings of its own (the surface) glows round the mouths of the ramps that
+   * reach it. One frame per call; true when something is highlighted.
+   */
+  function setLevelHighlight(name) {
+    const next = layout && typeof name === 'string' && layout.levels.some((level) => level.name === name) ? name : null;
+    if (next === levelLit) return next !== null;
+    levelLit = next;
+    buildLevelHighlight();
+    invalidate();
+    return next !== null;
+  }
+
+  function buildLevelHighlight() {
+    for (const mesh of [...highlightGroup.children]) {
+      highlightGroup.remove(mesh);
+      mesh.geometry.dispose();
+    }
+    const level = levelLit && layout ? layout.levels.find((entry) => entry.name === levelLit) : null;
+    if (!level) {
+      root.removeAttribute('data-level-lit');
+      return;
+    }
+    const key = `${level.name}|${artOn ? 'art' : 'slab'}`;
+    if (!highlightLoops.has(key)) {
+      const segments = [];
+      for (const name of level.workings) {
+        const line = layout.workings.get(name);
+        for (let i = 1; i < line.plan.length; i += 1) segments.push({a: line.plan[i - 1], b: line.plan[i], half: DIMS.half});
+      }
+      // The mouths of the workings between levels that reach this one (the ramps at the surface).
+      for (const line of layout.workings.values()) {
+        if (!line.between) continue;
+        for (const [node, plan] of [[line.from, line.plan], [line.to, [...line.plan].reverse()]]) {
+          if (layout.nodeLevel.get(node) !== level.name || plan.length < 2) continue;
+          const d = Math.hypot(plan[1][0] - plan[0][0], plan[1][1] - plan[0][1]);
+          const t = d > 0 ? Math.min(1, 24 / d) : 0;
+          segments.push({a: plan[0], b: [plan[0][0] + (plan[1][0] - plan[0][0]) * t, plan[0][1] + (plan[1][1] - plan[0][1]) * t], half: DIMS.half});
+        }
+      }
+      highlightLoops.set(key, {loops: frameLoops(segments, artOn ? -1.2 : 2.5), plans: level.workings.map((name) => layout.workings.get(name).plan)});
+    }
+    const {loops, plans} = highlightLoops.get(key);
+    const lift = artOn ? 0.16 : DIMS.depth + 0.14;
+    const halo = merge(loops.map((loop) => ribbon(loop, 5, lift, {closed: true})));
+    const core = merge(loops.map((loop) => ribbon(loop, 1.2, lift + 0.01, {closed: true})));
+    const wash = merge(plans.map((plan) => ribbon(plan, DIMS.half * 2 - 1.2, 0.15)));
+    const parts = [[wash, materials.levelWash, 8], [halo, materials.levelHalo, 9], [core ? core.clone() : null, materials.levelGhost, 10],
+      [core, materials.levelCore, 11]];
+    for (const [geometry, material, order] of parts) {
+      const mesh = meshOf(geometry, material, order);
+      if (mesh) highlightGroup.add(mesh);
+    }
+    highlightGroup.position.y = levelY(layout, level, k);
+    root.setAttribute('data-level-lit', level.name);
+  }
+
   // ---- the illustrated mine (env.glb of the art) ------------------------------------------------
 
   /** True when the art's topology signature equals the one of the live twins (the art was built for this mine). */
@@ -3263,7 +3466,7 @@ export function createScene(host, options) {
     if (!artEnv) {
       if (!artEnvLoading) {
         const anisotropy = low ? 1 : Math.min(8, renderer.capabilities.getMaxAnisotropy());
-        artEnvLoading = loadArtEnv(artHeader, {anisotropy, edgeColor: TOKEN.ink0, light: low}).then((env) => {
+        artEnvLoading = loadArtEnv(artHeader, {anisotropy, edgeColor: TOKEN.ink0, light: low, probe: probeUniforms}).then((env) => {
           artEnv = env;
         }).catch(() => {
           artHeader = null;
@@ -3297,7 +3500,7 @@ export function createScene(host, options) {
     placeLoaders();
     gizmo.setArtNotes({machine: ART_MACHINE_FACTOR, people: Math.round(ART_FIGURE_FACTOR * 10) / 10});
     root.setAttribute('data-art-env', 'on');
-    actors.loadFigure(ART_URL('actors/worker.glb'), {scale: 1, maxCycles: ART_MAX_CYCLES}).then((taken) => {
+    actors.loadFigure(ART_URL('actors/worker.glb'), {scale: ART_FIGURE_SCALE, maxCycles: ART_MAX_CYCLES}).then((taken) => {
       if (disposed) return;
       if (!artOn) actors.clearRig();
       root.setAttribute('data-art-figure', taken && actors.rigged ? 'worker.glb' : 'none');
@@ -3306,6 +3509,8 @@ export function createScene(host, options) {
     });
     loadArtMachines();
     if (view) buildOverlays();
+    if (levelLit) buildLevelHighlight();
+    if (depthProbe) placeDepthProbe(depthProbe.z);
     setLabels();
     spritesDirty = true;
     invalidate();
@@ -3327,6 +3532,8 @@ export function createScene(host, options) {
       chooseLoaderPlaces();
       buildOverlays();
     }
+    if (levelLit) buildLevelHighlight();
+    if (depthProbe) placeDepthProbe(depthProbe.z);
     setLabels();
     invalidate();
   }
@@ -3364,6 +3571,9 @@ export function createScene(host, options) {
         const made = source.make();
         made.group.position.copy(anchor.position);
         made.group.quaternion.copy(anchor.quaternion);
+        // Built at extras.scaleToReal (1.5× real): drawn at ART_MACHINE_FACTOR, from its ground centre (the anchor).
+        const built = Number.isFinite(source.extras.scaleToReal) && source.extras.scaleToReal > 0 ? source.extras.scaleToReal : 1.5;
+        made.group.scale.setScalar(ART_MACHINE_FACTOR / built);
         made.group.updateMatrixWorld(true);
         group.add(made.group);
         const entry = {name, kind, zone: anchor.extras.zone || null, made, light: 0, fade: null};
@@ -3427,6 +3637,15 @@ export function createScene(host, options) {
       if (working) return working.thingId;
     }
     return null;
+  }
+
+  /** For tests: the box a machine of the art takes in the scene (axis-aligned, scene metres): [minX, minY, minZ, maxX, maxY, maxZ]. */
+  function machineBox(entry) {
+    // The body and its lamps; the contact shadow on the floor (renderOrder 1, loadArtMachine) is no part of the machine.
+    entry.made.group.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    for (const mesh of entry.made.group.children) if (mesh.renderOrder !== 1) box.expandByObject(mesh);
+    return [...box.min.toArray(), ...box.max.toArray()].map((v) => Math.round(v * 100) / 100);
   }
 
   /** For tests: the height of the art's floor under each drawn figure, minus the height of its feet (metres). */
@@ -3842,7 +4061,9 @@ export function createScene(host, options) {
         // The illustrated mine: shown, its origin, its machines and their lamps (0 dark … 1 lit), the floor under each figure.
         env: artOn, origin: artOn ? {cx: layout.cx, cy: layout.cy, zTop: layout.zTop} : null,
         machines: artMachines ? [...artMachines.zone, ...artMachines.decor].map((entry) => ({name: entry.name, kind: entry.kind, zone: entry.zone,
-          light: Math.round(entry.light * 1000) / 1000, world: entry.made.group.position.toArray().map((v) => Math.round(v * 10) / 10)})) : [],
+          light: Math.round(entry.light * 1000) / 1000, world: entry.made.group.position.toArray().map((v) => Math.round(v * 10) / 10),
+          scale: Math.round(entry.made.group.scale.x * 1000) / 1000, box: machineBox(entry)})) : [],
+        machineFactor: ART_MACHINE_FACTOR, figureScale: ART_FIGURE_SCALE,
         floorGaps: floorGaps(),
         // The state drawn over the floors: the materials of the overlay meshes (hazard decals, outlines, routes).
         overlays: [...overlayGroups.flatMap((group) => group.children), ...interOverlay.children, ...routeMeshes].map((mesh) => {
@@ -3850,6 +4071,10 @@ export function createScene(host, options) {
             || Object.entries(materials.frame).map(([key, value]) => [`frame.${key}`, value]).find(([, value]) => value === mesh.material);
           return {material: named ? named[0] : 'transition', polygonOffset: Boolean(mesh.material.polygonOffset), order: mesh.renderOrder};
         })} : null,
+      // The depth rail: the probe drawn now ({z: mine elevation, y: scene height, mode}) and the highlighted horizon.
+      depthProbe: depthProbe ? {z: Math.round(depthProbe.z * 100) / 100, y: Math.round(depthProbe.y * 100) / 100,
+        mode: artOn ? 'contour' : 'slice'} : null,
+      levelHighlight: levelLit ? {level: levelLit, meshes: highlightGroup.children.length} : null,
       // The people's playback buffer (walk.js) and where each person is drawn now: [working, offset, facing, moving].
       walk: {...walk.info(), at: view ? Object.fromEntries(Object.keys(view.workers).filter((name) => view.workers[name].at).map((name) => {
         const place = currentPosition(name);
@@ -3899,6 +4124,8 @@ export function createScene(host, options) {
       placeLamps();
     },
     focus, overview, setExplode, setArt, measure, info, dispose,
+    /** The depth rail: the people as drawn now, the depth probe and the highlight of a horizon (see above). */
+    people, setDepthProbe, setLevelHighlight,
     /** Art mode is on: the orthographic camera, pan and zoom only. */
     get art() {
       return Boolean(art);

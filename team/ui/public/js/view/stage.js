@@ -103,6 +103,11 @@ export function mount(root, ctx) {
   let builtQuality = null;
   // The intro of the 3D stage plays once per page load, and only when the page opens on the 3D stage.
   let introAllowed = true;
+  // The depth rail (view/horizons.js) hears when the people drawn by the 3D stage moved (ctx.stage.onPeople).
+  const peopleListeners = new Set();
+  const tellPeople = () => {
+    for (const listener of peopleListeners) listener();
+  };
 
   const setUi = (change) => store.update((state) => {
     const ui = {...state.ui, ...change};
@@ -221,6 +226,7 @@ export function mount(root, ctx) {
     if (instance) {
       instance.dispose();
       instance = null;
+      tellPeople();
     }
     builtQuality = null;
   }
@@ -241,6 +247,7 @@ export function mount(root, ctx) {
 
   function onEvent(type) {
     if (type === 'frame') mirror();
+    else if (type === 'people') tellPeople();
     else if (type === 'ready') measureOnce();
     else if (type === 'explode-key') {
       if (!(instance && instance.art)) toggleExplode();
@@ -377,6 +384,19 @@ export function mount(root, ctx) {
   };
   /** Renderer figures of the 3D stage (triangles, draw calls, frames); null when not in 3D. Read-only. */
   ctx.stage.info = () => (mode === '3d' && instance ? instance.info() : null);
+  /**
+   * The depth rail. people(): the people as the 3D stage draws them now ([{name, thingId, z, working, moving}], z the
+   * mine elevation of the drawn place), null when not in 3D; onPeople(listener): told whenever a drawn depth changed
+   * (and when the 3D stage goes); setDepthProbe(z|null) and setLevelHighlight(level|null): drawn by the 3D stage,
+   * false when there is none.
+   */
+  ctx.stage.people = () => (mode === '3d' && instance ? instance.people() : null);
+  ctx.stage.onPeople = (listener) => {
+    peopleListeners.add(listener);
+    return () => peopleListeners.delete(listener);
+  };
+  ctx.stage.setDepthProbe = (z) => (mode === '3d' && instance ? instance.setDepthProbe(z) : false);
+  ctx.stage.setLevelHighlight = (name) => (mode === '3d' && instance ? instance.setLevelHighlight(name) : false);
 
   // ---- the HUD beside the gizmo ------------------------------------------------------------
 

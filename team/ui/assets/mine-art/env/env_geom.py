@@ -22,13 +22,14 @@ SLOT_NAMES = ["floor", "wall", "rock", "ground", "rockcut"]
 
 PROW_SLOPE = 2.2    # rock prows at the loop corners rise 2.2 m per metre inward
 GALLERY = 45.0      # clear height of a gallery under the section band above
+SLAB = 9.0          # thinnest rock slab between two stacked galleries (near junctions and bends)
 HALF = 7.0          # half width of a working (14 m trench)
 WALL = 9.0          # wall height of a trench
 FRONT = -64.0       # mean by of the massif front (cliff face of the face plane)
 BACK_LINE_OFF = 10.0  # back wall of face-plane galleries is 10 m north of the centreline (floor 24 m deep)
 CHAMBER_X = 36.0     # zone face chambers reach 36 m west of the zone drift centreline
 TOP_Y = 900.0       # northern end of the massif block
-X_MIN, X_MAX = -660.0, 660.0
+X_MIN, X_MAX = -780.0, 780.0
 Z_BOT = -900.0
 
 
@@ -340,11 +341,16 @@ def face_plane_cutters(mine, slope, mats, coll, seed=11):
             top = plateau_top(mine, slope, x)
             if above is not None:
                 gap = above - H
-                g = min(GALLERY, max(gap - 14.0, 0.6))
+                g = min(GALLERY, max(gap - SLAB, 0.6))
             elif top is None:
+                # inside the crosscut loop: the ceiling rises from the rock prows at the
+                # loop corners and is capped by the alcove roof (see loop_roof)
                 dist_end = min(x + 155.0, 155.0 - x)
                 z_cap = H + 40.0 + PROW_SLOPE * max(0.0, dist_end)
-                g = 600.0 if z_cap >= -1.0 else z_cap - H
+                roof = loop_roof(mine)
+                zb, zf = min(z_cap, roof(by0)), min(z_cap, roof(F))
+                rings.append([Vector((x, F, H)), Vector((x, by0, H)), Vector((x, by0, zb)), Vector((x, F, zf))])
+                continue
             else:
                 gap = top - H
                 g = min(GALLERY, max(gap, 0.6))
@@ -357,6 +363,7 @@ def face_plane_cutters(mine, slope, mats, coll, seed=11):
         ob = loft(f"CUT_face_{s['wid']}_{s['idx']}", rings,
                   [M_FLOOR, M_WALL, M_CUT, M_CUT], svals=xs,
                   cap_mats=(M_WALL, M_WALL), mats=mats, coll=coll)
+        triangulate(ob, seed=si)
         objs.append(ob)
     return objs
 
@@ -386,35 +393,59 @@ def loop_polygon(mine, o, xw, xe, south):
     return [Vector((xw, south)), w1, apex, e1, Vector((xe, south))]
 
 
+def loop_roof(mine):
+    """The crosscut loop is an alcove, not an open pit: its roof is the plane through the
+    top of the 45 m back wall that rises toward the viewer as the lines of sight do (slope
+    back.z / -back.y, a hair less), so from MainView the roof is seen edge-on: everything
+    under it (crosscuts, island, back wall) stays visible, and the window it cuts in the
+    massif front ends on the same screen line as the top of the back wall."""
+    back = mine_map.cam_basis()[0]
+    S = back[2] / -back[1] - 0.003
+    poly = loop_polygon(mine, HALF, -155.0, 155.0, mine.back_y - 3.0)
+    y_back = max(p.y for p in poly)
+    H = mine.nodes["a"].z
+
+    def roof(y):
+        return H + GALLERY + S * max(0.0, y_back - y)
+    return roof
+
+
 def loop_cutter(mine, mats, coll, seed=21):
-    """Opens the crosscut loop behind level -120 down to its floor; outer walls flare
-    back with height and carry facets."""
+    """Opens the crosscut loop behind level -120 under the alcove roof (loop_roof): a
+    45 m lit back wall along the outer side of the crosscuts, faceted rock above it on
+    the arms where the roof is higher, rock prows sloping in at the loop corners."""
     rnd = random.Random(seed)
     H = mine.nodes["a"].z
     south = mine.back_y - 3.0
-    levels = [H, H + GALLERY, H + 58, H + 76, H + 96, H + 108, H + 112, H + 134, H + 158, H + 180, H + 260]
-    rings = []
+    roof = loop_roof(mine)
+    a, d, c = mine.nodes["a"].xy, mine.nodes["d"].xy, mine.nodes["c"].xy
+    centre = (a + d + c) / 3.0
     m_side = 10  # subdivisions per long side
-    for li, z in enumerate(levels):
-        up = max(0.0, z - (H + GALLERY))
-        o = HALF + 0.12 * up + (14.0 if z > H + 110.0 else 0.0)
-        xw = -155.0 + max(0.0, z - (H + 40)) / PROW_SLOPE
-        xe = 155.0 - max(0.0, z - (H + 40)) / PROW_SLOPE
-        P = loop_polygon(mine, o, xw, xe, south)
+    rings = []
+    for f in (None, 0.0, 0.34, 0.67, 1.0):
+        zs = H if f is None else lerp(H + GALLERY, roof(south), f)
+        xw = -155.0 + max(0.0, zs - (H + 40)) / PROW_SLOPE
+        xe = 155.0 - max(0.0, zs - (H + 40)) / PROW_SLOPE
+        P = loop_polygon(mine, HALF, xw, xe, south)
         ring = [P[0]]
-        for k in range(m_side):
-            ring.append(P[1].lerp(P[2], k / m_side))
-        for k in range(m_side):
-            ring.append(P[2].lerp(P[3], k / m_side))
+        for kk in range(m_side):
+            ring.append(P[1].lerp(P[2], kk / m_side))
+        for kk in range(m_side):
+            ring.append(P[2].lerp(P[3], kk / m_side))
         ring.append(P[3])
         ring.append(P[4])
         ring3 = []
         for idx, p in enumerate(ring):
+            if f is None:
+                z = H
+            else:
+                z = lerp(H + GALLERY, max(H + GALLERY, roof(p.y)), f)
             q = Vector((p.x, p.y, z))
-            if 2 <= li < len(levels) - 1 and 1 < idx < len(ring) - 2:
-                q.x += rnd.uniform(-7.0, 7.0)
-                q.y += rnd.uniform(-7.0, 7.0)
-                q.z += rnd.uniform(-5.0, 5.0)
+            inner = 1 < idx < len(ring) - 2
+            if f is not None and 0.0 < f < 1.0 and inner and z > H + GALLERY + 4.0:
+                # facets: every vertex pushed away from the crosscuts by its own amount
+                q.xy += (p.xy - centre).normalized() * rnd.uniform(0.0, 9.0)
+                q.z += rnd.uniform(-4.0, 4.0)
             ring3.append(q)
         rings.append(ring3)
     # loft vertically: build manually (rings are horizontal)
@@ -437,12 +468,24 @@ def loop_cutter(mine, mats, coll, seed=21):
     faces.append(tuple((n - 1) * m + j for j in range(m)))
     fm.append(M_CUT)
     fuv.append(tuple((p.x, p.y) for p in rings[-1]))
-    return make_mesh("CUT_loop", verts, faces, fm, fuv, mats, coll)
+    return triangulate(make_mesh("CUT_loop", verts, faces, fm, fuv, mats, coll), seed=seed)
 
 
 def slope_cutter(mine, slope, mats, coll, seed=31):
+    """Hillside above the w-02 trench. The cutter surface is the terrain lifted by 0.6 m,
+    so it leaves the flat plateau alone and meets it along a smooth line (no wedges)."""
     rnd = random.Random(seed)
-    x0, x1, y0, y1, st = X_MIN - 20.0, X_MAX + 20.0, mine.face_y - 240.0, TOP_Y + 20.0, 14.0
+    # bounding box of the dipping terrain (+ a margin), sampled on a coarse grid
+    xs_, ys_ = [], []
+    for i in range(80):
+        for j in range(80):
+            x = X_MIN + (X_MAX - X_MIN) * i / 79.0
+            y = mine.face_y - 240.0 + (TOP_Y - mine.face_y + 240.0) * j / 79.0
+            if slope.T(x, y) < 0.0:
+                xs_.append(x)
+                ys_.append(y)
+    x0, x1 = max(X_MIN - 20.0, min(xs_) - 60.0), min(X_MAX + 20.0, max(xs_) + 60.0)
+    y0, y1, st = mine.face_y - 240.0, min(TOP_Y + 20.0, max(ys_) + 60.0), 14.0
     nx, ny = int((x1 - x0) / st), int((y1 - y0) / st)
     grid = []
     for i in range(nx + 1):
@@ -455,13 +498,9 @@ def slope_cutter(mine, slope, mats, coll, seed=31):
                 y += rnd.uniform(-4, 4)
             t = slope.T(x, y)
             h, perp, side = slope.road(x, y)
-            if t < -0.6:
-                if perp > HALF + 3.0:
-                    t += rnd.uniform(-1.6, 1.6)
-                z = t
-            else:
-                z = 4.0
-            row.append(Vector((x, y, z)))
+            if t < -3.0 and perp > HALF + 3.0:
+                t += rnd.uniform(-1.4, 1.4) * smooth((-t - 3.0) / 6.0)
+            row.append(Vector((x, y, t + 0.6)))
         grid.append(row)
     verts, faces, fm, fuv = [], [], [], []
     idx = {}
@@ -484,8 +523,7 @@ def slope_cutter(mine, slope, mats, coll, seed=31):
             for t in tris:
                 faces.append(t)
                 pa, pb, pc = (verts[k] for k in t)
-                nz = abs((pb - pa).cross(pc - pa).normalized().z)
-                fm.append(M_GROUND if nz > 0.80 else M_CUT)
+                fm.append(M_GROUND)
                 fuv.append(tuple((verts[k].x, verts[k].y) for k in t))
             faces.append((a + top_off, b + top_off, c + top_off, d + top_off))
             fm.append(M_CUT)
@@ -541,41 +579,232 @@ def drill_bay_cutter(mine, mats, coll, x0=-100.0, x1=-52.0):
 
 # --------------------------------------------------------------------- the massif
 
+def poisson_2d(x0, x1, y0, y1, r_fn, rnd, aniso=(0.0, 1.0), k=24, seeds=()):
+    """Variable-radius Poisson-disc points in the rectangle [x0, x1] x [y0, y1].
+    aniso = (angle, stretch): distances are measured in a frame rotated by `angle` whose
+    first axis is shrunk by `stretch`, so the point spacing (and the facets of a Delaunay
+    triangulation of them) is `stretch` times longer along that direction."""
+    ca, sa = math.cos(aniso[0]), math.sin(aniso[0])
+    st = aniso[1]
+
+    def to_m(x, y):          # world -> metric frame
+        return (x * ca + y * sa) / st, -x * sa + y * ca
+
+    rmin = min(r_fn(x0 + (x1 - x0) * i / 12.0, y0 + (y1 - y0) * j / 12.0) for i in range(13) for j in range(13))
+    cell = max(rmin * 0.6, 2.0) / math.sqrt(2.0)
+    grid = {}
+    pts = []
+
+    def key(u, v):
+        return int(math.floor(u / cell)), int(math.floor(v / cell))
+
+    def ok(x, y, r):
+        u, v = to_m(x, y)
+        ku, kv = key(u, v)
+        reach = int(math.ceil(r * 1.6 / cell)) + 1
+        for i in range(ku - reach, ku + reach + 1):
+            for j in range(kv - reach, kv + reach + 1):
+                for q in grid.get((i, j), ()):
+                    if (q[3] - u) ** 2 + (q[4] - v) ** 2 < (0.5 * (r + q[2])) ** 2:
+                        return False
+        return True
+
+    def add(x, y, r):
+        u, v = to_m(x, y)
+        q = (x, y, r, u, v)
+        grid.setdefault(key(u, v), []).append(q)
+        pts.append(q)
+        return q
+
+    for (x, y) in seeds:
+        add(x, y, r_fn(x, y))
+    active = list(pts)
+    x, y = rnd.uniform(x0, x1), rnd.uniform(y0, y1)
+    if ok(x, y, r_fn(x, y)):
+        active.append(add(x, y, r_fn(x, y)))
+    while active:
+        i = rnd.randrange(len(active))
+        px, py, pr, pu, pv = active[i]
+        found = False
+        for _ in range(k):
+            a = rnd.uniform(0.0, 2.0 * math.pi)
+            d = rnd.uniform(pr, 1.8 * pr)
+            u, v = pu + d * math.cos(a), pv + d * math.sin(a)
+            x = (u * st) * ca - v * sa
+            y = (u * st) * sa + v * ca
+            if not (x0 + 1.0 < x < x1 - 1.0 and y0 + 1.0 < y < y1 - 1.0):
+                continue
+            r = r_fn(x, y)
+            if ok(x, y, r):
+                active.append(add(x, y, r))
+                found = True
+                break
+        if not found:
+            active.pop(i)
+    return [(q[0], q[1]) for q in pts]
+
+
+def rect_boundary(x0, x1, y0, y1, step_fn):
+    """Points along the rectangle boundary (corners included), counter-clockwise."""
+    out = []
+    for (ax, ay), (bx, by) in (((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)), ((x1, y1), (x0, y1)),
+                               ((x0, y1), (x0, y0))):
+        L = math.hypot(bx - ax, by - ay)
+        t = 0.0
+        while True:
+            mx, my = ax + (bx - ax) * t / L, ay + (by - ay) * t / L
+            out.append((mx, my))
+            st = step_fn(mx, my)
+            if t + 1.5 * st > L:
+                break
+            t += st
+    return out
+
+
+FACET_R = 15.0                              # Poisson radius of the front facets (m)
+FACET_GRAIN = (math.radians(28.0), 1.45)    # facets elongated along a rising diagonal
+
+
+def front_radius(x, z):
+    """Facet size on the massif front: varied, coarse where the front is never on screen."""
+    from mathutils import noise
+    if z < -660.0:
+        return 40.0
+    n = noise.noise(Vector((x / 210.0, z / 160.0, 3.3)))
+    # the big section faces between the galleries get the biggest facets
+    band = smooth((420.0 - abs(x)) / 60.0) * smooth((z + 340.0) / 40.0) * smooth((-20.0 - z) / 20.0)
+    return FACET_R * (1.0 + 0.45 * n) * (1.0 + 0.35 * band)
+
+
+class Lumps:
+    """The front is a pile of angular blocks: lump centres on a Poisson set (~2 facets
+    across); a vertex is pushed toward the viewer by its lump's height times how far it is
+    inside the lump (1 at the centre, 0 on the border between two lumps), so every block
+    has a lit upper face, darker lower faces and a dark crease around it."""
+    R = 27.0
+
+    def __init__(self, rnd):
+        from mathutils import noise
+        ca, sa = math.cos(FACET_GRAIN[0]), math.sin(FACET_GRAIN[0])
+        self.ca, self.sa, self.st = ca, sa, FACET_GRAIN[1]
+
+        def r_fn(x, z):
+            if z < -660.0:
+                return 70.0
+            band = smooth((420.0 - abs(x)) / 60.0) * smooth((z + 340.0) / 40.0) * smooth((-20.0 - z) / 20.0)
+            return self.R * (1.0 + 0.3 * noise.noise(Vector((x / 170.0, z / 140.0, 9.4)))) * (1.0 + 0.3 * band)
+        self.c = poisson_2d(X_MIN + 10.0, X_MAX - 10.0, Z_BOT + 10.0, -6.0, r_fn, rnd, aniso=FACET_GRAIN)
+        self.amp = [rnd.uniform(4.5, 11.0) for _ in self.c]
+        self.cell = 45.0
+        self.grid = {}
+        for i, (x, z) in enumerate(self.c):
+            u, v = self.m(x, z)
+            self.grid.setdefault((int(math.floor(u / self.cell)), int(math.floor(v / self.cell))), []).append(i)
+
+    def m(self, x, z):
+        return (x * self.ca + z * self.sa) / self.st, -x * self.sa + z * self.ca
+
+    def inside(self, x, z):
+        u, v = self.m(x, z)
+        ku, kv = int(math.floor(u / self.cell)), int(math.floor(v / self.cell))
+        best = []
+        for i in range(ku - 2, ku + 3):
+            for j in range(kv - 2, kv + 3):
+                for k in self.grid.get((i, j), ()):
+                    cu, cv = self.m(*self.c[k])
+                    best.append(((cu - u) ** 2 + (cv - v) ** 2, k))
+        best.sort()
+        if len(best) < 2:
+            return 0.0, 0.0
+        d1, d2 = math.sqrt(best[0][0]), math.sqrt(best[1][0])
+        return (d2 - d1) / max(d1 + d2, 1e-6), self.amp[best[0][1]]
+
+
+def front_depth(lumps, x, z, rnd):
+    """by of the massif front at (x, z): the block pile around FRONT."""
+    from mathutils import noise
+    e, amp = lumps.inside(x, z)
+    big = 1.6 * noise.noise(Vector((x / 95.0, z / 70.0, 7.1)))
+    y = FRONT + 4.5 - amp * e ** 0.85 + big + rnd.uniform(-1.1, 1.1)
+    return max(FRONT - 8.0, min(FRONT + 5.5, y))
+
+
+def near_floor(mine, x, z, margin):
+    """True when (x, z) of the front is within `margin` m (height) of a face-plane floor."""
+    for s in mine.segments:
+        lo, hi = mine.seg_range(s)
+        if lo - 6.0 <= x <= hi + 6.0 and abs(z - mine.seg_h(s, x)) < margin:
+            return True
+    return False
+
+
 def massif_block(mine, slope, mats, coll, seed=41):
-    """The massif north of the face plane: a box whose south face is a faceted cliff."""
+    """The massif north of the face plane: a box whose south face is a low-poly faceted
+    cliff (Poisson points, Delaunay triangles, every vertex pushed in or out on its own,
+    a few deep crevices). The facets are real geometry; the boolean cuts keep them flat."""
     rnd = random.Random(seed)
-    st_x, st_z = 21.0, 19.0
-    nx = int((X_MAX - X_MIN) / st_x)
-    nz = int((0.0 - Z_BOT) / st_z)
-    front = []
-    for i in range(nx + 1):
-        col = []
-        for j in range(nz + 1):
-            x = X_MIN + (X_MAX - X_MIN) * i / nx
-            z = Z_BOT + (0.0 - Z_BOT) * j / nz
-            if 0 < i < nx and 0 < j < nz:
-                x += rnd.uniform(-6.5, 6.5)
-                z += rnd.uniform(-6.0, 6.0)
-            y = FRONT + 1.8 * math.sin(x / 61.0 + z / 37.0) + 1.0 * math.sin(x / 23.0 - z / 31.0) \
-                + rnd.uniform(-1.0, 1.0)
-            y = max(FRONT - 4.0, min(FRONT + 3.0, y))
-            col.append(Vector((x, y, z)))
-        front.append(col)
-    verts, faces, fm, fuv = [], [], [], []
-    idx = {}
-    for i in range(nx + 1):
-        for j in range(nz + 1):
-            idx[(i, j)] = len(verts)
-            verts.append(front[i][j])
-    for i in range(nx):
-        for j in range(nz):
-            a, b, c, d = idx[(i, j)], idx[(i + 1, j)], idx[(i + 1, j + 1)], idx[(i, j + 1)]
-            tris = [(a, b, c), (a, c, d)] if rnd.random() < 0.5 else [(a, b, d), (b, c, d)]
-            for t in tris:
-                faces.append(t)
-                fm.append(M_ROCK)
-                fuv.append(tuple((verts[k].x, verts[k].z) for k in t))
-    # back corners
+    lumps = Lumps(rnd)
+    edge = rect_boundary(X_MIN, X_MAX, Z_BOT, 0.0, lambda x, z: 1.6 * front_radius(x, z))
+    pts = poisson_2d(X_MIN, X_MAX, Z_BOT, 0.0, front_radius, rnd, aniso=FACET_GRAIN,
+                     seeds=edge + list(lumps.c))
+    out = delaunay_2d_cdt([Vector(p) for p in pts], [], [], 0, 1e-4)
+    overts, ofaces = out[0], out[2]
+    verts = [Vector((v.x, front_depth(lumps, v.x, v.y, rnd), v.y)) for v in overts]
+
+    def on_edge(v):
+        return abs(v.x - X_MIN) < 1e-3 or abs(v.x - X_MAX) < 1e-3 or abs(v.y) < 1e-3 or abs(v.y - Z_BOT) < 1e-3
+    edge_flags = [on_edge(v) for v in overts]
+    # crevices: short chains of vertices pushed deep into the rock
+    nbr = [set() for _ in overts]
+    for f in ofaces:
+        for i in range(len(f)):
+            a, b = f[i], f[(i + 1) % len(f)]
+            nbr[a].add(b)
+            nbr[b].add(a)
+    n_cracks = tries = 0
+    crev = [0.0] * len(overts)
+    while n_cracks < 48 and tries < 4000:
+        tries += 1
+        i = rnd.randrange(len(overts))
+        v = overts[i]
+        if edge_flags[i] or v.y < -620.0 or v.y > -14.0 or near_floor(mine, v.x, v.y, 10.0):
+            continue
+        ang = math.radians(rnd.choice((rnd.uniform(-75, -35), rnd.uniform(35, 75), rnd.uniform(-100, -80))))
+        d = Vector((math.cos(ang), math.sin(ang)))
+        chain = [i]
+        for _ in range(rnd.randint(2, 5)):
+            cur = chain[-1]
+            best, bd = None, 0.35
+            for j in nbr[cur]:
+                if j in chain or edge_flags[j]:
+                    continue
+                w = (overts[j] - overts[cur]).normalized().dot(d) + rnd.uniform(-0.15, 0.15)
+                if w > bd:
+                    best, bd = j, w
+            if best is None or near_floor(mine, overts[best].x, overts[best].y, 10.0):
+                break
+            chain.append(best)
+        if len(chain) < 3:
+            continue
+        depth = rnd.uniform(7.0, 11.0)
+        for k, j in enumerate(chain):
+            f = 1.0 if 0 < k < len(chain) - 1 else 0.55
+            verts[j].y = max(verts[j].y, FRONT + depth * f)
+            crev[j] = max(crev[j], f)
+        n_cracks += 1
+    faces, fm, fuv = [], [], []
+    for f in ofaces:
+        faces.append(tuple(f))
+        fm.append(M_ROCK)
+        fuv.append(tuple((verts[k].x, verts[k].z) for k in f))
+
+    def ring(pred, keyf):
+        return sorted([i for i, v in enumerate(overts) if pred(v)], key=keyf)
+    top_row = ring(lambda v: abs(v.y) < 1e-3, lambda i: overts[i].x)
+    bot_row = ring(lambda v: abs(v.y - Z_BOT) < 1e-3, lambda i: overts[i].x)
+    left_col = ring(lambda v: abs(v.x - X_MIN) < 1e-3, lambda i: overts[i].y)
+    right_col = ring(lambda v: abs(v.x - X_MAX) < 1e-3, lambda i: overts[i].y)
+
     def addv(p):
         verts.append(Vector(p))
         return len(verts) - 1
@@ -583,38 +812,64 @@ def massif_block(mine, slope, mats, coll, seed=41):
     tr = addv((X_MAX, TOP_Y, 0.0))
     bl = addv((X_MIN, TOP_Y, Z_BOT))
     br = addv((X_MAX, TOP_Y, Z_BOT))
-    top_row = [idx[(i, nz)] for i in range(nx + 1)]
-    bot_row = [idx[(i, 0)] for i in range(nx + 1)]
-    left_col = [idx[(0, j)] for j in range(nz + 1)]
-    right_col = [idx[(nx, j)] for j in range(nz + 1)]
-    # top (plateau)
-    f = top_row + [tr, tl]
-    faces.append(tuple(f))
-    fm.append(M_GROUND)
-    fuv.append(tuple((verts[k].x, verts[k].y) for k in f))
-    # bottom
-    f = [bl, br] + bot_row[::-1]
-    faces.append(tuple(f))
-    fm.append(M_CUT)
-    fuv.append(tuple((verts[k].x, verts[k].y) for k in f))
-    # left side
-    f = left_col[::-1] + [bl, tl][::-1]
-    f = [tl] + left_col[::-1][0:0] + []
-    f = left_col + [tl, bl]
-    faces.append(tuple(f))
-    fm.append(M_CUT)
-    fuv.append(tuple((verts[k].y, verts[k].z) for k in f))
-    f = right_col[::-1] + [br, tr][::-1]
-    f = right_col + [tr, br]
-    faces.append(tuple(f))
-    fm.append(M_CUT)
-    fuv.append(tuple((verts[k].y, verts[k].z) for k in f))
-    # back
-    f = (tl, tr, br, bl)
-    faces.append(f)
-    fm.append(M_CUT)
-    fuv.append(tuple((verts[k].x, verts[k].z) for k in f))
-    return make_mesh("MASSIF", verts, faces, fm, fuv, mats, coll)
+    # the plateau: quiet low-poly ground (Poisson points, Delaunay), every inner vertex
+    # sunk by up to 2.8 m so the dark ground reads as terrain, flat around the portals
+    ring_ids = top_row + [tr, tl]
+    bpts = [Vector((verts[i].x, verts[i].y)) for i in ring_ids]
+    portals = [mine.nodes["surface-a"].xy, mine.nodes["surface-b"].xy]
+    ipts = [Vector(p) for p in poisson_2d(X_MIN, X_MAX, FRONT + 16.0, TOP_Y, lambda x, y: 24.0 + 0.03 * max(0.0, y), rnd)]
+    allp = bpts + ipts
+    nb = len(bpts)
+    cdt = delaunay_2d_cdt(allp, [(i, (i + 1) % nb) for i in range(nb)], [list(range(nb))], 1, 1e-4)
+    cverts, cfaces, corig = cdt[0], cdt[2], cdt[3]
+    cmap = []
+    for k, v in enumerate(cverts):
+        src = [o for o in corig[k] if o < nb]
+        if src:
+            cmap.append(ring_ids[src[0]])
+        else:
+            near_portal = min((v - q).length for q in portals) < 70.0
+            z = 0.0 if near_portal else -rnd.uniform(0.0, 2.8)
+            cmap.append(addv((v.x, v.y, z)))
+    for f in cfaces:
+        faces.append(tuple(cmap[i] for i in f))
+        fm.append(M_GROUND)
+        fuv.append(tuple((verts[cmap[i]].x, verts[cmap[i]].y) for i in f))
+    for f, mi in (([bl, br] + bot_row[::-1], M_CUT),
+                  (left_col + [tl, bl], M_CUT), (right_col + [tr, br], M_CUT), ((tl, tr, br, bl), M_CUT)):
+        faces.append(tuple(f))
+        fm.append(mi)
+        fuv.append(tuple((verts[k].x, verts[k].y) for k in f))
+    print("[env] massif front:", len(ofaces), "facets,", n_cracks, "crevices", flush=True)
+    ob = make_mesh("MASSIF", verts, faces, fm, fuv, mats, coll)
+    # `crev` (point attribute): 1 on the crevice vertices, read by the rock shader to sink
+    # the facets that slope into a crevice into darkness
+    at = ob.data.attributes.new("crev", "FLOAT", "POINT")
+    at.data.foreach_set("value", crev + [0.0] * (len(ob.data.vertices) - len(crev)))
+    return ob
+
+
+def triangulate(ob, seed=0):
+    """Split every polygon of a jittered loft or cutter into triangles (random diagonals)
+    so its facets are defined before a boolean uses it."""
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    rnd = random.Random(seed)
+    quads = [f for f in bm.faces if len(f.verts) == 4]
+    a = [f for f in quads if rnd.random() < 0.5]
+    sa = set(a)
+    b = [f for f in quads if f not in sa]
+    if a:
+        bmesh.ops.triangulate(bm, faces=a, quad_method="FIXED", ngon_method="BEAUTY")
+    if b:
+        bmesh.ops.triangulate(bm, faces=b, quad_method="ALTERNATE", ngon_method="BEAUTY")
+    rest = [f for f in bm.faces if len(f.verts) > 4]
+    if rest:
+        bmesh.ops.triangulate(bm, faces=rest, ngon_method="BEAUTY")
+    bm.to_mesh(ob.data)
+    bm.free()
+    ob.data.update()
+    return ob
 
 
 def apply_boolean(target, cutters_coll, operation="DIFFERENCE"):
@@ -732,14 +987,14 @@ def pillar(mine, cam_back, mats, coll, bay=(60.0, 114.0, 15.0), seed=51):
         de_c = dist_cc(x, y)
         de_s = dist_s(x, y)
         h = min(WALL + 1.5 * de_s, 4.0 + 0.8 * de_c, 62.0)
-        h += hash_noise(seed, x * 0.37, y * 0.37) * 1.4
+        h += hash_noise(seed, x * 0.37, y * 0.37) * 2.6
         if hm is not None:
             h = min(h, hm)
         return H + max(2.2, h)
 
     return heightfield_solid("PILLAR", [tuple(p) for p in poly], height, lambda x, y: H - 6.0,
-                             9.0, mats, coll, seed=seed, top_mat=M_CUT, side_mat=M_WALL,
-                             bottom_mat=M_CUT, side_v_from=lambda x, y: H, jitter=0.35)
+                             12.0, mats, coll, seed=seed, top_mat=M_CUT, side_mat=M_WALL,
+                             bottom_mat=M_CUT, side_v_from=lambda x, y: H, jitter=0.38)
 
 
 # ------------------------------------------------------------------------- spurs
@@ -758,14 +1013,21 @@ def spur(mine, wid, mats, coll, seed=61):
     y = y_root
     while y > y_nose + 0.1:
         ys.append(y)
-        y -= 7.0
-    ys.append(y_nose)
-    nside = 6
+        y -= 12.5
+    if y_nose > ys[-1] - 6.0:
+        ys[-1] = y_nose
+    else:
+        ys.append(y_nose)
+    # flank subdivisions, denser toward the top (the part on screen)
+    nside, gpow = (6, 1.3) if upper else (14, 1.6)
+
+    def fz(f):
+        return 1.0 - (1.0 - f) ** gpow
     rings = []
     for k, y in enumerate(ys):
         cham = smooth((-(y - (face.y + 36.0))) / 8.0)       # 0 near root, 1 in chamber
-        xl = x0 - lerp(15.0, CHAMBER_X + 9.0, cham) + rnd.uniform(-1.2, 1.2)
-        xr = x0 + 15.5 + rnd.uniform(-1.2, 1.2)
+        xl = x0 - lerp(15.0, CHAMBER_X + 9.0, cham) + rnd.uniform(-1.5, 1.5)
+        xr = x0 + 15.5 + rnd.uniform(-1.5, 1.5)
         top = H - 0.3 + 9.3 * smooth((-(y - (mine.face_y - 10.0))) / 18.0)
         if upper:
             tb = (y - y_nose) / (y_root - y_nose)          # 0 at nose, 1 at root
@@ -788,26 +1050,38 @@ def spur(mine, wid, mats, coll, seed=61):
         ring.append(bl)
         ring.append(br)
         for q in range(1, nside):
-            f = q / nside
+            f = fz(q / nside)
             z = lerp(bot, top, f)
-            xx = lerp(br.x, xr2, f ** 0.6) + rnd.uniform(-1.8, 1.8)
-            ring.append(Vector((xx, y + rnd.uniform(-1.0, 1.0), z + rnd.uniform(-2.5, 2.5))))
+            xx = lerp(br.x, xr2, f ** 0.6) + rnd.uniform(-4.0, 4.0)
+            ring.append(Vector((xx, y + rnd.uniform(-2.5, 2.5), z + rnd.uniform(-5.0, 5.0))))
         ring.append(Vector((xr2, y, top)))
         ring.append(Vector((xl2, y, top)))
         for q in range(nside - 1, 0, -1):
-            f = q / nside
+            f = fz(q / nside)
             z = lerp(bot, top, f)
-            xx = lerp(bl.x, xl2, f ** 0.6) + rnd.uniform(-1.8, 1.8)
-            ring.append(Vector((xx, y + rnd.uniform(-1.0, 1.0), z + rnd.uniform(-2.5, 2.5))))
-        if nose > 0:
-            for p in ring:
-                p.z = lerp(p.z, p.z, 1.0)
+            xx = lerp(bl.x, xl2, f ** 0.6) + rnd.uniform(-4.0, 4.0)
+            ring.append(Vector((xx, y + rnd.uniform(-2.5, 2.5), z + rnd.uniform(-5.0, 5.0))))
         rings.append(ring)
+    # a faceted nose: two smaller rings bulging toward the viewer below the floor
+    last = rings[-1]
+    cen = sum(last, Vector((0.0, 0.0, 0.0))) / len(last)
+    cen.z = max(cen.z, H - 55.0)
+    for k, (dy, sc) in enumerate(((-6.0, 0.72), (-11.0, 0.38))):
+        ring = []
+        for p in last:
+            q = cen + (p - cen) * sc
+            q.y = y_nose + dy + rnd.uniform(-1.5, 1.5)
+            q.x += rnd.uniform(-1.2, 1.2) * sc
+            q.z = min(q.z + rnd.uniform(-1.2, 1.2) * sc, H - 2.0 - 0.01 * len(ring))
+            ring.append(q)
+        rings.append(ring)
+        ys.append(y_nose + dy)
     m = len(rings[0])
     mats_e = [M_CUT] * m
     mats_e[nside] = M_CUT           # right top edge band: top surface
     mats_e[nside + 1] = M_CUT
     ob = loft(f"SPUR_{wid}", rings, mats_e, svals=ys, cap_mats=(M_CUT, M_CUT), mats=mats, coll=coll)
+    triangulate(ob, seed=seed + (0 if upper else 7))
     # trench with the face chamber
     yb = mine.back_y + 2.0
     y_ch = face.y + 34.0
@@ -842,78 +1116,94 @@ def prism(name, poly, z0, z1, mats, coll, bottom_mat=M_FLOOR, side_mat=M_WALL, t
 
 # ------------------------------------------------------------------ rock faceting
 
-def facet_rock(ob, protect=(M_FLOOR, M_WALL, M_GROUND), edge_len=4.5, cell=19.0, amp=5.0,
-               falloff=5.0, seed=0.0, max_iter=8, want=None):
-    """Crystalline rock skin for rendering: refine rock faces to ~edge_len triangles,
-    then displace each Voronoi cell along the normal by its own random plane, so the
-    rock breaks into flat facets with crisp creases. Floors and walls stay exact; the
-    displacement fades to zero within `falloff` metres of them."""
-    from mathutils import noise
-    import heapq
+def _skin(ob, kinds, edge_len, move, seed, max_iter=7, want=None):
+    """Refine the faces of the given material slots to ~edge_len triangles, then move
+    every vertex whose faces are all of those slots by move(rnd, normal) (render only)."""
+    rnd = random.Random(seed)
     me = ob.data
     bm = bmesh.new()
     bm.from_mesh(me)
     bmesh.ops.triangulate(bm, faces=bm.faces[:])
-    prot = set(protect)
-    for it in range(max_iter):
-        long_edges = [e for e in bm.edges
-                      if e.calc_length() > edge_len
-                      and any(f.material_index not in prot and (want is None or want(f)) for f in e.link_faces)]
+    kinds = set(kinds)
+    for _ in range(max_iter):
+        long_edges = [e for e in bm.edges if e.calc_length() > edge_len
+                      and any(f.material_index in kinds and (want is None or want(f)) for f in e.link_faces)]
         if not long_edges:
             break
-        res = bmesh.ops.subdivide_edges(bm, edges=long_edges, cuts=1, use_grid_fill=False)
+        bmesh.ops.subdivide_edges(bm, edges=long_edges, cuts=1, use_grid_fill=False)
         bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 3])
-    bm.verts.ensure_lookup_table()
+    # flip edges between coplanar pieces toward well-shaped triangles (no slivers)
+    for _ in range(2):
+        fs = [f for f in bm.faces if f.material_index in kinds]
+        es = [e for e in bm.edges if len(e.link_faces) == 2 and all(f.material_index in kinds for f in e.link_faces)
+              and e.link_faces[0].normal.dot(e.link_faces[1].normal) > 0.9995]
+        bmesh.ops.beautify_fill(bm, faces=fs, edges=es, method="ANGLE")
     bm.normal_update()
-    # distance from protected vertices (Dijkstra over edges)
-    dist = {}
-    heap = []
+    moved = 0
     for v in bm.verts:
-        if any(f.material_index in prot for f in v.link_faces):
-            dist[v.index] = 0.0
-            heap.append((0.0, v.index))
-    heapq.heapify(heap)
-    while heap:
-        d, i = heapq.heappop(heap)
-        if d > dist.get(i, 1e9) or d > falloff:
+        fs = v.link_faces
+        if not fs or any(f.material_index not in kinds for f in fs) or v.is_boundary:
             continue
-        v = bm.verts[i]
-        for e in v.link_edges:
-            o = e.other_vert(v)
-            nd = d + e.calc_length()
-            if nd < dist.get(o.index, 1e9):
-                dist[o.index] = nd
-                heapq.heappush(heap, (nd, o.index))
-    offs = []
-    for v in bm.verts:
-        d = dist.get(v.index, 1e9)
-        w = smooth(d / falloff) if d < falloff else 1.0
-        if w <= 0.0:
-            offs.append(None)
-            continue
-        p = v.co / cell
-        _, pts = noise.voronoi(p + Vector((seed, seed * 0.5, 0.0)), distance_metric="DISTANCE")
-        s = pts[0]
-        g = noise.noise_vector(s * 1.73 + Vector((5.1, 2.3, seed)))
-        b = noise.noise(s * 2.31 + Vector((1.7, seed, 4.4)))
-        disp = (b * 0.55 + (p - s).dot(g) * 0.9) * amp
-        disp = max(-amp, min(amp, disp))
-        n = Vector((0, 0, 0))
-        for f in v.link_faces:
-            if f.material_index not in prot:
-                n += f.normal * f.calc_area()
+        n = Vector((0.0, 0.0, 0.0))
+        for f in fs:
+            n += f.normal * f.calc_area()
         if n.length < 1e-9:
-            offs.append(None)
             continue
         n.normalize()
-        disp *= 0.55 + 0.45 * abs(n.z)
-        if n.z > 0.55:
-            disp = -abs(disp)      # tops are only carved, never raised toward walking lines
-        offs.append(n * disp * w)
-    for v, o in zip(bm.verts, offs):
-        if o is not None:
-            v.co += o
+        # a short edge next to the vertex gets a proportionally small move (no spikes)
+        lmin = min(e.calc_length() for e in v.link_edges)
+        v.co += move(rnd, n) * min(1.0, lmin / (0.6 * edge_len))
+        moved += 1
     bm.to_mesh(me)
     bm.free()
     me.update()
-    return len(me.polygons)
+    return moved
+
+
+def wall_skin(ob, seed=0):
+    """Render-only skin of the working walls: refined to ~9 m triangles, every inner
+    vertex pushed into the rock by its own depth (0.4-3.4 m), so the lit walls break into
+    small flat facets. Vertices shared with floors and rock stay; nothing moves toward
+    the walking lines."""
+    return _skin(ob, (M_WALL,), 9.0, lambda rnd, n: -n * rnd.uniform(0.4, 3.4), seed)
+
+
+def rock_skin(ob, seed=0, want=None):
+    """Render-only second facet level on the rock: the big facets are split into ~9 m
+    pieces tilted by a few degrees (+-0.45 m), a quiet variation inside each facet that
+    shows at 3x and stays below the outline threshold. Tops are only carved."""
+    def move(rnd, n):
+        d = rnd.uniform(-0.45, 0.45)
+        if n.z > 0.55:
+            d = -abs(d)
+        return n * d
+    return _skin(ob, (M_ROCK, M_CUT), 9.0, move, seed, want=want)
+
+
+def facet_attributes(ob, seed=0, only=None):
+    """Face attributes read by the shaders and the outline pass:
+    `fr` (colour) a random value per facet, equal for coplanar pieces of one facet;
+    `mk` (float) material slot + 1 (floor 1, wall 2, rock 3, ground 4, rockcut 5)."""
+    me = ob.data
+    if only is None:
+        for name in ("fr", "mk"):
+            if name in me.attributes:
+                me.attributes.remove(me.attributes[name])
+        me.attributes.new("fr", "FLOAT_COLOR", "FACE")
+        me.attributes.new("mk", "FLOAT", "FACE")
+    fr, mk = me.attributes["fr"], me.attributes["mk"]
+    cols = [0.0] * (4 * len(me.polygons))
+    fr.data.foreach_get("color", cols)
+    kinds = []
+    for i, p in enumerate(me.polygons):
+        kinds.append(float(p.material_index + 1))
+        if only is not None and p.material_index not in only:
+            continue
+        n = p.normal
+        key = (round(n.x * 40.0), round(n.y * 40.0), round(n.z * 40.0), seed)
+        r = random.Random(hash(key) & 0xFFFFFFFF)
+        cols[4 * i:4 * i + 4] = [r.random(), r.random(), r.random(), 1.0]
+    fr.data.foreach_set("color", cols)
+    mk.data.foreach_set("value", kinds)
+    me.polygons.foreach_set("use_smooth", [False] * len(me.polygons))
+    me.update()
