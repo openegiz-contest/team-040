@@ -125,6 +125,8 @@ export async function loadArtEnv(header, {anisotropy = 1, edgeColor = '#000000',
   group.name = 'art-env';
   const picks = [];
   const anchors = new Map();
+  // What the textures of the art cover on MainView's screen (metres along its right and up): the blocks of an atlas.
+  const coverBlocks = [];
   let mainView = null;
   const meshes = [];
   root.traverse((object) => {
@@ -171,6 +173,9 @@ export async function loadArtEnv(header, {anisotropy = 1, edgeColor = '#000000',
         ? material.userData.atlas.filter((block) => Array.isArray(block.screenM) && block.screenM.length === 4 && block.screenM.every(Number.isFinite))
         : null;
       const atlas = blocks && blocks.length > 0;
+      if (atlas) {
+        for (const block of blocks) if (!coverBlocks.some((b) => b.join() === block.screenM.join())) coverBlocks.push(block.screenM);
+      }
       const fade = atlas ? `
             vec2 atlasAt = vec2(dot(vArtPos, uScreenRight), dot(vArtPos, uScreenUp));
             float atlasIn = 0.0;
@@ -224,9 +229,13 @@ uniform vec4 uAtlas[${blocks.length}];
   const centre = position.clone().addScaledVector(back, -position.dot(back));
   const frame = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => centre.clone().addScaledVector(right, sx * halfW)
     .addScaledVector(up, sy * halfH).toArray());
+  // The coverage as scene points: the corners of each block on the plane through the scene's origin (any depth gives
+  // the same rectangle on the screen); none without an atlas (the frame stands for it then).
+  const cover = coverBlocks.map(([x0, y0, w, h]) => [[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]
+    .map(([u, v]) => new THREE.Vector3().addScaledVector(right, u).addScaledVector(up, v).toArray()));
   return {
     group, picks, anchors, extras: header.extras,
-    view: {az: Math.atan2(back.x, back.z), el: Math.asin(Math.max(-1, Math.min(1, back.y))), frame, halfW, halfH},
+    view: {az: Math.atan2(back.x, back.z), el: Math.asin(Math.max(-1, Math.min(1, back.y))), frame, halfW, halfH, cover},
     textures: [...new Set(group.children.flatMap((mesh) => [].concat(mesh.material)).map((material) => material.map).filter(Boolean))],
     dispose() {
       for (const mesh of [...group.children, ...picks]) mesh.geometry.dispose();

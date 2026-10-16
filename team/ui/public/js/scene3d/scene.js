@@ -80,8 +80,8 @@ const ART_URL = (name) => new URL(`../../models/mine-art/${name}`, import.meta.u
 /** «Показать» a zone in art mode frames it at most this many times the overview; a person and a walk at most ART_PERSON_ZOOM. */
 const ART_FRAME_ZOOM = 3;
 const ART_PERSON_ZOOM = 4;
-/** The intro of the art: from about 0.85× to the overview, this long. */
-const ART_INTRO = {from: 0.85, ms: 1100};
+/** The intro of the art: from a little closer (1.12×) back to the overview, this long (a view farther than 1× would show the stage beyond the art). */
+const ART_INTRO = {from: 1.12, ms: 1100};
 /** The lamps of a zone's loader fade once in this time when the zone's published work state changes. */
 const ART_LAMP_MS = 300;
 /**
@@ -1087,7 +1087,7 @@ export function createScene(host, options) {
     const goal = {target: orbit.state.target.clone(), az: orbit.state.az, el: orbit.state.el, dist: orbit.state.dist};
     intro = {start: null, goal, routes: false, art: artOn};
     if (artOn) {
-      // The art: a short ease from a little farther (ART_INTRO.from of the overview) onto the overview.
+      // The art: a short ease from a little closer (ART_INTRO.from times the overview) out onto the overview.
       orbit.set({target: goal.target, dist: goal.dist / ART_INTRO.from}, true);
       orbit.glideTo(goal, ART_INTRO.ms);
     } else {
@@ -2315,13 +2315,52 @@ export function createScene(host, options) {
       return [[b.minX, y, b.minZ], [b.maxX, y, b.minZ], [b.minX, y, b.maxZ], [b.maxX, y, b.maxZ]];
     });
     const frame = factor === k ? artFrame() : null;
-    const fitted = frameView(frame || silhouette(layout, factor), mainView().az, mainView().el, PAD, rects, frame ? [] : corners);
+    const covered = frame && orbit.art && orbit.limits.cover ? coveredOverview(frame) : null;
+    const fitted = covered || frameView(frame || silhouette(layout, factor), mainView().az, mainView().el, PAD, rects, frame ? [] : corners);
     // Art mode: the overview is the zoom of 1×, a quarter of its distance the closest (ART_ZOOM_MAX).
     if (orbit.art && factor === k) {
       orbit.limits.distMax = fitted.dist;
       orbit.limits.distMin = fitted.dist / ART_ZOOM_MAX;
     }
     return fitted;
+  }
+
+  /**
+   * Art mode with the art's coverage: the overview (1×) is the art's main view over the whole stage — its rectangle
+   * widened to a wider stage or heightened to a taller one, centred as the art was painted — never larger than what
+   * the art covers. The headline, the rail and the panel lie over the art; they do not move it (the framings of a
+   * zone or a person keep clear of them).
+   */
+  function coveredOverview(frame) {
+    const {right, up, forward} = orbit.axes;
+    const points = frame.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+    const us = points.map((p) => p.dot(right));
+    const vs = points.map((p) => p.dot(up));
+    const cu = (Math.min(...us) + Math.max(...us)) / 2;
+    const cv = (Math.min(...vs) + Math.max(...vs)) / 2;
+    const halfW = (Math.max(...us) - Math.min(...us)) / 2;
+    const halfH = (Math.max(...vs) - Math.min(...vs)) / 2;
+    const aspect = width / Math.max(height, 1);
+    const wanted = Math.max(halfH, halfW / aspect);
+    const halfView = Math.min(wanted, orbit.largestOnCover(cu, cv, aspect));
+    if (!(halfView > 0)) return null;
+    const w = points.reduce((sum, p) => sum + p.dot(forward), 0) / points.length;
+    const target = new THREE.Vector3().addScaledVector(right, cu).addScaledVector(up, cv).addScaledVector(forward, w);
+    return {target, dist: halfView / Math.tan((camera.fov * DEG) / 2), ok: true};
+  }
+
+  /** The art's coverage on the view plane of the rig, a little inside its borders (the fade of artenv.js). */
+  function setArtCover() {
+    if (!art || !art.cover) {
+      orbit.setCover(null);
+      return;
+    }
+    const inset = 3;
+    orbit.setCover(art.cover.map((corners) => {
+      const us = corners.map((p) => new THREE.Vector3(p[0], p[1], p[2]).dot(orbit.axes.right));
+      const vs = corners.map((p) => new THREE.Vector3(p[0], p[1], p[2]).dot(orbit.axes.up));
+      return {u0: Math.min(...us) + inset, u1: Math.max(...us) - inset, v0: Math.min(...vs) + inset, v1: Math.max(...vs) - inset};
+    }));
   }
 
   function overview(animate = true) {
@@ -3246,6 +3285,8 @@ export function createScene(host, options) {
       el: Number.isFinite(spec.el) ? spec.el : ART_DEFAULT.el,
       k: Number.isFinite(spec.k) && spec.k > 0 ? spec.k : ART_DEFAULT.k,
       frame: Array.isArray(spec.frame) ? spec.frame.filter((p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)) : null,
+      // What the art's textures cover (artenv.js view.cover: the corners of each block of its atlas), or null.
+      cover: Array.isArray(spec.cover) && spec.cover.length > 0 ? spec.cover : null,
     } : null;
     if (!next && !art) return;
     art = next;
@@ -3258,6 +3299,7 @@ export function createScene(host, options) {
       camera.aspect = aspect;
       orbit = createArtRig(camera, {reducedMotion: reduced, az: art.az, el: art.el});
       k = art.k;
+      setArtCover();
     } else {
       camera = new THREE.PerspectiveCamera(FOV, aspect, 1, 10000);
       orbit = createOrbit(camera, {reducedMotion: reduced});
@@ -3495,7 +3537,7 @@ export function createScene(host, options) {
     loaderCandidates = new Map();
     loaderPlaces = new Map();
     loaderRun = null;
-    setArt({az: artEnv.view.az, el: artEnv.view.el, k: artEnv.extras.k, frame: artEnv.view.frame});
+    setArt({az: artEnv.view.az, el: artEnv.view.el, k: artEnv.extras.k, frame: artEnv.view.frame, cover: artEnv.view.cover});
     applyArtVisibility();
     placeLoaders();
     gizmo.setArtNotes({machine: ART_MACHINE_FACTOR, people: Math.round(ART_FIGURE_FACTOR * 10) / 10});

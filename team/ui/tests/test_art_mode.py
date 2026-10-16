@@ -1174,5 +1174,103 @@ class ArtSizeTest(ArtEnvCase):
         print(f"\n[art sizes] machines 2.2x real; nearest walking line: {nearest}")
 
 
+# ---- the art reaches every edge of the stage ------------------------------------------------------------------------
+
+def _rotate(q, v):
+    x, y, z, w = q
+    vx, vy, vz = v
+    ix, iy, iz = w * vx + y * vz - z * vy, w * vy + z * vx - x * vz, w * vz + x * vy - y * vx
+    iw = -x * vx - y * vy - z * vz
+    return (ix * w - iw * x - iy * z + iz * y, iy * w - iw * y - iz * x + ix * z, iz * w - iw * z - ix * y + iy * x)
+
+
+def art_cover():
+    """The axes of MainView and the blocks of the far atlas (screen metres of MainView), read from env.glb."""
+    with open(ENV_GLB, "rb") as handle:
+        head = handle.read(20)
+        gltf = json.loads(handle.read(struct.unpack("<I", head[12:16])[0]))
+    node = next(n for n in gltf["nodes"] if n.get("name") == "MainView")
+    blocks = [b["screenM"] for m in gltf["materials"] for b in (m.get("extras") or {}).get("atlas", [])]
+    return _rotate(node["rotation"], (1, 0, 0)), _rotate(node["rotation"], (0, 1, 0)), blocks
+
+
+def uncovered(cam, tol=0.5):
+    """The share of the visible stage (41 × 41 samples of the camera's view rectangle) that no block of the atlas
+    covers. `cam`: the camera as info() gives it, the stage size and the field of view."""
+    R, U, blocks = art_cover()
+    az, el = math.radians(cam["az"]), math.radians(cam["el"])
+    back = (math.sin(az) * math.cos(el), math.sin(el), math.cos(az) * math.cos(el))
+    norm = math.hypot(back[2], back[0])
+    right = (back[2] / norm, 0.0, -back[0] / norm)
+    up = (back[1] * right[2] - back[2] * right[1], back[2] * right[0] - back[0] * right[2], back[0] * right[1] - back[1] * right[0])
+    dot = lambda a, b: sum(x * y for x, y in zip(a, b))
+    u0, v0 = dot(cam["target"], right), dot(cam["target"], up)
+    hh = cam["dist"] * math.tan(math.radians(cam["fov"]) / 2)
+    hw = hh * cam["w"] / cam["h"]
+    off = 0
+    for i in range(41):
+        for j in range(41):
+            u, v = u0 - hw + 2 * hw * i / 40, v0 - hh + 2 * hh * j / 40
+            p = [right[c] * u + up[c] * v for c in range(3)]
+            su, sv = dot(p, R), dot(p, U)
+            if not any(b[0] - tol <= su <= b[0] + b[2] + tol and b[1] - tol <= sv <= b[1] + b[3] + tol for b in blocks):
+                off += 1
+    return off / 41 ** 2
+
+
+CAM_FRAMES = """(async () => {
+  const app = (await import('/js/main.js')).app;
+  const {FOV} = await import('/js/scene3d/camera.js');
+  const read = () => { const i = app.ctx.stage.info(); return {target: i.camera.target, dist: i.camera.dist, az: i.camera.az,
+    el: i.camera.el, w: i.stage[0], h: i.stage[1], fov: FOV, zoom: i.art.zoom}; };
+  window.__cams = [read()];
+  const t0 = performance.now();
+  const tick = () => { window.__cams.push(read()); if (performance.now() - t0 < %(ms)d) requestAnimationFrame(tick); else window.__cams.done = true; };
+  requestAnimationFrame(tick);
+  return true;
+})()"""
+
+
+class ArtEdgesTest(ArtEnvCase):
+    """The art reaches every edge of the stage: the 1× overview is the art's main view over the whole stage (the
+    headline, the rail and the panel lie over it), and no zoom or pan ever shows the stage beyond the atlas."""
+
+    def cameras_while(self, act, ms=1600):
+        self.page.evaluate(CAM_FRAMES % {"ms": ms})
+        act()
+        self.page.wait_for("window.__cams.done === true", timeout=ms / 1000 + 20)
+        return self.page.evaluate("window.__cams")
+
+    def pan_to_the_limits(self, what):
+        self.focus_canvas()
+        for key in ("ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"):
+            def act(key=key):
+                for _ in range(24):
+                    self.page.press(key)
+            for cam in self.cameras_while(act):
+                self.assertEqual(uncovered(cam), 0, f"{what}, {key}: the stage stays on the art in every frame: {cam}")
+
+    def test_the_art_reaches_every_edge_at_any_size_zoom_and_pan(self):
+        for size in ((1920, 1080), (1280, 720), (1440, 1080), (2520, 1080)):
+            with self.subTest(size=size):
+                self.open_art(size=size)
+                cams = self.cameras_while(lambda: None, ms=300)
+                self.assertAlmostEqual(cams[-1]["zoom"], 1, places=3)
+                self.assertEqual(uncovered(cams[-1]), 0, f"the overview at {size} is art to every edge")
+                self.pan_to_the_limits(f"1x at {size}")
+                self.page.press("+")
+                self.page.press("+")
+                self.wait_idle()
+                self.pan_to_the_limits(f"zoomed at {size}")
+        # The panel shown: the decision frames the zone; the overview lies under the panel, still art to every edge.
+        self.decision_art()
+        cams = self.cameras_while(lambda: None, ms=300)
+        self.assertEqual(uncovered(cams[-1]), 0, "the framing of the decision")
+        self.focus_canvas()
+        for cam in self.cameras_while(lambda: self.page.press("Home"), ms=1500):
+            self.assertEqual(uncovered(cam), 0, f"the glide to the overview beside the panel: {cam}")
+        self.pan_to_the_limits("1x with the panel")
+
+
 if __name__ == "__main__":
     unittest.main()
