@@ -1,10 +1,10 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "synthetic": true,
   "platform_verified": false,
   "scope_policy_version": 2,
-  "model_version": "0.1",
-  "topology_version": "t1",
+  "model_version": "0.2",
+  "topology_version": "t2",
   "parameters": {
     "walking_speed_m_s": 1.25,
     "attention_rate_mm_h": 1.0,
@@ -14,7 +14,14 @@
     "stale_after_s": 15,
     "lost_after_s": 30,
     "forecast_horizon_s": 900,
-    "speedup": 10
+    "speedup": 10,
+    "lhd_payload_t": 14,
+    "lhd_speed_loaded_m_s": 2.5,
+    "lhd_speed_empty_m_s": 3.0,
+    "lhd_load_s": 45,
+    "lhd_dump_s": 20,
+    "lhd_availability": 0.8,
+    "lhd_clearance_m": 20
   },
   "scenarios": [
     {
@@ -42,12 +49,14 @@
         "worker-a1",
         "worker-a2",
         "worker-a3",
+        "worker-a4",
         "worker-b1",
         "worker-b2",
-        "worker-b3"
+        "worker-b3",
+        "worker-b4"
       ],
-      "checkpoint_hash": "56bac57a48796cef25576807f4cf32d7071faef3d194249610846a542b969f98",
-      "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+      "checkpoint_hash": "21478419c8a9a33afddb2505dc63aa16b344339675551dfadad549d5507ef3b8",
+      "comparison_key": "78f1dcb6a288ae0a1379d1f46aec4eec7add834ce52e533d7cccb7cdefe3a3a8",
       "initial_routes": {
         "worker-a1": {
           "route": [
@@ -75,6 +84,15 @@
           ],
           "egress_exit": "exit-b",
           "egress_length_m": 681.8857807434961
+        },
+        "worker-a4": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 701.8857807434961
         },
         "worker-b1": {
           "route": [
@@ -105,6 +123,16 @@
           ],
           "egress_exit": "exit-b",
           "egress_length_m": 1061.3590999637015
+        },
+        "worker-b4": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1081.3590999637015
         }
       },
       "decision_routes": {
@@ -138,6 +166,17 @@
           ],
           "egress_exit": "exit-b",
           "egress_length_m": 681.8857807434961,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-a4": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 664.3857807434961,
           "egress_status": "ok",
           "egress_reason": "none"
         },
@@ -176,6 +215,18 @@
           "egress_length_m": 1061.3590999637015,
           "egress_status": "ok",
           "egress_reason": "none"
+        },
+        "worker-b4": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1043.8590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
         }
       },
       "horizon_s": 900,
@@ -192,19 +243,28 @@
             "in_danger": 3,
             "no_route": 0,
             "unknown": 0,
-            "danger_exposure_person_s": 2700,
+            "danger_exposure_person_s": 2717,
             "unknown_exposure_person_s": 0,
-            "downtime_s": 0
+            "downtime_s": 833,
+            "hauled_t": 84.0,
+            "planned_t": 140.0,
+            "production_lost_t": 56.0,
+            "conflicts": 0,
+            "conflict_yield_s": 0,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 0
           },
           "peak": {
-            "in_danger": 3,
+            "in_danger": 4,
             "unknown": 0,
-            "no_route": 0
+            "no_route": 0,
+            "machines_in_danger": 1
           },
-          "downtime_since_decision_zone_s": 0,
+          "downtime_since_decision_zone_s": 833,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+            "comparison_key": "78f1dcb6a288ae0a1379d1f46aec4eec7add834ce52e533d7cccb7cdefe3a3a8",
             "forecast_tick": 60,
             "forecast_horizon_s": 900,
             "forecast_quality": "full",
@@ -213,25 +273,53 @@
             "forecast_in_danger": 3,
             "forecast_no_route": 0,
             "forecast_unknown": 0,
-            "forecast_danger_exposure_person_s": 2700,
+            "forecast_danger_exposure_person_s": 2717,
             "forecast_unknown_exposure_person_s": 0,
-            "forecast_downtime_s": 0
+            "forecast_downtime_s": 833,
+            "forecast_hauled_t": 84.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 56.0,
+            "forecast_conflicts": 0,
+            "forecast_conflict_yield_s": 0,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 0
           },
           "forecast_matches_actual": true,
-          "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+          "comparison_key": "78f1dcb6a288ae0a1379d1f46aec4eec7add834ce52e533d7cccb7cdefe3a3a8",
           "finished_at_sim_s": 960,
           "zones": {
             "zone-a": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 0,
+              "downtime_s": 833,
+              "run_hauled_t": 14.0
             },
             "zone-b": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 281.56424581005587,
+              "downtime_s": 0,
+              "run_hauled_t": 70.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "parked",
+              "hold_reason": "entry_blocked",
+              "at_working": "w-03",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
+            },
+            "lhd-b": {
+              "state": "working",
+              "hold_reason": "none",
+              "at_working": "w-12",
+              "offset_m": 30.0,
+              "loaded": true,
+              "location_hazard": "normal"
             }
           },
           "workers": {
@@ -256,6 +344,13 @@
               "egress_status": "ok",
               "egress_reason": "none"
             },
+            "worker-a4": {
+              "status": "working",
+              "at_working": "w-03",
+              "offset_m": 75.0,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
             "worker-b1": {
               "status": "working",
               "at_working": "w-12",
@@ -274,6 +369,13 @@
               "status": "working",
               "at_working": "w-12",
               "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 30.0,
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -285,54 +387,91 @@
           "target_zones": [
             "zone-a"
           ],
-          "targeted_workers": 3,
-          "target_out_s": 546,
+          "targeted_workers": 4,
+          "target_out_s": 562,
           "actual": {
-            "out": 3,
+            "out": 4,
             "all_out": false,
             "in_danger": 0,
             "no_route": 0,
             "unknown": 0,
-            "danger_exposure_person_s": 96,
+            "danger_exposure_person_s": 152,
             "unknown_exposure_person_s": 0,
-            "downtime_s": 900
+            "downtime_s": 900,
+            "hauled_t": 84.0,
+            "planned_t": 140.0,
+            "production_lost_t": 56.0,
+            "conflicts": 2,
+            "conflict_yield_s": 47,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 0
           },
           "peak": {
-            "in_danger": 3,
+            "in_danger": 4,
             "unknown": 0,
-            "no_route": 0
+            "no_route": 0,
+            "machines_in_danger": 1
           },
           "downtime_since_decision_zone_s": 900,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+            "comparison_key": "78f1dcb6a288ae0a1379d1f46aec4eec7add834ce52e533d7cccb7cdefe3a3a8",
             "forecast_tick": 60,
             "forecast_horizon_s": 900,
             "forecast_quality": "full",
-            "forecast_out": 3,
+            "forecast_out": 4,
             "forecast_all_out": false,
             "forecast_in_danger": 0,
             "forecast_no_route": 0,
             "forecast_unknown": 0,
-            "forecast_danger_exposure_person_s": 96,
+            "forecast_danger_exposure_person_s": 152,
             "forecast_unknown_exposure_person_s": 0,
-            "forecast_downtime_s": 900
+            "forecast_downtime_s": 900,
+            "forecast_hauled_t": 84.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 56.0,
+            "forecast_conflicts": 2,
+            "forecast_conflict_yield_s": 47,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 0
           },
           "forecast_matches_actual": true,
-          "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+          "comparison_key": "78f1dcb6a288ae0a1379d1f46aec4eec7add834ce52e533d7cccb7cdefe3a3a8",
           "finished_at_sim_s": 960,
           "zones": {
             "zone-a": {
               "work_state": "stopped",
               "withdrawal_state": "done",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 14.0
             },
             "zone-b": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 281.56424581005587,
+              "downtime_s": 0,
+              "run_hauled_t": 70.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "stopped",
+              "hold_reason": "zone_stopped",
+              "at_working": "w-03",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
+            },
+            "lhd-b": {
+              "state": "working",
+              "hold_reason": "none",
+              "at_working": "w-12",
+              "offset_m": 30.0,
+              "loaded": true,
+              "location_hazard": "normal"
             }
           },
           "workers": {
@@ -354,6 +493,12 @@
               "egress_status": "ok",
               "egress_reason": "none"
             },
+            "worker-a4": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
             "worker-b1": {
               "status": "working",
               "at_working": "w-12",
@@ -372,6 +517,13 @@
               "status": "working",
               "at_working": "w-12",
               "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 30.0,
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -384,56 +536,93 @@
             "zone-a",
             "zone-b"
           ],
-          "targeted_workers": 6,
-          "target_out_s": 850,
+          "targeted_workers": 8,
+          "target_out_s": 866,
           "actual": {
-            "out": 6,
+            "out": 8,
             "all_out": true,
             "in_danger": 0,
             "no_route": 0,
             "unknown": 0,
-            "danger_exposure_person_s": 96,
+            "danger_exposure_person_s": 152,
             "unknown_exposure_person_s": 0,
             "downtime_s": 1800,
-            "last_out_s": 850
+            "last_out_s": 866,
+            "hauled_t": 28.0,
+            "planned_t": 140.0,
+            "production_lost_t": 112.0,
+            "conflicts": 4,
+            "conflict_yield_s": 94,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 0
           },
           "peak": {
-            "in_danger": 3,
+            "in_danger": 4,
             "unknown": 0,
-            "no_route": 0
+            "no_route": 0,
+            "machines_in_danger": 1
           },
           "downtime_since_decision_zone_s": 1800,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+            "comparison_key": "78f1dcb6a288ae0a1379d1f46aec4eec7add834ce52e533d7cccb7cdefe3a3a8",
             "forecast_tick": 60,
             "forecast_horizon_s": 900,
             "forecast_quality": "full",
-            "forecast_out": 6,
+            "forecast_out": 8,
             "forecast_all_out": true,
             "forecast_in_danger": 0,
             "forecast_no_route": 0,
             "forecast_unknown": 0,
-            "forecast_danger_exposure_person_s": 96,
+            "forecast_danger_exposure_person_s": 152,
             "forecast_unknown_exposure_person_s": 0,
             "forecast_downtime_s": 1800,
-            "forecast_last_out_s": 850
+            "forecast_last_out_s": 866,
+            "forecast_hauled_t": 28.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 112.0,
+            "forecast_conflicts": 4,
+            "forecast_conflict_yield_s": 94,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 0
           },
           "forecast_matches_actual": true,
-          "comparison_key": "37042763a3d16c42e27e56a7b3c45476e24983011b6a6f88b273d949619a329b",
+          "comparison_key": "78f1dcb6a288ae0a1379d1f46aec4eec7add834ce52e533d7cccb7cdefe3a3a8",
           "finished_at_sim_s": 960,
           "zones": {
             "zone-a": {
               "work_state": "stopped",
               "withdrawal_state": "done",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 14.0
             },
             "zone-b": {
               "work_state": "stopped",
               "withdrawal_state": "done",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 14.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "stopped",
+              "hold_reason": "zone_stopped",
+              "at_working": "w-03",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
+            },
+            "lhd-b": {
+              "state": "stopped",
+              "hold_reason": "zone_stopped",
+              "at_working": "w-10",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
             }
           },
           "workers": {
@@ -455,6 +644,12 @@
               "egress_status": "ok",
               "egress_reason": "none"
             },
+            "worker-a4": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
             "worker-b1": {
               "status": "out",
               "at_exit": "exit-b",
@@ -470,6 +665,12 @@
             "worker-b3": {
               "status": "out",
               "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "out",
+              "at_exit": "exit-a",
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -543,6 +744,24 @@
               "w-01"
             ],
             "actual_egress_status": "ok"
+          },
+          {
+            "worker": "worker-a4",
+            "reason": "reference_route_closed",
+            "closed_workings": [
+              "w-04"
+            ],
+            "reference_route": [
+              "w-07",
+              "w-04",
+              "w-02"
+            ],
+            "actual_route": [
+              "w-07",
+              "w-03",
+              "w-01"
+            ],
+            "actual_egress_status": "ok"
           }
         ]
       },
@@ -550,12 +769,14 @@
         "worker-a1",
         "worker-a2",
         "worker-a3",
+        "worker-a4",
         "worker-b1",
         "worker-b2",
-        "worker-b3"
+        "worker-b3",
+        "worker-b4"
       ],
-      "checkpoint_hash": "8e4c8943ed0229d636a9faca51305eb4535b7a78216816efcce3e11551d59f8c",
-      "comparison_key": "f8fa8d5cf9fc2f2bfb43ead63338914f47ebc855ea4c0208092cb020d117f7de",
+      "checkpoint_hash": "efb45e5e132b11b9ac683b4422eccb85a33e1e08c2fff1c752af2be09e6e57cc",
+      "comparison_key": "939584bdda726779dc768bd4e4f94353d43b369790f0594dba6552f4295f1a85",
       "initial_routes": {
         "worker-a1": {
           "route": [
@@ -583,6 +804,15 @@
           ],
           "egress_exit": "exit-b",
           "egress_length_m": 681.8857807434961
+        },
+        "worker-a4": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 701.8857807434961
         },
         "worker-b1": {
           "route": [
@@ -613,6 +843,16 @@
           ],
           "egress_exit": "exit-b",
           "egress_length_m": 1061.3590999637015
+        },
+        "worker-b4": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1081.3590999637015
         }
       },
       "decision_routes": {
@@ -646,6 +886,17 @@
           ],
           "egress_exit": "exit-a",
           "egress_length_m": 704.7726750741192,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
+        "worker-a4": {
+          "route": [
+            "w-07",
+            "w-03",
+            "w-01"
+          ],
+          "egress_exit": "exit-a",
+          "egress_length_m": 687.2726750741192,
           "egress_status": "ok",
           "egress_reason": "none"
         },
@@ -684,6 +935,18 @@
           "egress_length_m": 1061.3590999637015,
           "egress_status": "ok",
           "egress_reason": "none"
+        },
+        "worker-b4": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1043.8590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
         }
       },
       "horizon_s": 900,
@@ -702,17 +965,26 @@
             "unknown": 0,
             "danger_exposure_person_s": 0,
             "unknown_exposure_person_s": 0,
-            "downtime_s": 0
+            "downtime_s": 0,
+            "hauled_t": 140.0,
+            "planned_t": 140.0,
+            "production_lost_t": 0.0,
+            "conflicts": 0,
+            "conflict_yield_s": 0,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 0
           },
           "peak": {
             "in_danger": 0,
             "unknown": 0,
-            "no_route": 0
+            "no_route": 0,
+            "machines_in_danger": 0
           },
           "downtime_since_decision_zone_s": 0,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "f8fa8d5cf9fc2f2bfb43ead63338914f47ebc855ea4c0208092cb020d117f7de",
+            "comparison_key": "939584bdda726779dc768bd4e4f94353d43b369790f0594dba6552f4295f1a85",
             "forecast_tick": 60,
             "forecast_horizon_s": 900,
             "forecast_quality": "full",
@@ -723,23 +995,51 @@
             "forecast_unknown": 0,
             "forecast_danger_exposure_person_s": 0,
             "forecast_unknown_exposure_person_s": 0,
-            "forecast_downtime_s": 0
+            "forecast_downtime_s": 0,
+            "forecast_hauled_t": 140.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 0.0,
+            "forecast_conflicts": 0,
+            "forecast_conflict_yield_s": 0,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 0
           },
           "forecast_matches_actual": true,
-          "comparison_key": "f8fa8d5cf9fc2f2bfb43ead63338914f47ebc855ea4c0208092cb020d117f7de",
+          "comparison_key": "939584bdda726779dc768bd4e4f94353d43b369790f0594dba6552f4295f1a85",
           "finished_at_sim_s": 960,
           "zones": {
             "zone-a": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 281.56424581005587,
+              "downtime_s": 0,
+              "run_hauled_t": 70.0
             },
             "zone-b": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 281.56424581005587,
+              "downtime_s": 0,
+              "run_hauled_t": 70.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "working",
+              "hold_reason": "none",
+              "at_working": "w-07",
+              "offset_m": 30.0,
+              "loaded": true,
+              "location_hazard": "normal"
+            },
+            "lhd-b": {
+              "state": "working",
+              "hold_reason": "none",
+              "at_working": "w-12",
+              "offset_m": 30.0,
+              "loaded": true,
+              "location_hazard": "normal"
             }
           },
           "workers": {
@@ -764,6 +1064,13 @@
               "egress_status": "ok",
               "egress_reason": "none"
             },
+            "worker-a4": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 30.0,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
             "worker-b1": {
               "status": "working",
               "at_working": "w-12",
@@ -782,6 +1089,13 @@
               "status": "working",
               "at_working": "w-12",
               "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 30.0,
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -793,54 +1107,91 @@
           "target_zones": [
             "zone-a"
           ],
-          "targeted_workers": 3,
-          "target_out_s": 564,
+          "targeted_workers": 4,
+          "target_out_s": 592,
           "actual": {
-            "out": 3,
+            "out": 4,
             "all_out": false,
             "in_danger": 0,
             "no_route": 0,
             "unknown": 0,
             "danger_exposure_person_s": 0,
             "unknown_exposure_person_s": 0,
-            "downtime_s": 900
+            "downtime_s": 900,
+            "hauled_t": 84.0,
+            "planned_t": 140.0,
+            "production_lost_t": 56.0,
+            "conflicts": 2,
+            "conflict_yield_s": 108,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 0
           },
           "peak": {
             "in_danger": 0,
             "unknown": 0,
-            "no_route": 0
+            "no_route": 0,
+            "machines_in_danger": 0
           },
           "downtime_since_decision_zone_s": 900,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "f8fa8d5cf9fc2f2bfb43ead63338914f47ebc855ea4c0208092cb020d117f7de",
+            "comparison_key": "939584bdda726779dc768bd4e4f94353d43b369790f0594dba6552f4295f1a85",
             "forecast_tick": 60,
             "forecast_horizon_s": 900,
             "forecast_quality": "full",
-            "forecast_out": 3,
+            "forecast_out": 4,
             "forecast_all_out": false,
             "forecast_in_danger": 0,
             "forecast_no_route": 0,
             "forecast_unknown": 0,
             "forecast_danger_exposure_person_s": 0,
             "forecast_unknown_exposure_person_s": 0,
-            "forecast_downtime_s": 900
+            "forecast_downtime_s": 900,
+            "forecast_hauled_t": 84.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 56.0,
+            "forecast_conflicts": 2,
+            "forecast_conflict_yield_s": 108,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 0
           },
           "forecast_matches_actual": true,
-          "comparison_key": "f8fa8d5cf9fc2f2bfb43ead63338914f47ebc855ea4c0208092cb020d117f7de",
+          "comparison_key": "939584bdda726779dc768bd4e4f94353d43b369790f0594dba6552f4295f1a85",
           "finished_at_sim_s": 960,
           "zones": {
             "zone-a": {
               "work_state": "stopped",
               "withdrawal_state": "done",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 14.0
             },
             "zone-b": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 281.56424581005587,
+              "downtime_s": 0,
+              "run_hauled_t": 70.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "stopped",
+              "hold_reason": "zone_stopped",
+              "at_working": "w-03",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
+            },
+            "lhd-b": {
+              "state": "working",
+              "hold_reason": "none",
+              "at_working": "w-12",
+              "offset_m": 30.0,
+              "loaded": true,
+              "location_hazard": "normal"
             }
           },
           "workers": {
@@ -857,6 +1208,12 @@
               "egress_reason": "none"
             },
             "worker-a3": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-a4": {
               "status": "out",
               "at_exit": "exit-a",
               "egress_status": "ok",
@@ -880,6 +1237,13 @@
               "status": "working",
               "at_working": "w-12",
               "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 30.0,
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -892,10 +1256,10 @@
             "zone-a",
             "zone-b"
           ],
-          "targeted_workers": 6,
-          "target_out_s": 850,
+          "targeted_workers": 8,
+          "target_out_s": 866,
           "actual": {
-            "out": 6,
+            "out": 8,
             "all_out": true,
             "in_danger": 0,
             "no_route": 0,
@@ -903,21 +1267,30 @@
             "danger_exposure_person_s": 0,
             "unknown_exposure_person_s": 0,
             "downtime_s": 1800,
-            "last_out_s": 850
+            "last_out_s": 866,
+            "hauled_t": 28.0,
+            "planned_t": 140.0,
+            "production_lost_t": 112.0,
+            "conflicts": 4,
+            "conflict_yield_s": 155,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 0
           },
           "peak": {
             "in_danger": 0,
             "unknown": 0,
-            "no_route": 0
+            "no_route": 0,
+            "machines_in_danger": 0
           },
           "downtime_since_decision_zone_s": 1800,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "f8fa8d5cf9fc2f2bfb43ead63338914f47ebc855ea4c0208092cb020d117f7de",
+            "comparison_key": "939584bdda726779dc768bd4e4f94353d43b369790f0594dba6552f4295f1a85",
             "forecast_tick": 60,
             "forecast_horizon_s": 900,
             "forecast_quality": "full",
-            "forecast_out": 6,
+            "forecast_out": 8,
             "forecast_all_out": true,
             "forecast_in_danger": 0,
             "forecast_no_route": 0,
@@ -925,23 +1298,51 @@
             "forecast_danger_exposure_person_s": 0,
             "forecast_unknown_exposure_person_s": 0,
             "forecast_downtime_s": 1800,
-            "forecast_last_out_s": 850
+            "forecast_last_out_s": 866,
+            "forecast_hauled_t": 28.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 112.0,
+            "forecast_conflicts": 4,
+            "forecast_conflict_yield_s": 155,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 0
           },
           "forecast_matches_actual": true,
-          "comparison_key": "f8fa8d5cf9fc2f2bfb43ead63338914f47ebc855ea4c0208092cb020d117f7de",
+          "comparison_key": "939584bdda726779dc768bd4e4f94353d43b369790f0594dba6552f4295f1a85",
           "finished_at_sim_s": 960,
           "zones": {
             "zone-a": {
               "work_state": "stopped",
               "withdrawal_state": "done",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 14.0
             },
             "zone-b": {
               "work_state": "stopped",
               "withdrawal_state": "done",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 14.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "stopped",
+              "hold_reason": "zone_stopped",
+              "at_working": "w-03",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
+            },
+            "lhd-b": {
+              "state": "stopped",
+              "hold_reason": "zone_stopped",
+              "at_working": "w-10",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
             }
           },
           "workers": {
@@ -963,6 +1364,12 @@
               "egress_status": "ok",
               "egress_reason": "none"
             },
+            "worker-a4": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
             "worker-b1": {
               "status": "out",
               "at_exit": "exit-b",
@@ -978,6 +1385,12 @@
             "worker-b3": {
               "status": "out",
               "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "out",
+              "at_exit": "exit-a",
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -1039,6 +1452,20 @@
             ],
             "actual_route": [],
             "actual_egress_status": "none"
+          },
+          {
+            "worker": "worker-a4",
+            "reason": "current_working_closed",
+            "closed_workings": [
+              "w-07"
+            ],
+            "reference_route": [
+              "w-07",
+              "w-04",
+              "w-02"
+            ],
+            "actual_route": [],
+            "actual_egress_status": "none"
           }
         ]
       },
@@ -1046,12 +1473,14 @@
         "worker-a1",
         "worker-a2",
         "worker-a3",
+        "worker-a4",
         "worker-b1",
         "worker-b2",
-        "worker-b3"
+        "worker-b3",
+        "worker-b4"
       ],
-      "checkpoint_hash": "2ea41d63fdc22af9d162d384848d45c151119f832ed69d03386c39c845c92372",
-      "comparison_key": "aacefc4aecc067c9bb13505a731122e17b5a6f4faad8b42cef766398c23a92f0",
+      "checkpoint_hash": "ccbd1bcd8cb5068f9450ced457531875d9cf4e09720e249b6dce5075e1d2dd0b",
+      "comparison_key": "cd6db481061af89a45f945618e6fc441226b4497fdc99c9fabd8b67f139745da",
       "initial_routes": {
         "worker-a1": {
           "route": [
@@ -1079,6 +1508,15 @@
           ],
           "egress_exit": "exit-b",
           "egress_length_m": 681.8857807434961
+        },
+        "worker-a4": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 701.8857807434961
         },
         "worker-b1": {
           "route": [
@@ -1109,6 +1547,16 @@
           ],
           "egress_exit": "exit-b",
           "egress_length_m": 1061.3590999637015
+        },
+        "worker-b4": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1081.3590999637015
         }
       },
       "decision_routes": {
@@ -1127,6 +1575,13 @@
           "egress_reason": "current_working_closed"
         },
         "worker-a3": {
+          "route": [],
+          "egress_exit": null,
+          "egress_length_m": null,
+          "egress_status": "none",
+          "egress_reason": "current_working_closed"
+        },
+        "worker-a4": {
           "route": [],
           "egress_exit": null,
           "egress_length_m": null,
@@ -1168,6 +1623,18 @@
           "egress_length_m": 1061.3590999637015,
           "egress_status": "ok",
           "egress_reason": "none"
+        },
+        "worker-b4": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1043.8590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
         }
       },
       "horizon_s": 900,
@@ -1182,48 +1649,85 @@
             "out": 0,
             "all_out": false,
             "in_danger": 0,
-            "no_route": 3,
+            "no_route": 4,
             "unknown": 0,
             "danger_exposure_person_s": 0,
             "unknown_exposure_person_s": 0,
-            "downtime_s": 0
+            "downtime_s": 900,
+            "hauled_t": 70.0,
+            "planned_t": 140.0,
+            "production_lost_t": 70.0,
+            "conflicts": 0,
+            "conflict_yield_s": 0,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 1
           },
           "peak": {
             "in_danger": 0,
             "unknown": 0,
-            "no_route": 3
+            "no_route": 4,
+            "machines_in_danger": 0
           },
-          "downtime_since_decision_zone_s": 0,
+          "downtime_since_decision_zone_s": 900,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "aacefc4aecc067c9bb13505a731122e17b5a6f4faad8b42cef766398c23a92f0",
+            "comparison_key": "cd6db481061af89a45f945618e6fc441226b4497fdc99c9fabd8b67f139745da",
             "forecast_tick": 60,
             "forecast_horizon_s": 900,
             "forecast_quality": "full",
             "forecast_out": 0,
             "forecast_all_out": false,
             "forecast_in_danger": 0,
-            "forecast_no_route": 3,
+            "forecast_no_route": 4,
             "forecast_unknown": 0,
             "forecast_danger_exposure_person_s": 0,
             "forecast_unknown_exposure_person_s": 0,
-            "forecast_downtime_s": 0
+            "forecast_downtime_s": 900,
+            "forecast_hauled_t": 70.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 70.0,
+            "forecast_conflicts": 0,
+            "forecast_conflict_yield_s": 0,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 1
           },
           "forecast_matches_actual": true,
-          "comparison_key": "aacefc4aecc067c9bb13505a731122e17b5a6f4faad8b42cef766398c23a92f0",
+          "comparison_key": "cd6db481061af89a45f945618e6fc441226b4497fdc99c9fabd8b67f139745da",
           "finished_at_sim_s": 960,
           "zones": {
             "zone-a": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 0,
+              "downtime_s": 900,
+              "run_hauled_t": 0.0
             },
             "zone-b": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 281.56424581005587,
+              "downtime_s": 0,
+              "run_hauled_t": 70.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "parked",
+              "hold_reason": "path_closed",
+              "at_working": "w-07",
+              "offset_m": 42.5,
+              "loaded": true,
+              "location_hazard": "normal"
+            },
+            "lhd-b": {
+              "state": "working",
+              "hold_reason": "none",
+              "at_working": "w-12",
+              "offset_m": 30.0,
+              "loaded": true,
+              "location_hazard": "normal"
             }
           },
           "workers": {
@@ -1248,6 +1752,13 @@
               "egress_status": "none",
               "egress_reason": "current_working_closed"
             },
+            "worker-a4": {
+              "status": "working",
+              "at_working": "w-07",
+              "offset_m": 42.5,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
             "worker-b1": {
               "status": "working",
               "at_working": "w-12",
@@ -1266,6 +1777,13 @@
               "status": "working",
               "at_working": "w-12",
               "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 30.0,
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -1277,54 +1795,91 @@
           "target_zones": [
             "zone-a"
           ],
-          "targeted_workers": 3,
+          "targeted_workers": 4,
           "target_out_s": null,
           "actual": {
             "out": 0,
             "all_out": false,
             "in_danger": 0,
-            "no_route": 3,
+            "no_route": 4,
             "unknown": 0,
             "danger_exposure_person_s": 0,
             "unknown_exposure_person_s": 0,
-            "downtime_s": 900
+            "downtime_s": 900,
+            "hauled_t": 70.0,
+            "planned_t": 140.0,
+            "production_lost_t": 70.0,
+            "conflicts": 0,
+            "conflict_yield_s": 0,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 1
           },
           "peak": {
             "in_danger": 0,
             "unknown": 0,
-            "no_route": 3
+            "no_route": 4,
+            "machines_in_danger": 0
           },
           "downtime_since_decision_zone_s": 900,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "aacefc4aecc067c9bb13505a731122e17b5a6f4faad8b42cef766398c23a92f0",
+            "comparison_key": "cd6db481061af89a45f945618e6fc441226b4497fdc99c9fabd8b67f139745da",
             "forecast_tick": 60,
             "forecast_horizon_s": 900,
             "forecast_quality": "full",
             "forecast_out": 0,
             "forecast_all_out": false,
             "forecast_in_danger": 0,
-            "forecast_no_route": 3,
+            "forecast_no_route": 4,
             "forecast_unknown": 0,
             "forecast_danger_exposure_person_s": 0,
             "forecast_unknown_exposure_person_s": 0,
-            "forecast_downtime_s": 900
+            "forecast_downtime_s": 900,
+            "forecast_hauled_t": 70.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 70.0,
+            "forecast_conflicts": 0,
+            "forecast_conflict_yield_s": 0,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 1
           },
           "forecast_matches_actual": true,
-          "comparison_key": "aacefc4aecc067c9bb13505a731122e17b5a6f4faad8b42cef766398c23a92f0",
+          "comparison_key": "cd6db481061af89a45f945618e6fc441226b4497fdc99c9fabd8b67f139745da",
           "finished_at_sim_s": 960,
           "zones": {
             "zone-a": {
               "work_state": "stopped",
               "withdrawal_state": "incomplete",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 0.0
             },
             "zone-b": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 281.56424581005587,
+              "downtime_s": 0,
+              "run_hauled_t": 70.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "stopped",
+              "hold_reason": "path_closed",
+              "at_working": "w-07",
+              "offset_m": 42.5,
+              "loaded": true,
+              "location_hazard": "normal"
+            },
+            "lhd-b": {
+              "state": "working",
+              "hold_reason": "none",
+              "at_working": "w-12",
+              "offset_m": 30.0,
+              "loaded": true,
+              "location_hazard": "normal"
             }
           },
           "workers": {
@@ -1349,6 +1904,13 @@
               "egress_status": "none",
               "egress_reason": "current_working_closed"
             },
+            "worker-a4": {
+              "status": "waiting",
+              "at_working": "w-07",
+              "offset_m": 42.5,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
             "worker-b1": {
               "status": "working",
               "at_working": "w-12",
@@ -1367,6 +1929,13 @@
               "status": "working",
               "at_working": "w-12",
               "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "working",
+              "at_working": "w-12",
+              "offset_m": 30.0,
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -1379,54 +1948,91 @@
             "zone-a",
             "zone-b"
           ],
-          "targeted_workers": 6,
+          "targeted_workers": 8,
           "target_out_s": null,
           "actual": {
-            "out": 3,
+            "out": 4,
             "all_out": false,
             "in_danger": 0,
-            "no_route": 3,
+            "no_route": 4,
             "unknown": 0,
             "danger_exposure_person_s": 0,
             "unknown_exposure_person_s": 0,
-            "downtime_s": 1800
+            "downtime_s": 1800,
+            "hauled_t": 14.0,
+            "planned_t": 140.0,
+            "production_lost_t": 126.0,
+            "conflicts": 2,
+            "conflict_yield_s": 47,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 1
           },
           "peak": {
             "in_danger": 0,
             "unknown": 0,
-            "no_route": 3
+            "no_route": 4,
+            "machines_in_danger": 0
           },
           "downtime_since_decision_zone_s": 1800,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "aacefc4aecc067c9bb13505a731122e17b5a6f4faad8b42cef766398c23a92f0",
+            "comparison_key": "cd6db481061af89a45f945618e6fc441226b4497fdc99c9fabd8b67f139745da",
             "forecast_tick": 60,
             "forecast_horizon_s": 900,
             "forecast_quality": "full",
-            "forecast_out": 3,
+            "forecast_out": 4,
             "forecast_all_out": false,
             "forecast_in_danger": 0,
-            "forecast_no_route": 3,
+            "forecast_no_route": 4,
             "forecast_unknown": 0,
             "forecast_danger_exposure_person_s": 0,
             "forecast_unknown_exposure_person_s": 0,
-            "forecast_downtime_s": 1800
+            "forecast_downtime_s": 1800,
+            "forecast_hauled_t": 14.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 126.0,
+            "forecast_conflicts": 2,
+            "forecast_conflict_yield_s": 47,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 1
           },
           "forecast_matches_actual": true,
-          "comparison_key": "aacefc4aecc067c9bb13505a731122e17b5a6f4faad8b42cef766398c23a92f0",
+          "comparison_key": "cd6db481061af89a45f945618e6fc441226b4497fdc99c9fabd8b67f139745da",
           "finished_at_sim_s": 960,
           "zones": {
             "zone-a": {
               "work_state": "stopped",
               "withdrawal_state": "incomplete",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 0.0
             },
             "zone-b": {
               "work_state": "stopped",
               "withdrawal_state": "done",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 14.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "stopped",
+              "hold_reason": "path_closed",
+              "at_working": "w-07",
+              "offset_m": 42.5,
+              "loaded": true,
+              "location_hazard": "normal"
+            },
+            "lhd-b": {
+              "state": "stopped",
+              "hold_reason": "zone_stopped",
+              "at_working": "w-10",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
             }
           },
           "workers": {
@@ -1451,6 +2057,13 @@
               "egress_status": "none",
               "egress_reason": "current_working_closed"
             },
+            "worker-a4": {
+              "status": "waiting",
+              "at_working": "w-07",
+              "offset_m": 42.5,
+              "egress_status": "none",
+              "egress_reason": "current_working_closed"
+            },
             "worker-b1": {
               "status": "out",
               "at_exit": "exit-b",
@@ -1466,6 +2079,12 @@
             "worker-b3": {
               "status": "out",
               "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "out",
+              "at_exit": "exit-a",
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -1498,12 +2117,14 @@
         "worker-a1",
         "worker-a2",
         "worker-a3",
+        "worker-a4",
         "worker-b1",
         "worker-b2",
-        "worker-b3"
+        "worker-b3",
+        "worker-b4"
       ],
-      "checkpoint_hash": "6f56c2cc506016131873e68fc5bbfaf70312b6248f3211670b2396a265b0bbd0",
-      "comparison_key": "ba28ace49f4f789cd1be689a1cf80ba7856af5a7c785ae3ac34f7bd256177332",
+      "checkpoint_hash": "18dd5d0c75c08921fb7d2325ce7fc15f18bb60799f2df238ea6ebb6ecfeb158c",
+      "comparison_key": "5558943002662209dadf667850b8655af836b91424f812add2e9ab6fe6df887d",
       "initial_routes": {
         "worker-a1": {
           "route": [
@@ -1531,6 +2152,15 @@
           ],
           "egress_exit": "exit-b",
           "egress_length_m": 681.8857807434961
+        },
+        "worker-a4": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 701.8857807434961
         },
         "worker-b1": {
           "route": [
@@ -1561,6 +2191,16 @@
           ],
           "egress_exit": "exit-b",
           "egress_length_m": 1061.3590999637015
+        },
+        "worker-b4": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1081.3590999637015
         }
       },
       "decision_routes": {
@@ -1597,6 +2237,17 @@
           "egress_status": "ok",
           "egress_reason": "none"
         },
+        "worker-a4": {
+          "route": [
+            "w-07",
+            "w-04",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 629.3857807434961,
+          "egress_status": "ok",
+          "egress_reason": "none"
+        },
         "worker-b1": {
           "route": [
             "w-12",
@@ -1632,6 +2283,18 @@
           "egress_length_m": 1061.3590999637015,
           "egress_status": "ok",
           "egress_reason": "none"
+        },
+        "worker-b4": {
+          "route": [
+            "w-12",
+            "w-11",
+            "w-09",
+            "w-02"
+          ],
+          "egress_exit": "exit-b",
+          "egress_length_m": 1008.8590999637015,
+          "egress_status": "ok",
+          "egress_reason": "none"
         }
       },
       "horizon_s": 900,
@@ -1649,18 +2312,27 @@
             "no_route": 0,
             "unknown": 3,
             "danger_exposure_person_s": 0,
-            "unknown_exposure_person_s": 2700,
-            "downtime_s": 0
+            "unknown_exposure_person_s": 2703,
+            "downtime_s": 847,
+            "hauled_t": 84.0,
+            "planned_t": 140.0,
+            "production_lost_t": 56.0,
+            "conflicts": 0,
+            "conflict_yield_s": 0,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 0
           },
           "peak": {
             "in_danger": 0,
-            "unknown": 3,
-            "no_route": 0
+            "unknown": 4,
+            "no_route": 0,
+            "machines_in_danger": 0
           },
-          "downtime_since_decision_zone_s": 0,
+          "downtime_since_decision_zone_s": 847,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "ba28ace49f4f789cd1be689a1cf80ba7856af5a7c785ae3ac34f7bd256177332",
+            "comparison_key": "5558943002662209dadf667850b8655af836b91424f812add2e9ab6fe6df887d",
             "forecast_tick": 74,
             "forecast_horizon_s": 900,
             "forecast_quality": "partial",
@@ -1670,24 +2342,52 @@
             "forecast_no_route": 0,
             "forecast_unknown": 3,
             "forecast_danger_exposure_person_s": 0,
-            "forecast_unknown_exposure_person_s": 2700,
-            "forecast_downtime_s": 0
+            "forecast_unknown_exposure_person_s": 2703,
+            "forecast_downtime_s": 847,
+            "forecast_hauled_t": 84.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 56.0,
+            "forecast_conflicts": 0,
+            "forecast_conflict_yield_s": 0,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 0
           },
           "forecast_matches_actual": true,
-          "comparison_key": "ba28ace49f4f789cd1be689a1cf80ba7856af5a7c785ae3ac34f7bd256177332",
+          "comparison_key": "5558943002662209dadf667850b8655af836b91424f812add2e9ab6fe6df887d",
           "finished_at_sim_s": 974,
           "zones": {
             "zone-a": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 0,
+              "downtime_s": 847,
+              "run_hauled_t": 14.0
             },
             "zone-b": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 281.56424581005587,
+              "downtime_s": 0,
+              "run_hauled_t": 70.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "parked",
+              "hold_reason": "entry_blocked",
+              "at_working": "w-03",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
+            },
+            "lhd-b": {
+              "state": "working",
+              "hold_reason": "none",
+              "at_working": "w-10",
+              "offset_m": 145.0,
+              "loaded": true,
+              "location_hazard": "unknown"
             }
           },
           "workers": {
@@ -1712,6 +2412,13 @@
               "egress_status": "ok",
               "egress_reason": "none"
             },
+            "worker-a4": {
+              "status": "working",
+              "at_working": "w-03",
+              "offset_m": 75.0,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
             "worker-b1": {
               "status": "working",
               "at_working": "w-12",
@@ -1730,6 +2437,13 @@
               "status": "working",
               "at_working": "w-12",
               "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "working",
+              "at_working": "w-10",
+              "offset_m": 145.0,
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -1741,54 +2455,91 @@
           "target_zones": [
             "zone-a"
           ],
-          "targeted_workers": 3,
+          "targeted_workers": 4,
           "target_out_s": 546,
           "actual": {
-            "out": 3,
+            "out": 4,
             "all_out": false,
             "in_danger": 0,
             "no_route": 0,
             "unknown": 0,
             "danger_exposure_person_s": 0,
-            "unknown_exposure_person_s": 96,
-            "downtime_s": 900
+            "unknown_exposure_person_s": 99,
+            "downtime_s": 900,
+            "hauled_t": 84.0,
+            "planned_t": 140.0,
+            "production_lost_t": 56.0,
+            "conflicts": 0,
+            "conflict_yield_s": 0,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 0
           },
           "peak": {
             "in_danger": 0,
-            "unknown": 3,
-            "no_route": 0
+            "unknown": 4,
+            "no_route": 0,
+            "machines_in_danger": 0
           },
           "downtime_since_decision_zone_s": 900,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "ba28ace49f4f789cd1be689a1cf80ba7856af5a7c785ae3ac34f7bd256177332",
+            "comparison_key": "5558943002662209dadf667850b8655af836b91424f812add2e9ab6fe6df887d",
             "forecast_tick": 74,
             "forecast_horizon_s": 900,
             "forecast_quality": "partial",
-            "forecast_out": 3,
+            "forecast_out": 4,
             "forecast_all_out": false,
             "forecast_in_danger": 0,
             "forecast_no_route": 0,
             "forecast_unknown": 0,
             "forecast_danger_exposure_person_s": 0,
-            "forecast_unknown_exposure_person_s": 96,
-            "forecast_downtime_s": 900
+            "forecast_unknown_exposure_person_s": 99,
+            "forecast_downtime_s": 900,
+            "forecast_hauled_t": 84.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 56.0,
+            "forecast_conflicts": 0,
+            "forecast_conflict_yield_s": 0,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 0
           },
           "forecast_matches_actual": true,
-          "comparison_key": "ba28ace49f4f789cd1be689a1cf80ba7856af5a7c785ae3ac34f7bd256177332",
+          "comparison_key": "5558943002662209dadf667850b8655af836b91424f812add2e9ab6fe6df887d",
           "finished_at_sim_s": 974,
           "zones": {
             "zone-a": {
               "work_state": "stopped",
               "withdrawal_state": "done",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 14.0
             },
             "zone-b": {
               "work_state": "working",
               "withdrawal_state": "none",
-              "production_rate": 30,
-              "downtime_s": 0
+              "production_rate": 281.56424581005587,
+              "downtime_s": 0,
+              "run_hauled_t": 70.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "stopped",
+              "hold_reason": "zone_stopped",
+              "at_working": "w-03",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
+            },
+            "lhd-b": {
+              "state": "working",
+              "hold_reason": "none",
+              "at_working": "w-10",
+              "offset_m": 145.0,
+              "loaded": true,
+              "location_hazard": "unknown"
             }
           },
           "workers": {
@@ -1810,6 +2561,12 @@
               "egress_status": "ok",
               "egress_reason": "none"
             },
+            "worker-a4": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
             "worker-b1": {
               "status": "working",
               "at_working": "w-12",
@@ -1828,6 +2585,13 @@
               "status": "working",
               "at_working": "w-12",
               "offset_m": 60,
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "working",
+              "at_working": "w-10",
+              "offset_m": 145.0,
               "egress_status": "ok",
               "egress_reason": "none"
             }
@@ -1840,56 +2604,93 @@
             "zone-a",
             "zone-b"
           ],
-          "targeted_workers": 6,
+          "targeted_workers": 8,
           "target_out_s": 850,
           "actual": {
-            "out": 6,
+            "out": 8,
             "all_out": true,
             "in_danger": 0,
             "no_route": 0,
             "unknown": 0,
             "danger_exposure_person_s": 0,
-            "unknown_exposure_person_s": 96,
+            "unknown_exposure_person_s": 99,
             "downtime_s": 1800,
-            "last_out_s": 850
+            "last_out_s": 850,
+            "hauled_t": 28.0,
+            "planned_t": 140.0,
+            "production_lost_t": 112.0,
+            "conflicts": 0,
+            "conflict_yield_s": 0,
+            "machines_in_danger": 0,
+            "machines_unknown": 0,
+            "machines_stuck": 0
           },
           "peak": {
             "in_danger": 0,
-            "unknown": 3,
-            "no_route": 0
+            "unknown": 4,
+            "no_route": 0,
+            "machines_in_danger": 0
           },
           "downtime_since_decision_zone_s": 1800,
           "forecast": {
             "decision_id": "run-0002-d1",
-            "comparison_key": "ba28ace49f4f789cd1be689a1cf80ba7856af5a7c785ae3ac34f7bd256177332",
+            "comparison_key": "5558943002662209dadf667850b8655af836b91424f812add2e9ab6fe6df887d",
             "forecast_tick": 74,
             "forecast_horizon_s": 900,
             "forecast_quality": "partial",
-            "forecast_out": 6,
+            "forecast_out": 8,
             "forecast_all_out": true,
             "forecast_in_danger": 0,
             "forecast_no_route": 0,
             "forecast_unknown": 0,
             "forecast_danger_exposure_person_s": 0,
-            "forecast_unknown_exposure_person_s": 96,
+            "forecast_unknown_exposure_person_s": 99,
             "forecast_downtime_s": 1800,
-            "forecast_last_out_s": 850
+            "forecast_last_out_s": 850,
+            "forecast_hauled_t": 28.0,
+            "forecast_planned_t": 140.0,
+            "forecast_production_lost_t": 112.0,
+            "forecast_conflicts": 0,
+            "forecast_conflict_yield_s": 0,
+            "forecast_machines_in_danger": 0,
+            "forecast_machines_unknown": 0,
+            "forecast_machines_stuck": 0
           },
           "forecast_matches_actual": true,
-          "comparison_key": "ba28ace49f4f789cd1be689a1cf80ba7856af5a7c785ae3ac34f7bd256177332",
+          "comparison_key": "5558943002662209dadf667850b8655af836b91424f812add2e9ab6fe6df887d",
           "finished_at_sim_s": 974,
           "zones": {
             "zone-a": {
               "work_state": "stopped",
               "withdrawal_state": "done",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 14.0
             },
             "zone-b": {
               "work_state": "stopped",
               "withdrawal_state": "done",
               "production_rate": 0,
-              "downtime_s": 900
+              "downtime_s": 900,
+              "run_hauled_t": 14.0
+            }
+          },
+          "machines": {
+            "lhd-a": {
+              "state": "stopped",
+              "hold_reason": "zone_stopped",
+              "at_working": "w-03",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
+            },
+            "lhd-b": {
+              "state": "stopped",
+              "hold_reason": "zone_stopped",
+              "at_working": "w-10",
+              "offset_m": 75.0,
+              "loaded": false,
+              "location_hazard": "unknown"
             }
           },
           "workers": {
@@ -1911,6 +2712,12 @@
               "egress_status": "ok",
               "egress_reason": "none"
             },
+            "worker-a4": {
+              "status": "out",
+              "at_exit": "exit-a",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
             "worker-b1": {
               "status": "out",
               "at_exit": "exit-b",
@@ -1926,6 +2733,12 @@
             "worker-b3": {
               "status": "out",
               "at_exit": "exit-b",
+              "egress_status": "ok",
+              "egress_reason": "none"
+            },
+            "worker-b4": {
+              "status": "out",
+              "at_exit": "exit-a",
               "egress_status": "ok",
               "egress_reason": "none"
             }

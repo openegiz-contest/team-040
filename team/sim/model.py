@@ -8,6 +8,7 @@ import re
 from .routing import route
 from .journal import observe
 from .parameters import validate
+from . import equipment
 from .topology import MODEL_VERSION, PARAMETERS, build_attributes
 
 SCOPE_POLICY_VERSION = 2
@@ -57,6 +58,7 @@ class Mine:
         self.exposure = 0
         self.unknown_exposure = 0
         self.workings, self.zones, self.sensors, self.workers, self.exits = {}, {}, {}, {}, {}
+        self.machines = {}
         for key, a in self.attributes.items():
             kind = a["kind"]
             if kind == "working":
@@ -73,6 +75,11 @@ class Mine:
                                          offset_m=a["initial_offset_m"], pos_quality="fresh")
             elif kind == "exit":
                 self.exits[key] = dict(state="available", workers_out=0)
+            elif kind == "equipment":
+                self.machines[key] = equipment.initial_machine(a)
+        for key, machine in self.machines.items():
+            self.workers[self.attributes[key]["operator"]]["aboard"] = key
+        equipment.reset_window(self)
         self.cohort = sorted(self.workers)
         self._refresh()
         self._event("run.started", "shift")
@@ -124,6 +131,7 @@ class Mine:
                          routing_restriction="blocked" if z["last_known_hazard_state"] == "danger" else "unknown")
                 for field in ("reason_value", "reason_threshold", "reason_unit"):
                     z.pop(field, None)
+        equipment.refresh(self)
         for key, w in self.workers.items():
             for field in list(w):
                 if field.startswith("egress_") or field.startswith("route"):
@@ -141,10 +149,11 @@ class Mine:
         for key, z in self.zones.items():
             z["workers_count"] = sum(w["status"] != "out" and
                 self.attributes[w["at_working"]].get("zone") == key for w in self.workers.values())
-            staffed = sum(w["status"] == "working" and self.attributes[k]["home_zone"] == key
-                          for k, w in self.workers.items()) >= self.attributes[key]["required_workers"]
+            staffed = equipment.crew_staffed(self, key)
             z["production_rate"] = self.attributes[key]["nominal_production_t_h"] if (
-                z["work_state"] == "working" and staffed) else 0
+                z["work_state"] == "working" and staffed and all(
+                    self.machines[k]["state"] == "working" for k in self.attributes[key]["equipment"])) else 0
+            z["run_hauled_t"] = sum(self.machines[k]["run_hauled_t"] for k in self.attributes[key]["equipment"])
             if z["withdrawal_state"] != "none":
                 people = [w for k, w in self.workers.items() if self.attributes[k]["home_zone"] == key]
                 z["withdrawal_state"] = "done" if all(w["status"] == "out" for w in people) else (
@@ -201,6 +210,7 @@ class Mine:
         self.selected_option = None
         self.last_out_s = None
         self.exposure = self.unknown_exposure = 0
+        equipment.reset_window(self)
         self.cohort = sorted(k for k, w in self.workers.items() if w["status"] != "out")
         affected, scope_reasons = self._affected_scope(causes)
         self.incident = dict(state="active", trigger=causes[0].split(":")[0], causes=causes,
@@ -213,6 +223,7 @@ class Mine:
             scope=affected, parameters=self.parameters,
             topology=self.attributes, seed=self.seed, tick=self.tick, workings=self.workings,
             zones=self.zones, sensors=self.sensors, workers=self.workers, exits=self.exits,
+            machines=self.machines, shadow=self.shadow,
             cohort=self.cohort, conditions=sorted(self.conditions), schedule=self.schedule))
         self.comparable = True
         self._event("decision.opened", "incident", "Варианты рассчитаны из одного состояния",
@@ -258,7 +269,7 @@ class Mine:
                 w["status"] = "moving_to_exit"
 
     def _move(self, worker):
-        if worker["status"] != "moving_to_exit" or worker["egress_status"] != "ok":
+        if worker.get("aboard") or worker["status"] != "moving_to_exit" or worker["egress_status"] != "ok":
             return
         budget = self.parameters["walking_speed_m_s"]
         for segment in worker["route_segments"]:
@@ -289,6 +300,7 @@ class Mine:
                     z["downtime_s"] += 1
             for w in self.workers.values():
                 self._move(w)
+            equipment.step(self)
             for s in self.sensors.values():
                 if s["link_state"] == "online":
                     s["value"] += s["rate"] / 3600
@@ -340,6 +352,14 @@ class Mine:
                        downtime_s=sum(z["downtime_s"] for z in self.zones.values()))
         if metrics["all_out"] and self.last_out_s is not None:
             metrics["last_out_s"] = self.last_out_s
+        metrics.update(hauled_t=self.hauled_t, planned_t=self.planned_t,
+            production_lost_t=self.planned_t-self.hauled_t, conflicts=self.conflicts,
+            conflict_yield_s=self.conflict_yield_s,
+            machines_in_danger=sum(m["location_hazard"] == "danger" for m in self.machines.values()),
+            machines_unknown=sum(m["location_hazard"] == "unknown" and
+                self.attributes[m["at_working"]].get("zone") is not None for m in self.machines.values()),
+            machines_stuck=sum(self.workings[m["at_working"]]["passability"] == "closed" or
+                m["hold_reason"] == "path_closed" for m in self.machines.values()))
         return metrics
 
     def _condition(self, kind, target):
@@ -458,13 +478,15 @@ class Mine:
         if kind == "action.resume_zone":
             if z["routing_restriction"] != "allowed":
                 return "not_allowed_in_state"
-            staffed = sum(w["status"] == "working" and self.attributes[k]["home_zone"] == target
-                          for k, w in self.workers.items())
-            if staffed < self.attributes[target]["required_workers"]:
+            if not equipment.crew_staffed(self, target) or not all(
+                    self.workers[self.attributes[k]["operator"]].get("aboard") == k
+                    for k in self.attributes[target]["equipment"]):
                 return "insufficient_workers"
-            if z["work_state"] == "working":
+            if z["work_state"] == "working" and all(
+                    self.machines[k]["state"] == "working" for k in self.attributes[target]["equipment"]):
                 return "already_in_state"
             z["work_state"] = "working"
+            equipment.resume(self, target)
         elif kind == "action.stop_zone":
             if z["work_state"] == "stopped":
                 return "already_in_state"

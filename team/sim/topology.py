@@ -7,10 +7,11 @@ geotechnical safety limit. See README.md before interpreting model outputs.
 from collections import Counter
 from math import dist
 from .parameters import PARAMETERS, registry
+from .equipment import cycle_seconds
 
 NAMESPACE = "team040.mine"
-MODEL_VERSION = "0.1"
-TOPOLOGY_VERSION = "t1"
+MODEL_VERSION = "0.2"
+TOPOLOGY_VERSION = "t2"
 
 
 def build_attributes(parameters=None):
@@ -64,10 +65,14 @@ def build_attributes(parameters=None):
         add(key, "working", "В-" + key[2:], parent=nodes[start][3],
             **{"from": start, "to": end}, length_m=length, working_kind=kind,
             points=points, level=nodes[start][3], **({"zone": zone} if zone else {}))
+    cycle_s = cycle_seconds(p, 155)
     for suffix, level, edge in [("a", "level-120", "w-07"), ("b", "level-240", "w-12")]:
         zone, sensor = f"zone-{suffix}", f"sens-ext-{suffix}"
+        machine = f"lhd-{suffix}"
+        corridor = "w-03" if suffix == "a" else "w-10"
         add(zone, "zone", f"Участок {suffix.upper()}", parent=level,
-            level=level, workings=[edge], sensors=[sensor], nominal_production_t_h=30,
+            level=level, workings=[edge], sensors=[sensor], equipment=[machine],
+            nominal_production_t_h=p["lhd_payload_t"] * 3600 / cycle_s,
             required_workers=3)
         add(sensor, "sensor", f"Э-{suffix.upper()}", parent=zone, zone=zone,
             sensor_kind="extensometer", working=edge, offset_m=40,
@@ -75,7 +80,15 @@ def build_attributes(parameters=None):
         for number in range(1, 4):
             key = f"worker-{suffix}{number}"
             add(key, "worker", f"Р-{suffix.upper()}{number}", parent=zone,
-                home_zone=zone, initial_working=edge, initial_offset_m=20 * number)
+                home_zone=zone, role="crew", initial_working=edge, initial_offset_m=20 * number)
+        add(f"worker-{suffix}4", "worker", f"Р-{suffix.upper()}4", parent=zone,
+            home_zone=zone, role="lhd_operator", vehicle=machine, initial_working=edge, initial_offset_m=80)
+        add(machine, "equipment", f"ПДМ-{suffix.upper()}", parent=zone,
+            equipment_kind="lhd", zone=zone, length_m=11, length_source_id="sandvik_lh514",
+            payload_t=p["lhd_payload_t"], operator=f"worker-{suffix}4",
+            load_point=dict(working=edge, offset_m=80), dump_point="op-" + level.split("-")[1],
+            bay=dict(working=corridor, offset_m=75), cycle_route=[edge, corridor],
+            cycle_s=cycle_s, nominal_production_t_h=p["lhd_payload_t"] * 3600 / cycle_s)
     for suffix in "ab":
         add(f"exit-{suffix}", "exit", f"Выход {suffix.upper()}",
             exit_kind="ramp", node=f"surface-{suffix}")
@@ -90,6 +103,8 @@ def build_attributes(parameters=None):
         nodes={key: dict(zip(("x", "y", "z", "level", "node_kind"), row))
                for key, row in nodes.items()},
         parameter_registry=registry(p),
+        dump_points=[dict(id="op-120", label="Рудоспуск 1", level="level-120", working="w-03", offset_m=75),
+                     dict(id="op-240", label="Рудоспуск 2", level="level-240", working="w-10", offset_m=75)],
         thresholds={"attention_rate": {"value": p["attention_rate_mm_h"], "unit": "mm/h"},
                     "danger_rate": {"value": p["danger_rate_mm_h"], "unit": "mm/h"}},
         presets=[

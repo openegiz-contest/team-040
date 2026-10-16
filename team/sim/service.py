@@ -103,17 +103,24 @@ def main():
                 if key not in known:
                     ditto.ensure(twins[key])
                     known.add(key)
+            message_count, batch_bytes, shift_bytes = 0, 0, 0
             for topic, payload in mqtt_messages(twins):
                 topic = telemetry_prefix + topic.removeprefix("telemetry")
-                info = client.publish(topic, json.dumps(payload, separators=(",", ":")), qos=1)
+                encoded = json.dumps(payload, separators=(",", ":"))
+                message_count += 1
+                batch_bytes += len(encoded.encode("utf-8"))
+                if topic.endswith("/shift"):
+                    shift_bytes = len(encoded.encode("utf-8"))
+                info = client.publish(topic, encoded, qos=1)
                 info.wait_for_publish(timeout=5)
                 if not info.is_published():
                     raise RuntimeError("MQTT publish was not acknowledged")
             Path(os.environ.get("STATE_PATH", "/state/model.json")).with_name("heartbeat").write_text(str(time.time()))
             if pending or store.model.publication_seq % 30 == 0:
-                logging.info("Published seq=%s tick=%s run=%s state=%s commands=%s",
+                logging.info("Published seq=%s tick=%s run=%s state=%s commands=%s messages=%s batch_bytes=%s shift_bytes=%s loop_s=%.4f",
                              store.model.publication_seq, store.model.tick, store.model.run,
-                             store.model.run_state, len(pending))
+                             store.model.run_state, len(pending), message_count, batch_bytes, shift_bytes,
+                             time.monotonic()-started)
             stopping.wait(max(0, 1 - (time.monotonic() - started)))
     finally:
         client.disconnect()

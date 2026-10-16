@@ -1,0 +1,179 @@
+{
+  "nodes": {
+    "a": {
+      "level": "level-120",
+      "node_kind": "junction",
+      "x": 0,
+      "y": 0,
+      "z": -120
+    },
+    "b": {
+      "level": "level-120",
+      "node_kind": "junction",
+      "x": 150,
+      "y": 0,
+      "z": -120
+    },
+    "c": {
+      "level": "level-120",
+      "node_kind": "junction",
+      "x": 300,
+      "y": 0,
+      "z": -120
+    },
+    "d": {
+      "level": "level-120",
+      "node_kind": "junction",
+      "x": 150,
+      "y": 160,
+      "z": -120
+    },
+    "e": {
+      "level": "level-240",
+      "node_kind": "junction",
+      "x": 0,
+      "y": 0,
+      "z": -240
+    },
+    "f": {
+      "level": "level-240",
+      "node_kind": "junction",
+      "x": 150,
+      "y": 0,
+      "z": -240
+    },
+    "face-a": {
+      "level": "level-120",
+      "node_kind": "dead_end",
+      "x": 150,
+      "y": -80,
+      "z": -120
+    },
+    "face-b": {
+      "level": "level-240",
+      "node_kind": "dead_end",
+      "x": 150,
+      "y": -80,
+      "z": -240
+    },
+    "g": {
+      "level": "level-240",
+      "node_kind": "junction",
+      "x": 300,
+      "y": 0,
+      "z": -240
+    },
+    "surface-a": {
+      "level": "surface",
+      "node_kind": "exit",
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "surface-b": {
+      "level": "surface",
+      "node_kind": "exit",
+      "x": 420,
+      "y": 180,
+      "z": 0
+    }
+  },
+  "workings": {
+    "w-01": {
+      "from": "a",
+      "length_m": 494.77267507411926,
+      "points": [
+        [
+          -240,
+          0,
+          -60
+        ]
+      ],
+      "to": "surface-a"
+    },
+    "w-02": {
+      "from": "c",
+      "length_m": 471.8857807434961,
+      "points": [
+        [
+          540,
+          0,
+          -60
+        ]
+      ],
+      "to": "surface-b"
+    },
+    "w-03": {
+      "from": "a",
+      "length_m": 150.0,
+      "points": [],
+      "to": "b"
+    },
+    "w-04": {
+      "from": "b",
+      "length_m": 150.0,
+      "points": [],
+      "to": "c"
+    },
+    "w-05": {
+      "from": "a",
+      "length_m": 219.31712199461307,
+      "points": [],
+      "to": "d"
+    },
+    "w-06": {
+      "from": "d",
+      "length_m": 219.31712199461307,
+      "points": [],
+      "to": "c"
+    },
+    "w-07": {
+      "from": "b",
+      "length_m": 80.0,
+      "points": [],
+      "to": "face-a"
+    },
+    "w-08": {
+      "from": "a",
+      "length_m": 379.4733192202055,
+      "points": [
+        [
+          -180,
+          0,
+          -180
+        ]
+      ],
+      "to": "e"
+    },
+    "w-09": {
+      "from": "c",
+      "length_m": 379.4733192202055,
+      "points": [
+        [
+          480,
+          0,
+          -180
+        ]
+      ],
+      "to": "g"
+    },
+    "w-10": {
+      "from": "e",
+      "length_m": 150.0,
+      "points": [],
+      "to": "f"
+    },
+    "w-11": {
+      "from": "f",
+      "length_m": 150.0,
+      "points": [],
+      "to": "g"
+    },
+    "w-12": {
+      "from": "f",
+      "length_m": 80.0,
+      "points": [],
+      "to": "face-b"
+    }
+  }
+}

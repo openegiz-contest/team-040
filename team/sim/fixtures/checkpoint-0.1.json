@@ -1,0 +1,1363 @@
+{
+  "model_version": "0.1",
+  "state": {
+    "parameters": {
+      "walking_speed_m_s": 1.25,
+      "attention_rate_mm_h": 1.0,
+      "danger_rate_mm_h": 2.0,
+      "baseline_rate_mm_h": 0.2,
+      "unstable_rate_mm_h": 2.6,
+      "stale_after_s": 15,
+      "lost_after_s": 30,
+      "forecast_horizon_s": 900,
+      "speedup": 10
+    },
+    "publication_seq": 7,
+    "run_number": 2,
+    "journal_seq": 4,
+    "events": [
+      {
+        "seq": 1,
+        "run": "run-0001",
+        "tick": 0,
+        "sim_time_s": 0,
+        "code": "run.started",
+        "subject": "shift",
+        "arg": "",
+        "command_id": ""
+      },
+      {
+        "seq": 2,
+        "run": "run-0001",
+        "tick": 0,
+        "sim_time_s": 0,
+        "code": "run.finished",
+        "subject": "shift",
+        "arg": "reset",
+        "command_id": "c-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "details": {
+          "out": 0,
+          "all_out": false,
+          "in_danger": 0,
+          "no_route": 0,
+          "unknown": 0,
+          "danger_exposure_person_s": 0,
+          "unknown_exposure_person_s": 0,
+          "downtime_s": 0
+        }
+      },
+      {
+        "seq": 3,
+        "run": "run-0002",
+        "tick": 0,
+        "sim_time_s": 0,
+        "code": "run.started",
+        "subject": "shift",
+        "arg": "",
+        "command_id": "c-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "seq": 4,
+        "run": "run-0002",
+        "tick": 0,
+        "sim_time_s": 0,
+        "code": "command.applied",
+        "subject": "shift",
+        "arg": "run.reset",
+        "command_id": "c-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "details": {
+          "reason": "none",
+          "status": "applied"
+        }
+      }
+    ],
+    "ledger": {
+      "c-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+        "digest": "7ee150699a9b5503dea72a25132556675750d1adfad3be508da6d008117f7c3b",
+        "ack": {
+          "id": "c-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "type": "run.reset",
+          "target": "shift",
+          "run": "run-0001",
+          "tick": 0,
+          "sim_time_s": 0,
+          "status": "applied",
+          "reason": "none",
+          "new_run": "run-0002"
+        }
+      }
+    },
+    "commands": [
+      {
+        "id": "c-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "type": "run.reset",
+        "target": "shift",
+        "run": "run-0001",
+        "tick": 0,
+        "sim_time_s": 0,
+        "status": "applied",
+        "reason": "none",
+        "new_run": "run-0002"
+      }
+    ],
+    "archive": [
+      {
+        "id": "run-0001",
+        "state": "finished",
+        "seed": 40,
+        "scenario_key": "manual",
+        "tick": 0,
+        "sim_time_s": 0,
+        "idSimulationRun": "run-0001",
+        "completion_reason": "reset",
+        "finished_at_sim_s": 0,
+        "comparable": false,
+        "conditions": [],
+        "out": 0,
+        "all_out": false,
+        "in_danger": 0,
+        "no_route": 0,
+        "unknown": 0,
+        "danger_exposure_person_s": 0,
+        "unknown_exposure_person_s": 0,
+        "downtime_s": 0
+      }
+    ],
+    "attributes": {
+      "surface": {
+        "kind": "level",
+        "label": "Горизонт 0 м",
+        "synthetic": true,
+        "_parents": "team040.mine:mine",
+        "elevation_m": 0,
+        "order": 0
+      },
+      "level-120": {
+        "kind": "level",
+        "label": "Горизонт -120 м",
+        "synthetic": true,
+        "_parents": "team040.mine:mine",
+        "elevation_m": -120,
+        "order": 1
+      },
+      "level-240": {
+        "kind": "level",
+        "label": "Горизонт -240 м",
+        "synthetic": true,
+        "_parents": "team040.mine:mine",
+        "elevation_m": -240,
+        "order": 2
+      },
+      "w-01": {
+        "kind": "working",
+        "label": "В-01",
+        "synthetic": true,
+        "_parents": "team040.mine:level-120",
+        "from": "a",
+        "to": "surface-a",
+        "length_m": 494.77267507411926,
+        "working_kind": "ramp",
+        "points": [
+          [
+            -240,
+            0,
+            -60
+          ]
+        ],
+        "level": "level-120"
+      },
+      "w-02": {
+        "kind": "working",
+        "label": "В-02",
+        "synthetic": true,
+        "_parents": "team040.mine:level-120",
+        "from": "c",
+        "to": "surface-b",
+        "length_m": 471.8857807434961,
+        "working_kind": "ramp",
+        "points": [
+          [
+            540,
+            0,
+            -60
+          ]
+        ],
+        "level": "level-120"
+      },
+      "w-03": {
+        "kind": "working",
+        "label": "В-03",
+        "synthetic": true,
+        "_parents": "team040.mine:level-120",
+        "from": "a",
+        "to": "b",
+        "length_m": 150.0,
+        "working_kind": "drift",
+        "points": [],
+        "level": "level-120"
+      },
+      "w-04": {
+        "kind": "working",
+        "label": "В-04",
+        "synthetic": true,
+        "_parents": "team040.mine:level-120",
+        "from": "b",
+        "to": "c",
+        "length_m": 150.0,
+        "working_kind": "drift",
+        "points": [],
+        "level": "level-120"
+      },
+      "w-05": {
+        "kind": "working",
+        "label": "В-05",
+        "synthetic": true,
+        "_parents": "team040.mine:level-120",
+        "from": "a",
+        "to": "d",
+        "length_m": 219.31712199461307,
+        "working_kind": "crosscut",
+        "points": [],
+        "level": "level-120"
+      },
+      "w-06": {
+        "kind": "working",
+        "label": "В-06",
+        "synthetic": true,
+        "_parents": "team040.mine:level-120",
+        "from": "d",
+        "to": "c",
+        "length_m": 219.31712199461307,
+        "working_kind": "crosscut",
+        "points": [],
+        "level": "level-120"
+      },
+      "w-07": {
+        "kind": "working",
+        "label": "В-07",
+        "synthetic": true,
+        "_parents": "team040.mine:level-120",
+        "from": "b",
+        "to": "face-a",
+        "length_m": 80.0,
+        "working_kind": "drift",
+        "points": [],
+        "level": "level-120",
+        "zone": "zone-a"
+      },
+      "w-08": {
+        "kind": "working",
+        "label": "В-08",
+        "synthetic": true,
+        "_parents": "team040.mine:level-120",
+        "from": "a",
+        "to": "e",
+        "length_m": 379.4733192202055,
+        "working_kind": "ramp",
+        "points": [
+          [
+            -180,
+            0,
+            -180
+          ]
+        ],
+        "level": "level-120"
+      },
+      "w-09": {
+        "kind": "working",
+        "label": "В-09",
+        "synthetic": true,
+        "_parents": "team040.mine:level-120",
+        "from": "c",
+        "to": "g",
+        "length_m": 379.4733192202055,
+        "working_kind": "ramp",
+        "points": [
+          [
+            480,
+            0,
+            -180
+          ]
+        ],
+        "level": "level-120"
+      },
+      "w-10": {
+        "kind": "working",
+        "label": "В-10",
+        "synthetic": true,
+        "_parents": "team040.mine:level-240",
+        "from": "e",
+        "to": "f",
+        "length_m": 150.0,
+        "working_kind": "drift",
+        "points": [],
+        "level": "level-240"
+      },
+      "w-11": {
+        "kind": "working",
+        "label": "В-11",
+        "synthetic": true,
+        "_parents": "team040.mine:level-240",
+        "from": "f",
+        "to": "g",
+        "length_m": 150.0,
+        "working_kind": "drift",
+        "points": [],
+        "level": "level-240"
+      },
+      "w-12": {
+        "kind": "working",
+        "label": "В-12",
+        "synthetic": true,
+        "_parents": "team040.mine:level-240",
+        "from": "f",
+        "to": "face-b",
+        "length_m": 80.0,
+        "working_kind": "drift",
+        "points": [],
+        "level": "level-240",
+        "zone": "zone-b"
+      },
+      "zone-a": {
+        "kind": "zone",
+        "label": "Участок A",
+        "synthetic": true,
+        "_parents": "team040.mine:level-120",
+        "level": "level-120",
+        "workings": [
+          "w-07"
+        ],
+        "sensors": [
+          "sens-ext-a"
+        ],
+        "nominal_production_t_h": 30,
+        "required_workers": 3
+      },
+      "sens-ext-a": {
+        "kind": "sensor",
+        "label": "Э-A",
+        "synthetic": true,
+        "_parents": "team040.mine:zone-a",
+        "zone": "zone-a",
+        "sensor_kind": "extensometer",
+        "working": "w-07",
+        "offset_m": 40,
+        "stale_after_s": 15,
+        "lost_after_s": 30
+      },
+      "worker-a1": {
+        "kind": "worker",
+        "label": "Р-A1",
+        "synthetic": true,
+        "_parents": "team040.mine:zone-a",
+        "home_zone": "zone-a",
+        "initial_working": "w-07",
+        "initial_offset_m": 20
+      },
+      "worker-a2": {
+        "kind": "worker",
+        "label": "Р-A2",
+        "synthetic": true,
+        "_parents": "team040.mine:zone-a",
+        "home_zone": "zone-a",
+        "initial_working": "w-07",
+        "initial_offset_m": 40
+      },
+      "worker-a3": {
+        "kind": "worker",
+        "label": "Р-A3",
+        "synthetic": true,
+        "_parents": "team040.mine:zone-a",
+        "home_zone": "zone-a",
+        "initial_working": "w-07",
+        "initial_offset_m": 60
+      },
+      "zone-b": {
+        "kind": "zone",
+        "label": "Участок B",
+        "synthetic": true,
+        "_parents": "team040.mine:level-240",
+        "level": "level-240",
+        "workings": [
+          "w-12"
+        ],
+        "sensors": [
+          "sens-ext-b"
+        ],
+        "nominal_production_t_h": 30,
+        "required_workers": 3
+      },
+      "sens-ext-b": {
+        "kind": "sensor",
+        "label": "Э-B",
+        "synthetic": true,
+        "_parents": "team040.mine:zone-b",
+        "zone": "zone-b",
+        "sensor_kind": "extensometer",
+        "working": "w-12",
+        "offset_m": 40,
+        "stale_after_s": 15,
+        "lost_after_s": 30
+      },
+      "worker-b1": {
+        "kind": "worker",
+        "label": "Р-B1",
+        "synthetic": true,
+        "_parents": "team040.mine:zone-b",
+        "home_zone": "zone-b",
+        "initial_working": "w-12",
+        "initial_offset_m": 20
+      },
+      "worker-b2": {
+        "kind": "worker",
+        "label": "Р-B2",
+        "synthetic": true,
+        "_parents": "team040.mine:zone-b",
+        "home_zone": "zone-b",
+        "initial_working": "w-12",
+        "initial_offset_m": 40
+      },
+      "worker-b3": {
+        "kind": "worker",
+        "label": "Р-B3",
+        "synthetic": true,
+        "_parents": "team040.mine:zone-b",
+        "home_zone": "zone-b",
+        "initial_working": "w-12",
+        "initial_offset_m": 60
+      },
+      "exit-a": {
+        "kind": "exit",
+        "label": "Выход A",
+        "synthetic": true,
+        "_parents": "team040.mine:mine",
+        "exit_kind": "ramp",
+        "node": "surface-a"
+      },
+      "exit-b": {
+        "kind": "exit",
+        "label": "Выход B",
+        "synthetic": true,
+        "_parents": "team040.mine:mine",
+        "exit_kind": "ramp",
+        "node": "surface-b"
+      },
+      "shift": {
+        "kind": "shift",
+        "label": "Смена",
+        "synthetic": true,
+        "_parents": "team040.mine:mine",
+        "tick_wall_ms": 1000,
+        "contract_version": 1
+      },
+      "incident": {
+        "kind": "incident",
+        "label": "Инцидент",
+        "synthetic": true,
+        "_parents": "team040.mine:mine"
+      },
+      "journal": {
+        "kind": "journal",
+        "label": "Журнал",
+        "synthetic": true,
+        "_parents": "team040.mine:mine"
+      },
+      "option-observe": {
+        "kind": "option",
+        "label": "observe",
+        "synthetic": true,
+        "_parents": "team040.mine:mine",
+        "option_kind": "observe"
+      },
+      "option-stop_withdraw_zone": {
+        "kind": "option",
+        "label": "stop_withdraw_zone",
+        "synthetic": true,
+        "_parents": "team040.mine:mine",
+        "option_kind": "stop_withdraw_zone"
+      },
+      "option-withdraw_all": {
+        "kind": "option",
+        "label": "withdraw_all",
+        "synthetic": true,
+        "_parents": "team040.mine:mine",
+        "option_kind": "withdraw_all"
+      },
+      "mine": {
+        "kind": "mine",
+        "label": "Условный подземный рудник",
+        "synthetic": true,
+        "crs": "local",
+        "units": "m",
+        "contract_version": 1,
+        "topology_version": "t1",
+        "nodes": {
+          "surface-a": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "level": "surface",
+            "node_kind": "exit"
+          },
+          "surface-b": {
+            "x": 420,
+            "y": 180,
+            "z": 0,
+            "level": "surface",
+            "node_kind": "exit"
+          },
+          "a": {
+            "x": 0,
+            "y": 0,
+            "z": -120,
+            "level": "level-120",
+            "node_kind": "junction"
+          },
+          "b": {
+            "x": 150,
+            "y": 0,
+            "z": -120,
+            "level": "level-120",
+            "node_kind": "junction"
+          },
+          "c": {
+            "x": 300,
+            "y": 0,
+            "z": -120,
+            "level": "level-120",
+            "node_kind": "junction"
+          },
+          "d": {
+            "x": 150,
+            "y": 160,
+            "z": -120,
+            "level": "level-120",
+            "node_kind": "junction"
+          },
+          "face-a": {
+            "x": 150,
+            "y": -80,
+            "z": -120,
+            "level": "level-120",
+            "node_kind": "dead_end"
+          },
+          "e": {
+            "x": 0,
+            "y": 0,
+            "z": -240,
+            "level": "level-240",
+            "node_kind": "junction"
+          },
+          "f": {
+            "x": 150,
+            "y": 0,
+            "z": -240,
+            "level": "level-240",
+            "node_kind": "junction"
+          },
+          "g": {
+            "x": 300,
+            "y": 0,
+            "z": -240,
+            "level": "level-240",
+            "node_kind": "junction"
+          },
+          "face-b": {
+            "x": 150,
+            "y": -80,
+            "z": -240,
+            "level": "level-240",
+            "node_kind": "dead_end"
+          }
+        },
+        "parameter_registry": {
+          "version": 1,
+          "calibrated": false,
+          "sources": {
+            "escape1983": {
+              "url": "https://stacks.cdc.gov/view/cdc/206706",
+              "location": "Description, average escape speeds",
+              "year": 1983,
+              "scope": "Underground coal mine experiment, not calibration of a copper mine",
+              "published_ft_min": [
+                96,
+                264
+              ],
+              "converted_m_s": [
+                0.48768,
+                1.34112
+              ]
+            },
+            "monitoring2024": {
+              "url": "https://stacks.cdc.gov/view/cdc/155321/cdc_155321_DS1.pdf",
+              "location": "PDF pages 3–4, Roof-to-floor / Multipoint Roof / Borehole Extensometers",
+              "year": 2024,
+              "scope": "Supports displacement measurement; does not validate our alarm setpoints"
+            }
+          },
+          "entries": {
+            "walking_speed_m_s": {
+              "value": 1.25,
+              "unit": "m/s",
+              "status": "engineering_assumption",
+              "rationale": "Uniform free walking; no slope, fatigue or congestion correction",
+              "source_ids": [
+                "escape1983"
+              ],
+              "sensitivity_values": [
+                0.5,
+                0.75,
+                1.0,
+                1.25
+              ],
+              "transfer": "Historical coal-mine results are context only, not a validated range for this mine"
+            },
+            "attention_rate_mm_h": {
+              "value": 1.0,
+              "unit": "mm/h",
+              "status": "scenario_assumption",
+              "rationale": "Synthetic warning boundary, not a rock failure criterion",
+              "source_ids": [
+                "monitoring2024"
+              ],
+              "transfer": "Measurement type only; numerical value chosen by team"
+            },
+            "danger_rate_mm_h": {
+              "value": 2.0,
+              "unit": "mm/h",
+              "status": "scenario_assumption",
+              "rationale": "Synthetic blocking boundary, not a rock failure criterion",
+              "source_ids": [
+                "monitoring2024"
+              ],
+              "transfer": "Measurement type only; numerical value chosen by team"
+            },
+            "baseline_rate_mm_h": {
+              "value": 0.2,
+              "unit": "mm/h",
+              "status": "scenario_assumption",
+              "rationale": "Synthetic stable signal below warning boundary",
+              "source_ids": [
+                "monitoring2024"
+              ],
+              "transfer": "Measurement type only; numerical value chosen by team"
+            },
+            "unstable_rate_mm_h": {
+              "value": 2.6,
+              "unit": "mm/h",
+              "status": "scenario_assumption",
+              "rationale": "Synthetic event signal above blocking boundary",
+              "source_ids": [
+                "monitoring2024"
+              ],
+              "transfer": "Measurement type only; numerical value chosen by team"
+            },
+            "stale_after_s": {
+              "value": 15,
+              "unit": "s",
+              "status": "scenario_assumption",
+              "rationale": "Demo freshness timeout in model time, not a sensor specification",
+              "source_ids": []
+            },
+            "lost_after_s": {
+              "value": 30,
+              "unit": "s",
+              "status": "scenario_assumption",
+              "rationale": "Demo loss timeout in model time, last measurement is retained",
+              "source_ids": []
+            },
+            "forecast_horizon_s": {
+              "value": 900,
+              "unit": "s",
+              "status": "scenario_assumption",
+              "rationale": "Comparison window; incomplete exit is not successful evacuation",
+              "source_ids": []
+            },
+            "speedup": {
+              "value": 10,
+              "unit": "model s/wall s",
+              "status": "scenario_assumption",
+              "rationale": "Presentation acceleration, does not change movement per model second",
+              "source_ids": []
+            }
+          }
+        },
+        "thresholds": {
+          "attention_rate": {
+            "value": 1.0,
+            "unit": "mm/h"
+          },
+          "danger_rate": {
+            "value": 2.0,
+            "unit": "mm/h"
+          }
+        },
+        "presets": [
+          {
+            "id": "p-instability",
+            "label": "Рост нестабильности",
+            "at_s": 60,
+            "type": "condition.instability_on",
+            "target": "zone-a"
+          },
+          {
+            "id": "p-detour",
+            "label": "Перекрытие основного прохода",
+            "at_s": 60,
+            "type": "condition.close_working",
+            "target": "w-04"
+          },
+          {
+            "id": "p-trapped",
+            "label": "Перекрытие выхода с участка",
+            "at_s": 60,
+            "type": "condition.close_working",
+            "target": "w-07"
+          },
+          {
+            "id": "p-sensor",
+            "label": "Потеря датчика",
+            "at_s": 60,
+            "type": "condition.sensor_lost",
+            "target": "sens-ext-a"
+          }
+        ],
+        "counts": {
+          "level": 3,
+          "working": 12,
+          "zone": 2,
+          "sensor": 2,
+          "worker": 6,
+          "exit": 2,
+          "shift": 1,
+          "incident": 1,
+          "journal": 1,
+          "option": 3,
+          "mine": 1
+        },
+        "manifest": [
+          "team040.mine:surface",
+          "team040.mine:level-120",
+          "team040.mine:level-240",
+          "team040.mine:w-01",
+          "team040.mine:w-02",
+          "team040.mine:w-03",
+          "team040.mine:w-04",
+          "team040.mine:w-05",
+          "team040.mine:w-06",
+          "team040.mine:w-07",
+          "team040.mine:w-08",
+          "team040.mine:w-09",
+          "team040.mine:w-10",
+          "team040.mine:w-11",
+          "team040.mine:w-12",
+          "team040.mine:zone-a",
+          "team040.mine:sens-ext-a",
+          "team040.mine:worker-a1",
+          "team040.mine:worker-a2",
+          "team040.mine:worker-a3",
+          "team040.mine:zone-b",
+          "team040.mine:sens-ext-b",
+          "team040.mine:worker-b1",
+          "team040.mine:worker-b2",
+          "team040.mine:worker-b3",
+          "team040.mine:exit-a",
+          "team040.mine:exit-b",
+          "team040.mine:shift",
+          "team040.mine:incident",
+          "team040.mine:journal",
+          "team040.mine:option-observe",
+          "team040.mine:option-stop_withdraw_zone",
+          "team040.mine:option-withdraw_all",
+          "team040.mine:mine"
+        ],
+        "dynamic_ids": [
+          "team040.mine:w-01",
+          "team040.mine:w-02",
+          "team040.mine:w-03",
+          "team040.mine:w-04",
+          "team040.mine:w-05",
+          "team040.mine:w-06",
+          "team040.mine:w-07",
+          "team040.mine:w-08",
+          "team040.mine:w-09",
+          "team040.mine:w-10",
+          "team040.mine:w-11",
+          "team040.mine:w-12",
+          "team040.mine:zone-a",
+          "team040.mine:sens-ext-a",
+          "team040.mine:worker-a1",
+          "team040.mine:worker-a2",
+          "team040.mine:worker-a3",
+          "team040.mine:zone-b",
+          "team040.mine:sens-ext-b",
+          "team040.mine:worker-b1",
+          "team040.mine:worker-b2",
+          "team040.mine:worker-b3",
+          "team040.mine:exit-a",
+          "team040.mine:exit-b",
+          "team040.mine:incident",
+          "team040.mine:journal",
+          "team040.mine:option-observe",
+          "team040.mine:option-stop_withdraw_zone",
+          "team040.mine:option-withdraw_all"
+        ]
+      }
+    },
+    "_journal_state": {
+      "sens-ext-a": {
+        "link_state": "online",
+        "quality": "fresh"
+      },
+      "sens-ext-b": {
+        "link_state": "online",
+        "quality": "fresh"
+      },
+      "zone-a": {
+        "hazard_state": "normal",
+        "data_quality": "fresh",
+        "routing_restriction": "allowed",
+        "work_state": "working",
+        "withdrawal_state": "none"
+      },
+      "zone-b": {
+        "hazard_state": "normal",
+        "data_quality": "fresh",
+        "routing_restriction": "allowed",
+        "work_state": "working",
+        "withdrawal_state": "none"
+      },
+      "worker-a1": {
+        "status": "working",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "exit": "exit-b",
+        "path": [
+          [
+            "w-07",
+            "b"
+          ],
+          [
+            "w-04",
+            "c"
+          ],
+          [
+            "w-02",
+            "surface-b"
+          ]
+        ]
+      },
+      "worker-a2": {
+        "status": "working",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "exit": "exit-b",
+        "path": [
+          [
+            "w-07",
+            "b"
+          ],
+          [
+            "w-04",
+            "c"
+          ],
+          [
+            "w-02",
+            "surface-b"
+          ]
+        ]
+      },
+      "worker-a3": {
+        "status": "working",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "exit": "exit-b",
+        "path": [
+          [
+            "w-07",
+            "b"
+          ],
+          [
+            "w-04",
+            "c"
+          ],
+          [
+            "w-02",
+            "surface-b"
+          ]
+        ]
+      },
+      "worker-b1": {
+        "status": "working",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "exit": "exit-b",
+        "path": [
+          [
+            "w-12",
+            "f"
+          ],
+          [
+            "w-11",
+            "g"
+          ],
+          [
+            "w-09",
+            "c"
+          ],
+          [
+            "w-02",
+            "surface-b"
+          ]
+        ]
+      },
+      "worker-b2": {
+        "status": "working",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "exit": "exit-b",
+        "path": [
+          [
+            "w-12",
+            "f"
+          ],
+          [
+            "w-11",
+            "g"
+          ],
+          [
+            "w-09",
+            "c"
+          ],
+          [
+            "w-02",
+            "surface-b"
+          ]
+        ]
+      },
+      "worker-b3": {
+        "status": "working",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "exit": "exit-b",
+        "path": [
+          [
+            "w-12",
+            "f"
+          ],
+          [
+            "w-11",
+            "g"
+          ],
+          [
+            "w-09",
+            "c"
+          ],
+          [
+            "w-02",
+            "surface-b"
+          ]
+        ]
+      }
+    },
+    "run": "run-0002",
+    "tick": 20,
+    "run_state": "running",
+    "pause_reason": "none",
+    "seed": 40,
+    "conditions": [],
+    "schedule": [],
+    "scenario_key": "manual",
+    "incident": {
+      "state": "none"
+    },
+    "decision_counter": 0,
+    "decision_tick": null,
+    "comparison_key": null,
+    "comparable": false,
+    "selected_option": null,
+    "forecasts": {},
+    "last_out_s": null,
+    "archived_current": false,
+    "exposure": 0,
+    "unknown_exposure": 0,
+    "workings": {
+      "w-01": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-02": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-03": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-04": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-05": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-06": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-07": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-08": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-09": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-10": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-11": {
+        "passability": "open",
+        "closed_by": "none"
+      },
+      "w-12": {
+        "passability": "open",
+        "closed_by": "none"
+      }
+    },
+    "zones": {
+      "zone-a": {
+        "work_state": "working",
+        "withdrawal_state": "none",
+        "downtime_s": 0,
+        "hazard_state": "normal",
+        "data_quality": "fresh",
+        "routing_restriction": "allowed",
+        "last_known_hazard_state": "normal",
+        "last_known_hazard_tick": 20,
+        "reason_sensor": "sens-ext-a",
+        "index_at_tick": 20,
+        "instability_index": 0.1,
+        "reason_code": "none",
+        "workers_count": 3,
+        "production_rate": 30
+      },
+      "zone-b": {
+        "work_state": "working",
+        "withdrawal_state": "none",
+        "downtime_s": 0,
+        "hazard_state": "normal",
+        "data_quality": "fresh",
+        "routing_restriction": "allowed",
+        "last_known_hazard_state": "normal",
+        "last_known_hazard_tick": 20,
+        "reason_sensor": "sens-ext-b",
+        "index_at_tick": 20,
+        "instability_index": 0.1,
+        "reason_code": "none",
+        "workers_count": 3,
+        "production_rate": 30
+      }
+    },
+    "sensors": {
+      "sens-ext-a": {
+        "value": 0.0011111111111111113,
+        "rate": 0.2,
+        "measured_at_tick": 20,
+        "measured_at_sim_s": 20,
+        "link_state": "online",
+        "quality": "fresh"
+      },
+      "sens-ext-b": {
+        "value": 0.0011111111111111113,
+        "rate": 0.2,
+        "measured_at_tick": 20,
+        "measured_at_sim_s": 20,
+        "link_state": "online",
+        "quality": "fresh"
+      }
+    },
+    "workers": {
+      "worker-a1": {
+        "status": "working",
+        "at_working": "w-07",
+        "offset_m": 20,
+        "pos_quality": "fresh",
+        "location_hazard": "normal",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "egress_exit": "exit-b",
+        "egress_length_m": 641.8857807434961,
+        "route": [
+          "w-07",
+          "w-04",
+          "w-02"
+        ],
+        "route_next_node": "b",
+        "route_segments": [
+          {
+            "working": "w-07",
+            "from_offset_m": 20,
+            "to_offset_m": 0.0,
+            "to_node": "b"
+          },
+          {
+            "working": "w-04",
+            "from_offset_m": 0.0,
+            "to_offset_m": 150.0,
+            "to_node": "c"
+          },
+          {
+            "working": "w-02",
+            "from_offset_m": 0.0,
+            "to_offset_m": 471.8857807434961,
+            "to_node": "surface-b"
+          }
+        ],
+        "egress_crosses": "unknown",
+        "egress_eta_s": 513.5086245947969
+      },
+      "worker-a2": {
+        "status": "working",
+        "at_working": "w-07",
+        "offset_m": 40,
+        "pos_quality": "fresh",
+        "location_hazard": "normal",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "egress_exit": "exit-b",
+        "egress_length_m": 661.8857807434961,
+        "route": [
+          "w-07",
+          "w-04",
+          "w-02"
+        ],
+        "route_next_node": "b",
+        "route_segments": [
+          {
+            "working": "w-07",
+            "from_offset_m": 40,
+            "to_offset_m": 0.0,
+            "to_node": "b"
+          },
+          {
+            "working": "w-04",
+            "from_offset_m": 0.0,
+            "to_offset_m": 150.0,
+            "to_node": "c"
+          },
+          {
+            "working": "w-02",
+            "from_offset_m": 0.0,
+            "to_offset_m": 471.8857807434961,
+            "to_node": "surface-b"
+          }
+        ],
+        "egress_crosses": "unknown",
+        "egress_eta_s": 529.5086245947969
+      },
+      "worker-a3": {
+        "status": "working",
+        "at_working": "w-07",
+        "offset_m": 60,
+        "pos_quality": "fresh",
+        "location_hazard": "normal",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "egress_exit": "exit-b",
+        "egress_length_m": 681.8857807434961,
+        "route": [
+          "w-07",
+          "w-04",
+          "w-02"
+        ],
+        "route_next_node": "b",
+        "route_segments": [
+          {
+            "working": "w-07",
+            "from_offset_m": 60,
+            "to_offset_m": 0.0,
+            "to_node": "b"
+          },
+          {
+            "working": "w-04",
+            "from_offset_m": 0.0,
+            "to_offset_m": 150.0,
+            "to_node": "c"
+          },
+          {
+            "working": "w-02",
+            "from_offset_m": 0.0,
+            "to_offset_m": 471.8857807434961,
+            "to_node": "surface-b"
+          }
+        ],
+        "egress_crosses": "unknown",
+        "egress_eta_s": 545.5086245947969
+      },
+      "worker-b1": {
+        "status": "working",
+        "at_working": "w-12",
+        "offset_m": 20,
+        "pos_quality": "fresh",
+        "location_hazard": "normal",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "egress_exit": "exit-b",
+        "egress_length_m": 1021.3590999637015,
+        "route": [
+          "w-12",
+          "w-11",
+          "w-09",
+          "w-02"
+        ],
+        "route_next_node": "f",
+        "route_segments": [
+          {
+            "working": "w-12",
+            "from_offset_m": 20,
+            "to_offset_m": 0.0,
+            "to_node": "f"
+          },
+          {
+            "working": "w-11",
+            "from_offset_m": 0.0,
+            "to_offset_m": 150.0,
+            "to_node": "g"
+          },
+          {
+            "working": "w-09",
+            "from_offset_m": 379.4733192202055,
+            "to_offset_m": 0.0,
+            "to_node": "c"
+          },
+          {
+            "working": "w-02",
+            "from_offset_m": 0.0,
+            "to_offset_m": 471.8857807434961,
+            "to_node": "surface-b"
+          }
+        ],
+        "egress_crosses": "unknown",
+        "egress_eta_s": 817.0872799709612
+      },
+      "worker-b2": {
+        "status": "working",
+        "at_working": "w-12",
+        "offset_m": 40,
+        "pos_quality": "fresh",
+        "location_hazard": "normal",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "egress_exit": "exit-b",
+        "egress_length_m": 1041.3590999637015,
+        "route": [
+          "w-12",
+          "w-11",
+          "w-09",
+          "w-02"
+        ],
+        "route_next_node": "f",
+        "route_segments": [
+          {
+            "working": "w-12",
+            "from_offset_m": 40,
+            "to_offset_m": 0.0,
+            "to_node": "f"
+          },
+          {
+            "working": "w-11",
+            "from_offset_m": 0.0,
+            "to_offset_m": 150.0,
+            "to_node": "g"
+          },
+          {
+            "working": "w-09",
+            "from_offset_m": 379.4733192202055,
+            "to_offset_m": 0.0,
+            "to_node": "c"
+          },
+          {
+            "working": "w-02",
+            "from_offset_m": 0.0,
+            "to_offset_m": 471.8857807434961,
+            "to_node": "surface-b"
+          }
+        ],
+        "egress_crosses": "unknown",
+        "egress_eta_s": 833.0872799709612
+      },
+      "worker-b3": {
+        "status": "working",
+        "at_working": "w-12",
+        "offset_m": 60,
+        "pos_quality": "fresh",
+        "location_hazard": "normal",
+        "egress_status": "ok",
+        "egress_reason": "none",
+        "egress_exit": "exit-b",
+        "egress_length_m": 1061.3590999637015,
+        "route": [
+          "w-12",
+          "w-11",
+          "w-09",
+          "w-02"
+        ],
+        "route_next_node": "f",
+        "route_segments": [
+          {
+            "working": "w-12",
+            "from_offset_m": 60,
+            "to_offset_m": 0.0,
+            "to_node": "f"
+          },
+          {
+            "working": "w-11",
+            "from_offset_m": 0.0,
+            "to_offset_m": 150.0,
+            "to_node": "g"
+          },
+          {
+            "working": "w-09",
+            "from_offset_m": 379.4733192202055,
+            "to_offset_m": 0.0,
+            "to_node": "c"
+          },
+          {
+            "working": "w-02",
+            "from_offset_m": 0.0,
+            "to_offset_m": 471.8857807434961,
+            "to_node": "surface-b"
+          }
+        ],
+        "egress_crosses": "unknown",
+        "egress_eta_s": 849.0872799709612
+      }
+    },
+    "exits": {
+      "exit-a": {
+        "state": "available",
+        "workers_out": 0
+      },
+      "exit-b": {
+        "state": "available",
+        "workers_out": 0
+      }
+    },
+    "cohort": [
+      "worker-a1",
+      "worker-a2",
+      "worker-a3",
+      "worker-b1",
+      "worker-b2",
+      "worker-b3"
+    ],
+    "_active_command_id": ""
+  }
+}

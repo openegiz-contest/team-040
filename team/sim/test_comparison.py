@@ -16,7 +16,7 @@ class ComparisonTests(unittest.TestCase):
             for row in scenario["rows"]:
                 self.assertEqual(row["comparison_key"], scenario["comparison_key"])
                 self.assertEqual(row["finished_at_sim_s"], scenario["decision_tick"] + 900)
-                self.assertEqual(len(row["workers"]), 6)
+                self.assertEqual(len(row["workers"]), 8)
                 self.assertEqual(row["actual"]["out"], sum(w["status"] == "out" for w in row["workers"].values()))
                 self.assertEqual("last_out_s" in row["actual"], row["actual"]["all_out"])
                 self.assertTrue(row["forecast_matches_actual"])
@@ -25,8 +25,8 @@ class ComparisonTests(unittest.TestCase):
         rows = self.scenarios["p-instability"]["rows"]
         observe, local, all_workers = rows
         self.assertEqual(local["target_zones"], ["zone-a"])
-        self.assertEqual(local["actual"]["out"], 3)
-        self.assertEqual(local["zones"]["zone-b"]["production_rate"], 30)
+        self.assertEqual(local["actual"]["out"], 4)
+        self.assertAlmostEqual(local["zones"]["zone-b"]["production_rate"], 14 * 3600 / 179)
         self.assertEqual(local["zones"]["zone-a"]["production_rate"], 0)
         self.assertEqual(local["actual"]["danger_exposure_person_s"], all_workers["actual"]["danger_exposure_person_s"])
         self.assertLess(local["actual"]["danger_exposure_person_s"], observe["actual"]["danger_exposure_person_s"])
@@ -39,13 +39,13 @@ class ComparisonTests(unittest.TestCase):
             scenario = self.scenarios[preset]
             self.assertEqual(scenario["scope"], ["zone-a"])
             local, full = scenario["rows"][1:]
-            self.assertEqual(local["zones"]["zone-b"]["production_rate"], 30)
+            self.assertAlmostEqual(local["zones"]["zone-b"]["production_rate"], 14 * 3600 / 179)
             self.assertEqual(local["actual"]["downtime_s"], 900)
             self.assertEqual(full["actual"]["downtime_s"], 1800)
-        self.assertEqual(self.scenarios["p-detour"]["rows"][1]["actual"]["out"], 3)
+        self.assertEqual(self.scenarios["p-detour"]["rows"][1]["actual"]["out"], 4)
         self.assertEqual(self.scenarios["p-trapped"]["rows"][1]["actual"]["out"], 0)
         for row in self.scenarios["p-trapped"]["rows"]:
-            self.assertEqual(row["actual"]["no_route"], 3)
+            self.assertEqual(row["actual"]["no_route"], 4)
             self.assertFalse(row["actual"]["all_out"])
             for index in range(1, 4):
                 worker = row["workers"][f"worker-a{index}"]
@@ -55,7 +55,7 @@ class ComparisonTests(unittest.TestCase):
     def test_sensor_uncertainty_is_not_zero_risk(self):
         scenario = self.scenarios["p-sensor"]
         self.assertGreater(scenario["decision_tick"], scenario["event_tick"])
-        self.assertEqual(scenario["rows"][0]["actual"]["unknown_exposure_person_s"], 3 * 900)
+        self.assertEqual(scenario["rows"][0]["actual"]["unknown_exposure_person_s"], 3 * 900 + 3)
         for row in scenario["rows"]:
             self.assertEqual(row["forecast"]["forecast_quality"], "partial")
             self.assertEqual(row["actual"]["danger_exposure_person_s"], 0)

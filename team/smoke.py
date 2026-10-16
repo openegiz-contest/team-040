@@ -73,15 +73,23 @@ def main():
     prediction = values(selected)
     assert prediction["forecast_all_out"] is True
     send("action.execute_option", "option-withdraw_all", decision_id=prediction["decision_id"])
-    wait(lambda: values(get("shift"))["workers_out"] == 6, 110)
+    wait(lambda: values(get("shift"))["workers_out"] == mine["attributes"]["counts"]["worker"], 110)
     wait(lambda: values(get("shift"))["run_state"] == "paused", 20)
     archive = values(get(run))
     assert archive["completion_reason"] == "horizon"
     assert archive["all_out"] is True
     assert archive["last_out_s"] == prediction["forecast_last_out_s"]
     assert archive["danger_exposure_person_s"] == prediction["forecast_danger_exposure_person_s"]
+    for key in ("hauled_t", "planned_t", "production_lost_t", "machines_in_danger", "machines_unknown",
+                "machines_stuck", "conflicts", "conflict_yield_s"):
+        assert archive[key] == prediction["forecast_"+key], key
+    assert len(second["scene"]) == 33
+    equipment = get("lhd-a")
+    assert equipment["attributes"]["kind"] == "equipment"
+    assert values(equipment)["idSimulationRun"] == run
     print(json.dumps(dict(result="PASS", run=run, last_out_s=archive["last_out_s"],
-                          danger_exposure_person_s=archive["danger_exposure_person_s"])), flush=True)
+                          danger_exposure_person_s=archive["danger_exposure_person_s"],
+                          production_lost_t=archive["production_lost_t"], conflicts=archive["conflicts"])), flush=True)
 
 
 if __name__ == "__main__":
