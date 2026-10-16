@@ -16,14 +16,15 @@ procedural scene of variant 3 and the scheme are checked on `normal`.
 """
 
 import json
+import math
 import time
 import unittest
 
 try:
-    from .test_art_mode import ArtEnvCase
+    from .test_art_mode import CAM_FRAMES, ArtEnvCase, uncovered
     from .test_scene3d import APP, thing
 except ImportError:  # run as a top-level module from the tests directory
-    from test_art_mode import ArtEnvCase
+    from test_art_mode import CAM_FRAMES, ArtEnvCase, uncovered
     from test_scene3d import APP, thing
 
 GAUGE = "[data-testid=\"horizon-gauge\"]"
@@ -526,6 +527,291 @@ class FrameCostTest(DepthRailCase):
         self.page.evaluate("window.__probe.raf = 0")
         time.sleep(1.5)
         self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "idle: zero frames")
+
+
+# ---- the rail as a scroll control of the camera through depth ---------------------------------------------------------
+
+# In every animation frame for `ms` ms: the window as drawn ([top, bottom] of its data), what the stage says it shows,
+# the camera (for the coverage sampling) and the stage's frame count. window.__scroll; .done at the end.
+SCROLL_FRAMES = """(async () => {
+  const app = (await import('/js/main.js')).app;
+  const {FOV} = await import('/js/scene3d/camera.js');
+  const win = document.querySelector('[data-testid="horizon-window"]');
+  const out = [];
+  window.__scroll = out;
+  const t0 = performance.now();
+  const tick = () => {
+    const v = app.ctx.stage.depthView();
+    const i = app.ctx.stage.info();
+    out.push({t: Math.round(performance.now() - t0), win: [Number(win.dataset.top), Number(win.dataset.bottom)],
+      view: v && [v.top, v.centre, v.bottom, v.goalCentre], overview: v && v.overview, zoom: v && v.zoom, gliding: v && v.gliding,
+      cam: {target: i.camera.target, dist: i.camera.dist, az: i.camera.az, el: i.camera.el, w: i.stage[0], h: i.stage[1], fov: FOV}});
+    if (performance.now() - t0 < %(ms)d) requestAnimationFrame(tick); else out.done = true;
+  };
+  requestAnimationFrame(tick);
+  return true;
+})()"""
+
+DEPTH_VIEW = f"return {APP}.ctx.stage.depthView();"
+
+
+class ScrollCase(DepthRailCase):
+    def view(self):
+        return self.js(DEPTH_VIEW)
+
+    def wheel(self, x, y, delta):
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseWheel", "x": x, "y": y, "deltaX": 0, "deltaY": delta})
+
+    def mouse(self, kind, x, y, pressed=False):
+        params = {"type": kind, "x": x, "y": y}
+        if kind != "mouseMoved" or pressed:
+            params.update({"button": "left", "buttons": 1 if (pressed or kind == "mousePressed") else 0})
+        if kind in ("mousePressed", "mouseReleased"):
+            params["clickCount"] = 1
+        self.page.send("Input.dispatchMouseEvent", params)
+
+    @staticmethod
+    def across(cam):
+        """Where the camera's target lies along the screen's right (metres): the horizontal place of the view."""
+        az = math.radians(cam["az"])
+        return cam["target"][0] * math.cos(az) - cam["target"][2] * math.sin(az)
+
+    def frames_while(self, act, ms=1500):
+        self.page.evaluate(SCROLL_FRAMES % {"ms": ms})
+        act()
+        self.page.wait_for("window.__scroll.done === true", timeout=ms / 1000 + 20)
+        return self.page.evaluate("window.__scroll", timeout=20)
+
+    def rail_point(self, z):
+        rail = self.rail()
+        return self.probe_x(rail), self.scale(rail)(z)
+
+    def settle(self):
+        self.wait_idle(timeout=10.0)
+        time.sleep(0.5)
+        self.wait_idle(timeout=10.0)
+
+
+class ScrollTest(ScrollCase):
+    def test_the_window_spans_the_visible_depth_and_follows_every_camera_move_in_the_same_frame(self):
+        self.open_art()
+        view = self.view()
+        self.assertTrue(view["overview"])
+        self.assertGreaterEqual(view["top"], 0, "at 1× the window spans the whole mine: the surface")
+        self.assertLessEqual(view["bottom"], -240, "... down to the lowest horizon")
+        rail = self.rail()
+        y_of = self.scale(rail)
+        box = self.page.evaluate("(() => { const r = document.querySelector('[data-testid=\"horizon-window\"]').getBoundingClientRect();"
+                                 " return [r.top, r.bottom]; })()")
+        gauge_top, gauge_bottom = rail["gauge"][1], rail["gauge"][1] + rail["gauge"][3]
+        self.assertAlmostEqual(box[0], max(y_of(view["top"]), gauge_top), delta=1.5, msg="the window's top at the depth seen at the top")
+        self.assertAlmostEqual(box[1], min(y_of(view["bottom"]), gauge_bottom), delta=1.5, msg="... and its bottom")
+        # A zoom and a pan of the stage itself (keys on the canvas): the window follows in the same frame, every frame.
+        self.focus_canvas()
+        def act():
+            self.page.press("+")
+            self.page.press("ArrowDown")
+        frames = self.frames_while(act, ms=1500)
+        moved = [f for f in frames if abs(f["view"][0] - frames[0]["view"][0]) > 0.5]
+        self.assertGreater(len(moved), 3, "the camera moved over several frames")
+        for f in frames:
+            self.assertAlmostEqual(f["win"][0], round(f["view"][0], 1), delta=0.06, msg=f"the window's top in this frame: {f}")
+            self.assertAlmostEqual(f["win"][1], round(f["view"][2], 1), delta=0.06, msg=f"the window's bottom in this frame: {f}")
+        end = self.view()
+        self.assertFalse(end["overview"])
+        self.assertLess(end["top"] - end["bottom"], view["top"] - view["bottom"] - 50, "zoomed in: the window is shorter")
+
+    def test_the_wheel_over_the_rail_reads_scrolls_snaps_and_returns(self):
+        self.open_art()
+        x, y = self.rail_point(-100)
+        # At 1×: the first tick down zooms to a depth reading at the pointer's depth.
+        self.wheel(x, y, 100)
+        self.settle()
+        view = self.view()
+        self.assertAlmostEqual(view["zoom"], 2, delta=0.05, msg="a depth reading: 2×")
+        self.assertAlmostEqual(view["goalCentre"], -100, delta=1.0, msg="centred on the depth under the pointer")
+        across = self.across(self.frames_while(lambda: None, ms=60)[-1]["cam"])
+        # Ticks down: the middle goes down monotonically, every frame on the art; at rest it settles on a horizon.
+        def ticks():
+            for _ in range(3):
+                self.wheel(x, y, 100)
+                time.sleep(0.06)
+        frames = self.frames_while(ticks, ms=1600)
+        centres = [f["view"][1] for f in frames]
+        for a, b in zip(centres, centres[1:]):
+            self.assertLessEqual(b, a + 0.05, "scrolling down never goes back up (no overshoot)")
+        self.assertLess(centres[-1], -100 - 30, "it scrolled down")
+        self.assertAlmostEqual(self.across(frames[-1]["cam"]), across, delta=0.01, msg="the horizontal place is kept")
+        for f in frames:
+            self.assertEqual(uncovered(f["cam"]), 0, f"the stage stays on the art: {f['cam']}")
+        self.settle()
+        view = self.view()
+        nearest = min((0, -120, -240), key=lambda z: abs(z - view["goalCentre"]))
+        before_snap = frames[-1]["view"][3]
+        if abs(before_snap - nearest) <= 12:
+            self.assertAlmostEqual(view["goalCentre"], nearest, delta=0.1, msg="the soft snap took the horizon within 12 m")
+        # One tick from a horizon, then rest: back onto it (within 12 m).
+        self.page.evaluate("document.querySelector('[data-testid=\"horizon-level-240\"]').focus()")
+        self.page.press("End")
+        self.settle()
+        self.assertAlmostEqual(self.view()["goalCentre"], -240, delta=0.5)
+        self.wheel(x, y, -30)
+        time.sleep(0.05)
+        self.assertNotAlmostEqual(self.view()["goalCentre"], -240, delta=2, msg="the tick moved it")
+        self.settle()
+        self.assertAlmostEqual(self.view()["goalCentre"], -240, delta=0.1, msg="at rest, the snap to the horizon")
+        # Up past the top: the overview again.
+        for _ in range(14):
+            self.wheel(x, y, -100)
+            time.sleep(0.08)
+        self.settle()
+        self.assertTrue(self.view()["overview"], "scrolling up past the top returns to 1×")
+        self.assertAlmostEqual(self.view()["zoom"], 1, delta=0.01)
+
+    def test_drag_the_window_1_to_1_and_click_the_track_to_glide_there(self):
+        self.open_art()
+        x, y = self.rail_point(-60)
+        # A press on the track at the overview: a depth reading there.
+        self.mouse("mouseMoved", x, y)
+        self.mouse("mousePressed", x, y)
+        self.mouse("mouseReleased", x, y)
+        self.settle()
+        view = self.view()
+        self.assertAlmostEqual(view["goalCentre"], -60, delta=1.0)
+        rail = self.rail()
+        px_per_m = (rail["ticks"][-1][1] - rail["ticks"][0][1]) / (rail["ticks"][0][0] - rail["ticks"][-1][0])
+        win = self.page.evaluate("(() => { const r = document.querySelector('[data-testid=\"horizon-window\"]').getBoundingClientRect();"
+                                 " return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+        self.mouse("mouseMoved", win[0], win[1])
+        self.mouse("mousePressed", win[0], win[1])
+        for i in range(1, 11):
+            self.mouse("mouseMoved", win[0], win[1] + 7 * i, pressed=True)
+            time.sleep(0.03)
+        time.sleep(0.3)
+        dragged = self.view()
+        self.assertAlmostEqual(dragged["goalCentre"], view["goalCentre"] - 70 / px_per_m, delta=0.3, msg="the camera follows the drag 1:1 in depth")
+        self.assertAlmostEqual(dragged["centre"], dragged["goalCentre"], delta=0.3, msg="at once, no lag behind the pointer")
+        probe = self.rail()["probe"]
+        self.assertEqual(probe["z"], round(dragged["centre"]), "while dragging the probe reads the middle of the window")
+        self.mouse("mouseReleased", win[0], win[1] + 70)
+        self.settle()
+        # A press on the track below the window: the window glides there (several frames, no overshoot).
+        x, y = self.rail_point(-225)
+        def press():
+            self.mouse("mouseMoved", x, y)
+            self.mouse("mousePressed", x, y)
+            self.mouse("mouseReleased", x, y)
+        frames = self.frames_while(press, ms=1400)
+        centres = [f["view"][1] for f in frames]
+        self.assertGreater(len([c for c in centres if abs(c - centres[0]) > 1 and abs(c - centres[-1]) > 1]), 3, "it glides")
+        for a, b in zip(centres, centres[1:]):
+            self.assertLessEqual(b, a + 0.05, "towards the press, never back")
+        self.settle()
+        self.assertAlmostEqual(self.view()["goalCentre"], -225, delta=1.0, msg="the middle of the window at the pressed depth")
+
+    def test_page_keys_scroll_by_a_horizon_and_home_end_go_to_the_ends(self):
+        self.open_art()
+        self.page.evaluate("document.querySelector('[data-testid=\"horizon-level-120\"]').focus()")
+        self.page.press("PageDown")
+        self.settle()
+        view = self.view()
+        self.assertFalse(view["overview"])
+        self.assertAlmostEqual(view["goalCentre"], 0, delta=12, msg="from the overview: a reading at the upper horizon (as far as the art allows)")
+        start = view["goalCentre"]
+        self.page.press("PageDown")
+        self.settle()
+        self.assertAlmostEqual(self.view()["goalCentre"], start - 120, delta=0.5, msg="one horizon spacing down")
+        self.page.press("End")
+        self.settle()
+        self.assertAlmostEqual(self.view()["goalCentre"], -240, delta=0.5, msg="End: the lower horizon")
+        self.page.press("PageUp")
+        self.settle()
+        self.assertAlmostEqual(self.view()["goalCentre"], -120, delta=0.5, msg="one spacing up")
+        self.page.press("Home")
+        self.settle()
+        top = self.view()["goalCentre"]
+        self.assertAlmostEqual(top, 0, delta=12, msg="Home: the upper horizon (as far as the art allows)")
+        self.page.press("PageUp")
+        self.settle()
+        self.assertTrue(self.view()["overview"], "PageUp at the top: the overview")
+
+    def test_scrolling_to_the_limits_keeps_the_stage_on_the_art(self):
+        self.open_art()
+        x, y = self.rail_point(-150)
+        self.wheel(x, y, 100)
+        self.settle()
+        def down():
+            for _ in range(16):
+                self.wheel(x, y, 120)
+                time.sleep(0.05)
+        frames = self.frames_while(down, ms=2200)
+        for f in frames:
+            self.assertEqual(uncovered(f["cam"]), 0, f"no uncovered stage at the bottom limit: {f['cam']}")
+        bottom = self.view()["goalCentre"]
+        self.wheel(x, y, 120)
+        time.sleep(0.4)
+        self.assertAlmostEqual(self.view()["goalCentre"], bottom, delta=0.5, msg="the scroll stops at the covered limit")
+
+
+class ScrollIdleTest(ScrollCase):
+    def test_no_frame_when_idle_and_frames_only_while_the_camera_moves(self):
+        self.open_art()
+        self.start_decision()
+        x, y = self.rail_point(-150)
+        self.wheel(x, y, 100)
+        self.settle()
+        frames = int(self.stage()["frames"])
+        self.wheel(x, y, 100)
+        self.settle()
+        drawn = int(self.stage()["frames"]) - frames
+        self.assertGreater(drawn, 3, "a scroll glides over frames")
+        self.assertLess(drawn, 90, f"and stops: {drawn} frames")
+        time.sleep(0.6)
+        self.page.evaluate("window.__probe.raf = 0")
+        time.sleep(1.5)
+        self.assertEqual(self.page.evaluate("window.__probe.raf"), 0, "zero frames when idle")
+
+
+class ScrollReducedMotionTest(ScrollCase):
+    def setUp(self):
+        super().setUp()
+        self.page.send("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+
+    def test_scroll_and_snap_are_instant(self):
+        self.open_art()
+        x, y = self.rail_point(-100)
+        self.wheel(x, y, 100)
+        time.sleep(0.15)
+        view = self.view()
+        self.assertAlmostEqual(view["centre"], view["goalCentre"], delta=0.01, msg="the reading at once")
+        self.assertAlmostEqual(view["goalCentre"], -100, delta=1.0)
+        frames = self.frames_while(lambda: self.wheel(x, y, 60), ms=200)
+        self.assertTrue(all(not f["gliding"] for f in frames), "no glide")
+        time.sleep(0.6)
+        view = self.view()
+        self.assertAlmostEqual(view["centre"], view["goalCentre"], delta=0.01)
+        self.assertAlmostEqual(view["goalCentre"], -120, delta=0.1, msg="the snap at once")
+
+
+class ScrollProceduralTest(ScrollCase):
+    def test_the_procedural_scene_scrolls_too(self):
+        self.page.set_viewport(1920, 1080)
+        self.open("normal")
+        self.page.wait_for("document.querySelector('#stage-3d .s3').dataset.artEnv === 'off'", timeout=20.0)
+        self.wait_idle()
+        view = self.view()
+        self.assertTrue(view["overview"])
+        window = self.page.evaluate("Object.assign({}, document.querySelector('[data-testid=\"horizon-window\"]').dataset)")
+        self.assertIn("scroll", window, "the window is a scroll control over the slabs as well")
+        x, y = self.rail_point(-320)
+        self.wheel(x, y, 100)
+        self.settle()
+        view = self.view()
+        self.assertFalse(view["overview"])
+        self.assertAlmostEqual(view["goalCentre"], -320, delta=2.0, msg="a reading at the pointer's depth")
+        self.wheel(x, y, 100)
+        self.settle()
+        self.assertLess(self.view()["goalCentre"], -320 - 5, "and a scroll down")
 
 
 if __name__ == "__main__":

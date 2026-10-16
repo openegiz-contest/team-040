@@ -24,8 +24,16 @@
 //     their state.
 //   - Keyboard: the horizons are one tab stop; ↑ ↓ move between them (and show their highlight), Enter frames,
 //     Esc returns to the overview.
-// Reduced motion: the cursor jumps, there is no lens; the probe and the highlight follow the pointer at once and
-// never blink (a change is drawn in one frame).
+//   - Scroll through depth (ctx.stage.depthView / scrollDepth): a window on the rail spans the depths the stage shows
+//     now (the top and the bottom of its free part), following every move of the camera in the same frame. The
+//     wheel over the rail scrolls the camera through depth (the wheel over the stage stays zoom) and, once it rests,
+//     settles on a horizon within SNAP_M of the middle; at the overview the first tick down zooms to a depth
+//     reading at the pointer's depth, and scrolling up past the top returns to the overview. The window can be
+//     dragged (1:1 in depth; a finger anywhere on the rail), a press on the track elsewhere glides it there;
+//     PageUp/PageDown move by one horizon spacing, Home/End to the upper and the lower horizon. The stage's pan
+//     clamp holds: the scroll stops where the art ends.
+// Reduced motion: the cursor jumps, there is no lens, scrolls and snaps are instant; the probe and the highlight
+// follow the pointer at once and never blink (a change is drawn in one frame). Nothing runs while nothing moves.
 //
 // Contract: renders into ctx.roots.horizons (#horizons, a `.centre__bar` child of #centre: the 3D stage keeps its
 // labels and its framing clear of it). Test ids: horizon-rail (root), horizon-all, horizon-<level local name>,
@@ -45,6 +53,9 @@ const DOT_PX = 17;
 const SLOTS = 4;
 /** The lens over the ticks: its reach (px, gaussian); how much a tick grows is poster.css's (--lens). */
 const LENS = {sigma: 34};
+/** Scrolling: a wheel tick moves this share of the window; the snap after the wheel rests (ms) and its reach (m). */
+const SCROLL = {tick: 0.18, settle: 360, read: 520, jump: 600, snapAfter: 260, snapMs: 320};
+const SNAP_M = 12;
 
 /** The range of the gauge: the horizons with a margin, rounded out to 10 m. */
 function rangeOf(levels) {
@@ -84,6 +95,8 @@ export function mount(root, ctx) {
   const ticks = h('div', {class: 'hz__ticks', 'aria-hidden': 'true'});
   const marks = h('ol', {class: 'hz__levels'});
   const cursor = h('span', {class: 'hz__cursor', 'data-testid': 'horizon-cursor', 'aria-hidden': 'true'});
+  const win = h('div', {class: 'hz__window', 'data-testid': 'horizon-window', 'aria-hidden': 'true', hidden: true},
+    h('span', {class: 'hz__window-end hz__window-end--top'}), h('span', {class: 'hz__window-end hz__window-end--bottom'}));
   const lane = h('div', {class: 'hz__people', 'data-testid': 'horizon-people', 'aria-hidden': 'true'});
   const out = h('span', {class: 'hz__out', 'data-testid': 'horizon-out', 'aria-hidden': 'true', hidden: true});
   const probeValue = h('span', {class: 'hz__probe-value', 'data-testid': 'horizon-probe-value'});
@@ -91,7 +104,7 @@ export function mount(root, ctx) {
     h('span', {class: 'hz__probe-line'}), probeValue);
   const chip = h('div', {class: 'hz__chip', 'data-testid': 'horizon-chip', role: 'status', hidden: true});
   const gauge = h('div', {class: 'hz__gauge', 'data-testid': 'horizon-gauge'},
-    h('span', {class: 'hz__axis', 'aria-hidden': 'true'}), ticks, cursor, lane, out, marks, probe, chip);
+    h('span', {class: 'hz__axis', 'aria-hidden': 'true'}), ticks, win, cursor, lane, out, marks, probe, chip);
   root.append(head, gauge);
   setAttrs(root, {role: 'navigation', 'aria-label': Z.region, 'data-testid': 'horizon-rail'});
 
@@ -140,8 +153,16 @@ export function mount(root, ctx) {
       const focus = typeof info.focus === 'string' ? info.focus.split(':').pop() : null;
       if (focus && levels.some((level) => level.name === focus)) return focus;
       if (focus) return current;
+      // Moved by the user (a scroll, a pan): no horizon is the one in view; the window says what is.
+      return null;
     }
     return current;
+  }
+
+  /** True when the 3D stage shows its overview (or there is no 3D stage). */
+  function overviewNow() {
+    const info = ctx.stage.info ? ctx.stage.info() : null;
+    return !info || Boolean(info.overview);
   }
 
   const zoneState = (zone) => (zone.hasState && zone.hazard ? zone.hazard.state : 'unknown');
@@ -232,15 +253,22 @@ export function mount(root, ctx) {
           {duration: 380, start: 120, step: 70, easing: EASE_POSTER});
       }
     }
-    placeCursor(view, !first);
+    placeCursor(view, !first, view === null && !overviewNow());
+    placeWindow();
     paintPeople();
     if (chipLevel()) paintChip();
   }
 
   /** The cursor on the axis: a short bar at the horizon in view, or a bracket over all of them; it slides on a change. */
-  function placeCursor(view, animate) {
+  function placeCursor(view, animate, hidden = false) {
     const height = gauge.clientHeight;
     if (!height || !range) return;
+    cursor.hidden = hidden;
+    if (hidden) {
+      cursor.setAttribute('data-at', 'none');
+      cursorAt = null;
+      return;
+    }
     const level = view ? levelsNow.find((entry) => entry.name === view) : null;
     const tops = levelsNow.map((entry) => share(entry.elevation) * height);
     const next = level ? {top: share(level.elevation) * height - 15, height: 30}
@@ -343,7 +371,7 @@ export function mount(root, ctx) {
   }
 
   function onProbe(event) {
-    if (!range) return;
+    if (!range || dragging) return;
     const box = gauge.getBoundingClientRect();
     const y = event.clientY - box.top;
     if (y < 0 || y > box.height) return endProbe();
@@ -477,6 +505,157 @@ export function mount(root, ctx) {
     chip.hidden = false;
   }
 
+  // ---- the window and scrolling through depth -------------------------------------------------------------------
+
+  const depthView = () => (ctx.stage.depthView ? ctx.stage.depthView() : null);
+  const canScroll = () => Boolean(ctx.stage.scrollDepth && depthView());
+  let dragging = null;     // {id, y0, centre0, pxPerM} while the window is dragged
+  let pressing = null;     // {id, x0, y0} a press on the track that may be a click
+  let snapTimer = 0;
+
+  /** The window: the depths the stage shows now, from the frame that moved the camera (ctx.stage.onView). */
+  function placeWindow() {
+    const view = range ? depthView() : null;
+    win.hidden = !view;
+    if (!view) return;
+    const top = Math.min(Math.max(share(view.top), 0), 1);
+    const bottom = Math.min(Math.max(share(view.bottom), 0), 1);
+    win.style.top = `${top * 100}%`;
+    win.style.height = `${Math.max(bottom - top, 0) * 100}%`;
+    setAttrs(win, {'data-top': Math.round(view.top * 10) / 10, 'data-bottom': Math.round(view.bottom * 10) / 10,
+      'data-centre': Math.round(view.centre * 10) / 10, 'data-overview': view.overview ? '' : null,
+      'data-scroll': ctx.stage.scrollDepth ? '' : null});
+    if (dragging) showProbeAt(view.centre);
+  }
+
+  /** The probe at a depth (while dragging: the middle of the window). */
+  function showProbeAt(z) {
+    const value = Math.round(z);
+    probe.hidden = false;
+    probe.style.top = `${Math.min(Math.max(share(value), 0), 1) * 100}%`;
+    setText(probeValue, Z.depth(value));
+    probe.setAttribute('data-z', String(value));
+    root.setAttribute('data-probe', String(value));
+  }
+
+  /** The upper and the lower horizon, and the usual spacing of the horizons (m). */
+  function spacing() {
+    const zs = levelsNow.map((level) => level.elevation);
+    const gaps = zs.slice(1).map((z, i) => Math.abs(zs[i] - z)).sort((p, q) => p - q);
+    return gaps.length ? gaps[Math.floor(gaps.length / 2)] : 100;
+  }
+
+  /** Scroll the stage; leaves the horizon chosen on the rail (the camera is the user's now). */
+  function scroll(spec) {
+    current = null;
+    return ctx.stage.scrollDepth(spec);
+  }
+
+  /** After the wheel rests: a horizon within SNAP_M of the middle of the window takes the middle (a soft snap). */
+  function snapSoon() {
+    clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => {
+      snapTimer = 0;
+      const view = depthView();
+      if (!view || view.overview || dragging) return;
+      const near = levelsNow.reduce((best, level) => (!best || Math.abs(level.elevation - view.goalCentre) < Math.abs(best.elevation - view.goalCentre)
+        ? level : best), null);
+      if (near && Math.abs(near.elevation - view.goalCentre) <= SNAP_M && Math.abs(near.elevation - view.goalCentre) > 0.05) {
+        scroll({to: near.elevation, ms: SCROLL.snapMs});
+        root.setAttribute('data-snapped', near.name);
+      }
+    }, SCROLL.snapAfter);
+  }
+
+  /** Scroll by `steps` wheel ticks (down positive); at the overview the first tick down reads the depth `at`. */
+  function wheelBy(steps, at) {
+    const view = depthView();
+    if (!view) return;
+    if (view.overview) {
+      if (steps > 0) scroll({to: at, read: true, ms: SCROLL.read});
+      return;
+    }
+    const span = Math.max(view.goalTop - view.goalBottom, 1);
+    const before = view.goalCentre;
+    const after = scroll({by: -steps * span * SCROLL.tick, ms: SCROLL.settle});
+    // Up against the top of what can be shown: back to the overview.
+    if (steps < 0 && after !== null && after - before < 0.5) {
+      clearTimeout(snapTimer);
+      ctx.stage.overview();
+      return;
+    }
+    snapSoon();
+  }
+
+  root.addEventListener('wheel', (event) => {
+    if (!canScroll() || !range) return;
+    event.preventDefault();
+    const unit = event.deltaMode === 1 ? 33 : (event.deltaMode === 2 ? 400 : 1);
+    const steps = Math.max(-3, Math.min(3, (event.deltaY * unit) / 100));
+    if (Math.abs(steps) < 0.01) return;
+    const box = gauge.getBoundingClientRect();
+    const y = event.clientY - box.top;
+    const view = depthView();
+    const at = y >= 0 && y <= box.height ? depthAt(y, box.height) : (view ? view.centre : levelsNow[0].elevation);
+    wheelBy(steps, at);
+  }, {passive: false});
+
+  gauge.addEventListener('pointerdown', (event) => {
+    if (!canScroll() || !range || event.button > 0) return;
+    if (event.target.closest && event.target.closest('.hz__level')) return;
+    const box = gauge.getBoundingClientRect();
+    const onWindow = event.target === win || win.contains(event.target);
+    if (onWindow || event.pointerType === 'touch') {
+      // Drag the window (a finger anywhere on the rail): the middle of the window follows the pointer 1:1 in depth.
+      let view = depthView();
+      if (view.overview) {
+        scroll({to: depthAt(event.clientY - box.top, box.height), read: true, ms: 0});
+        view = depthView();
+      }
+      dragging = {id: event.pointerId, y0: event.clientY, centre0: view.goalCentre, pxPerM: box.height / (range.top - range.bottom)};
+      gauge.setPointerCapture(event.pointerId);
+      win.classList.add('is-dragging');
+      root.setAttribute('data-dragging', '');
+      clearTimeout(snapTimer);
+      if (ctx.stage.setDepthProbe) ctx.stage.setDepthProbe(null);
+      showProbeAt(view.centre);
+      event.preventDefault();
+      return;
+    }
+    pressing = {id: event.pointerId, x0: event.clientX, y0: event.clientY};
+  });
+
+  gauge.addEventListener('pointermove', (event) => {
+    if (!dragging || event.pointerId !== dragging.id) return;
+    const dz = -(event.clientY - dragging.y0) / dragging.pxPerM;
+    scroll({to: dragging.centre0 + dz, ms: 0});
+  });
+
+  const endDrag = (event) => {
+    if (dragging && event.pointerId === dragging.id) {
+      dragging = null;
+      win.classList.remove('is-dragging');
+      root.removeAttribute('data-dragging');
+      if (gauge.hasPointerCapture && gauge.hasPointerCapture(event.pointerId)) gauge.releasePointerCapture(event.pointerId);
+      onProbe(event);
+      return;
+    }
+    if (pressing && event.pointerId === pressing.id && event.type === 'pointerup') {
+      const moved = Math.hypot(event.clientX - pressing.x0, event.clientY - pressing.y0);
+      pressing = null;
+      if (moved > 5) return;
+      // A press on the track: the window glides there (from the overview: a depth reading there).
+      const box = gauge.getBoundingClientRect();
+      const z = depthAt(event.clientY - box.top, box.height);
+      const view = depthView();
+      if (view && view.overview) scroll({to: z, read: true, ms: SCROLL.read});
+      else if (view && (z > view.top || z < view.bottom)) scroll({to: z, ms: SCROLL.jump});
+    }
+    pressing = null;
+  };
+  gauge.addEventListener('pointerup', endDrag);
+  gauge.addEventListener('pointercancel', endDrag);
+
   // ---- keyboard ------------------------------------------------------------------------------------------------
 
   root.addEventListener('keydown', (event) => {
@@ -495,6 +674,21 @@ export function mount(root, ctx) {
     } else if (event.key === 'Escape') {
       event.preventDefault();
       go(null);
+    } else if (['PageUp', 'PageDown', 'Home', 'End'].includes(event.key) && canScroll()) {
+      // Through depth: a horizon spacing, or the upper and the lower horizon.
+      event.preventDefault();
+      const view = depthView();
+      const first = levelsNow[0].elevation;
+      const last = levelsNow[levelsNow.length - 1].elevation;
+      if (event.key === 'Home' || event.key === 'End') {
+        scroll({to: event.key === 'Home' ? first : last, read: view.overview, ms: view.overview ? SCROLL.read : SCROLL.jump});
+      } else if (view.overview) {
+        if (event.key === 'PageDown') scroll({to: first, read: true, ms: SCROLL.read});
+      } else {
+        const before = view.goalCentre;
+        const after = scroll({by: event.key === 'PageDown' ? -spacing() : spacing(), ms: SCROLL.jump});
+        if (event.key === 'PageUp' && after !== null && after - before < 0.5) ctx.stage.overview();
+      }
     }
   });
 
@@ -508,6 +702,8 @@ export function mount(root, ctx) {
     if (listening || !ctx.stage.onPeople) return;
     listening = true;
     ctx.stage.onPeople(paintPeople);
+    // The window follows the camera in the frame that moved it; the cursor and the hidden state follow later.
+    if (ctx.stage.onView) ctx.stage.onView(placeWindow);
   };
   listen();
   queueMicrotask(listen);

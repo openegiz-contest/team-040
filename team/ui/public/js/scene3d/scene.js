@@ -37,6 +37,10 @@
 // it changes; setDepthProbe(z) draws a thin glowing guide at a depth across the massif (a contour line on the art's
 // rock, a slice outline over the slabs of variant 3); setLevelHighlight(level) glows the outlines of one horizon's
 // workings. Each is drawn in one frame per call: nothing is drawn while the pointer rests.
+// The rail is also a scroll control through depth: depthView() gives the mine elevations seen at the top, the
+// middle and the bottom of the free stage (through the plane of the camera's target), announced by
+// onEvent('view') from every frame that changed them; scrollDepth() moves the camera along the screen's up (its
+// horizontal place kept) to a depth, or zooms from the overview to a depth reading (DEPTH_READ_ZOOM).
 
 import * as THREE from 'three';
 import {showsOldData} from '../link.js';
@@ -103,6 +107,8 @@ const ART_MAX_CYCLES = 2.4;
 const ART_MARK = 0.62;
 const ART_PIN = 0.4;
 const ART_PIN_PX = {min: 12, perFigurePx: 1.05};
+/** The depth rail: the zoom of a depth reading (from the overview, one horizon fills most of the free stage). */
+const DEPTH_READ_ZOOM = 2;
 /** Art mode, a withdrawal: the stretch of the walkers' routes ahead that is framed with them (m), the glide of a re-frame. */
 const ART_WALK_AHEAD_M = 90;
 const ART_FOLLOW_MS = 900;
@@ -288,6 +294,9 @@ export function createScene(host, options) {
   let peopleKey = null;
   let depthProbe = null;            // {z, y}: the mine elevation and the scene height of the guide, or null
   let levelLit = null;              // the local name of the highlighted horizon, or null
+  let viewKey = null;               // the depths of the free stage last announced (onEvent('view'))
+  let freeCache = null;             // the free part of the stage for the depth rail, re-read at most twice a second
+  let freeCacheAt = 0;
   const probeUniforms = {uProbe: {value: new THREE.Vector4(0, 0, 0, 0)}, uProbeColor: {value: new THREE.Color(TOKEN.verdigrisCore)},
     uProbeHalo: {value: new THREE.Color(TOKEN.verdigris)}};
   const probeGroup = new THREE.Group();
@@ -2051,8 +2060,10 @@ export function createScene(host, options) {
     if (loaders.loaded) loaders.setDetail(loaderDetail());
     // The figures of people close up first: a marker over a figure stands over its helmet.
     if (actors.drawFigures(now)) spritesDirty = true;
-    // The depth rail follows the people where they are drawn (the same playback): told when a drawn depth changed.
+    // The depth rail follows the people where they are drawn (the same playback): told when a drawn depth changed;
+    // and the depths the stage shows, in the frame that moved the camera.
     announcePeople();
+    announceView();
     // A walk cycle fading in or out after a person started or stopped (actors.js, FADE_MS).
     const cycles = actors.animating;
     if (spritesDirty) buildSprites();
@@ -3204,6 +3215,7 @@ export function createScene(host, options) {
   // ---- size --------------------------------------------------------------------------
 
   function resize() {
+    freeCacheAt = 0;
     const rect = host.getBoundingClientRect();
     const w = Math.round(rect.width);
     const hh = Math.round(rect.height);
@@ -3342,6 +3354,105 @@ export function createScene(host, options) {
     if (key === peopleKey) return;
     peopleKey = key;
     options.onEvent('people');
+  }
+
+  // ---- the depth rail as a scroll control ----------------------------------------------------------
+
+  /** The free part of the stage (as the framings use it), re-read at most every 500 ms (the rail reads it per frame). */
+  function freeForDepth() {
+    const now = performance.now();
+    if (!freeCache || now - freeCacheAt > 500) {
+      freeCache = freeRect(coverRects());
+      freeCacheAt = now;
+    }
+    return freeCache;
+  }
+
+  /** The camera's up on the screen, in the scene (no roll: its height share is cos(el)). */
+  const screenUp = (az, el) => new THREE.Vector3(-Math.sin(el) * Math.sin(az), Math.cos(el), -Math.sin(el) * Math.cos(az));
+
+  /**
+   * The mine elevation seen at the stage row `row` (pixels from the top) for a view {target, dist, el}: the point of
+   * that row on the plane through the target facing the camera (the same for the orthographic rig and the orbit).
+   */
+  function depthAtRow(row, view) {
+    const perPixel = (2 * view.dist * Math.tan((camera.fov * DEG) / 2)) / Math.max(height, 1);
+    const y = view.target.y + Math.cos(view.el) * (height / 2 - row) * perPixel;
+    return y / k + layout.zTop;
+  }
+
+  /** The view now and the view the camera goes to, as {target, dist, el, az}. */
+  const viewNow = () => ({target: orbit.state.target, dist: orbit.state.dist, el: orbit.state.el, az: orbit.state.az});
+  const viewGoal = () => {
+    const g = orbit.goal;
+    return {target: g.target, dist: g.dist, el: Number.isFinite(g.el) ? g.el : orbit.state.el, az: Number.isFinite(g.az) ? g.az : orbit.state.az};
+  };
+
+  /** True when a view is the overview (1×): the art's zoom range, or the overview of the orbit. */
+  function atOverview(view) {
+    if (orbit.art) return view.dist >= orbit.limits.distMax * 0.97;
+    return overviewMode;
+  }
+
+  /**
+   * What the stage shows in depth (the depth rail's window): the mine elevations at the top, the middle and the
+   * bottom of the free stage now ({top, centre, bottom}), the middle where the camera goes (goalCentre), the zoom
+   * (art mode) and whether this is the overview. Null without a mine.
+   */
+  function depthView() {
+    if (!layout || !width || !height) return null;
+    const free = freeForDepth();
+    const now = viewNow();
+    const goal = viewGoal();
+    const mid = free.y + free.h / 2;
+    return {
+      top: depthAtRow(free.y, now), centre: depthAtRow(mid, now), bottom: depthAtRow(free.y + free.h, now),
+      goalCentre: depthAtRow(mid, goal), goalTop: depthAtRow(free.y, goal), goalBottom: depthAtRow(free.y + free.h, goal),
+      zoom: orbit.art ? orbit.zoomFactor : null, overview: atOverview(goal), gliding: orbit.gliding, art: Boolean(orbit.art),
+    };
+  }
+
+  function announceView() {
+    const view = depthView();
+    const key = view ? [view.top, view.bottom].map((v) => v.toFixed(2)).join() : '';
+    if (key === viewKey) return;
+    viewKey = key;
+    options.onEvent('view');
+  }
+
+  /**
+   * Scroll the camera through depth (the depth rail): `to` a mine elevation or `by` metres (up positive) for the
+   * middle of the free stage, moving along the screen's up so the horizontal place is kept; settling in `ms`
+   * (0: at once, a drag); `read`: from the overview, zoom to a depth reading (DEPTH_READ_ZOOM) at that depth. The
+   * pan clamp of the art keeps the stage on the art (the scroll stops at its limits). Returns the depth the
+   * middle goes to, or null.
+   */
+  function scrollDepth({to = null, by = null, ms = 360, read = false} = {}) {
+    if (!layout || !width || !state || !state.model) return null;
+    finishIntro();
+    const free = freeForDepth();
+    const mid = free.y + free.h / 2;
+    const goal = viewGoal();
+    let dist = goal.dist;
+    if (read) dist = orbit.art ? orbit.limits.distMax / DEPTH_READ_ZOOM : fitAll().dist / DEPTH_READ_ZOOM;
+    const from = depthAtRow(mid, {...goal, dist});
+    const wanted = Number.isFinite(to) ? to : from + (Number.isFinite(by) ? by : 0);
+    // The plane's height moves by s·cos(el) for a move s along the screen's up.
+    const shift = ((wanted - from) * k) / Math.max(Math.cos(goal.el), 1e-3);
+    userMoved();
+    if (orbit.art) {
+      if (read) {
+        const target = goal.target.clone().addScaledVector(orbit.axes.up, shift);
+        orbit.glideTo({target, dist}, ms);
+      } else {
+        orbit.pan(0, shift, ms);
+      }
+    } else {
+      const target = goal.target.clone().addScaledVector(screenUp(goal.az, goal.el), shift);
+      orbit.glideTo({target, dist}, ms);
+    }
+    invalidate();
+    return depthAtRow(mid, viewGoal());
   }
 
   /** The scene height of a mine elevation (the one transform of layout.js). */
@@ -4167,7 +4278,7 @@ export function createScene(host, options) {
     },
     focus, overview, setExplode, setArt, measure, info, dispose,
     /** The depth rail: the people as drawn now, the depth probe and the highlight of a horizon (see above). */
-    people, setDepthProbe, setLevelHighlight,
+    people, setDepthProbe, setLevelHighlight, depthView, scrollDepth,
     /** Art mode is on: the orthographic camera, pan and zoom only. */
     get art() {
       return Boolean(art);

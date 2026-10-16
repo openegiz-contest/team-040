@@ -181,6 +181,20 @@ body[data-panel="shown"] .headline { max-width: min(900px, var(--hl-room, 9999px
 }
 .hz__cursor[data-at="all"] { right: calc(var(--axis) - 1px); width: 3px; opacity: .55; }
 
+/* The window: the depths the stage shows now (view/horizons.js), a bracket over the axis; drag it to scroll. */
+.hz__window {
+  position: absolute; right: calc(var(--axis) - 7px); width: 14px; min-height: 6px;
+  border-left: 1px solid rgba(46, 242, 194, .45); border-right: 1px solid rgba(46, 242, 194, .45);
+  background: rgba(46, 242, 194, .08);
+  pointer-events: none;
+}
+.hz__window[data-scroll] { pointer-events: auto; cursor: grab; }
+.hz__window.is-dragging { cursor: grabbing; background: rgba(46, 242, 194, .16); }
+.hz__window[data-overview] { background: rgba(46, 242, 194, .04); }
+.hz__window-end { position: absolute; left: -4px; right: -4px; height: 2px; background: var(--accent); }
+.hz__window-end--top { top: -1px; }
+.hz__window-end--bottom { bottom: -1px; }
+
 /* The people: the marker of the stage, small, at the depth where the stage draws the person; side by side from the axis. */
 .hz__people { position: absolute; inset: 0; pointer-events: none; }
 .hz__dot {

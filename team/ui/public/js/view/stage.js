@@ -108,6 +108,11 @@ export function mount(root, ctx) {
   const tellPeople = () => {
     for (const listener of peopleListeners) listener();
   };
+  // ... and what the stage shows in depth, from the frame that moved the camera (ctx.stage.onView).
+  const viewListeners = new Set();
+  const tellView = () => {
+    for (const listener of viewListeners) listener();
+  };
 
   const setUi = (change) => store.update((state) => {
     const ui = {...state.ui, ...change};
@@ -227,6 +232,7 @@ export function mount(root, ctx) {
       instance.dispose();
       instance = null;
       tellPeople();
+      tellView();
     }
     builtQuality = null;
   }
@@ -248,6 +254,7 @@ export function mount(root, ctx) {
   function onEvent(type) {
     if (type === 'frame') mirror();
     else if (type === 'people') tellPeople();
+    else if (type === 'view') tellView();
     else if (type === 'ready') measureOnce();
     else if (type === 'explode-key') {
       if (!(instance && instance.art)) toggleExplode();
@@ -397,6 +404,17 @@ export function mount(root, ctx) {
   };
   ctx.stage.setDepthProbe = (z) => (mode === '3d' && instance ? instance.setDepthProbe(z) : false);
   ctx.stage.setLevelHighlight = (name) => (mode === '3d' && instance ? instance.setLevelHighlight(name) : false);
+  /**
+   * The depth rail as a scroll control. depthView(): the mine elevations the 3D stage shows at the top, middle and
+   * bottom of its free part ({top, centre, bottom, goalCentre, overview, zoom}), null when not in 3D; onView(listener):
+   * told from every frame that changed them; scrollDepth({to | by, ms, read}): moves the camera through depth.
+   */
+  ctx.stage.depthView = () => (mode === '3d' && instance ? instance.depthView() : null);
+  ctx.stage.onView = (listener) => {
+    viewListeners.add(listener);
+    return () => viewListeners.delete(listener);
+  };
+  ctx.stage.scrollDepth = (spec) => (mode === '3d' && instance ? instance.scrollDepth(spec) : null);
 
   // ---- the HUD beside the gizmo ------------------------------------------------------------
 

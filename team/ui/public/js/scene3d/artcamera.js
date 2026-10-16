@@ -198,11 +198,11 @@ export function createArtRig(camera, options) {
   /** No orbit in art mode. */
   function rotate() {}
 
-  /** Pan by metres along the screen's right and up. */
-  function pan(rightMetres, upMetres) {
+  /** Pan by metres along the screen's right and up, settling in `ms` (0: at once; the depth rail's drag). */
+  function pan(rightMetres, upMetres, ms = USER_MS) {
     goal.target.addScaledVector(axes.right, rightMetres).addScaledVector(axes.up, upMetres);
     clampGoal();
-    start(USER_MS);
+    start(ms);
   }
 
   /** Advance the spring by the time since the last frame; true while the camera still moves. */
