@@ -455,7 +455,7 @@ class Mine:
                 preset = next((p for p in self.attributes["mine"]["presets"] if p["id"] == target), None)
                 if preset is None:
                     return "unknown_target"
-            elif target != "shift":
+            elif target not in ("shift", "run"):
                 return "unknown_target"
             self._archive("reset")
             self._new_run(preset)

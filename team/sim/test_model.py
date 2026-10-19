@@ -22,6 +22,19 @@ def execute(mine, kind):
 
 
 class ModelTests(unittest.TestCase):
+    def test_ui_reset_target_and_replay(self):
+        mine = Mine()
+        old_run = mine.run
+        body = dict(command_id="c-" + "f" * 32, type="run.reset", target="run", run=old_run)
+        ack = mine.command(body)
+        self.assertEqual(ack["status"], "applied")
+        self.assertNotEqual(mine.run, old_run)
+        new_run = mine.run
+        self.assertEqual(mine.command(body), ack)
+        self.assertEqual(mine.run, new_run)
+        self.assertEqual(command(mine, "run.reset", "zone-a")["reason"], "unknown_target")
+        self.assertEqual(mine.run, new_run)
+
     def test_geometry_matches_travel_distance(self):
         mine = Mine()
         nodes = mine.attributes["mine"]["nodes"]
