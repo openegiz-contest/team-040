@@ -1,0 +1,277 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1850" viewBox="0 0 2400 1850">
+<rect x="0" y="0" width="2400" height="1850" rx="0" fill="#1c211f" stroke="none" stroke-width="2"/>
+<text x="65" y="45" fill="#edb44e" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">РУДНИК / 040</text>
+<text x="65" y="92" fill="#ebe8dd" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">ПОЛНАЯ СХЕМА ШАХТЫ</text>
+<text x="66" y="154" fill="#abb8ae" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Точная связность модели · 2 горизонта · 12 выработок · 2 выхода · 6 работников</text>
+<text x="2335" y="58" fill="#abb8ae" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="end" dominant-baseline="text-before-edge">ДЛЯ СБОРКИ СЦЕНЫ</text>
+<text x="2335" y="91" fill="#ebe8dd" font-family="Consolas, monospace" font-size="25" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">ТОПОЛОГИЯ t1</text>
+<text x="2335" y="130" fill="#abb8ae" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">Синтетический объект · 16.10.2026</text>
+<polyline points="65,204 2335,204" fill="none" stroke="#455049" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="290,565 1290,390 1530,640 530,820" fill="#28332e" stroke="#3b4c41" stroke-width="2"/>
+<polygon points="290,1040 1290,970 1530,1200 530,1380" fill="#28302d" stroke="#3b4741" stroke-width="2"/>
+<text x="65" y="553" fill="#a1b6a8" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">ГОРИЗОНТ</text>
+<text x="65" y="584" fill="#ebe8dd" font-family="Segoe UI, Arial, sans-serif" font-size="35" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">−120 м</text>
+<text x="65" y="1024" fill="#a1b6a8" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">ГОРИЗОНТ</text>
+<text x="65" y="1055" fill="#ebe8dd" font-family="Segoe UI, Arial, sans-serif" font-size="35" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">−240 м</text>
+<text x="65" y="253" fill="#a1b6a8" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">ПОВЕРХНОСТЬ / 0 м</text>
+<polyline points="405,655 165,465 405,305" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,650 165,460 405,300" fill="none" stroke="#616657" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,650 165,460 405,300" fill="none" stroke="#ad956a" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1295,655 1510,465 1295,305" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1295,650 1510,460 1295,300" fill="none" stroke="#616657" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1295,650 1510,460 1295,300" fill="none" stroke="#ad956a" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,655 850,655" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,650 850,650" fill="none" stroke="#56695b" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,650 850,650" fill="none" stroke="#c5cec1" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,655 1295,655" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,650 1295,650" fill="none" stroke="#56695b" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,650 1295,650" fill="none" stroke="#c5cec1" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,655 850,445" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,650 850,440" fill="none" stroke="#56695b" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,650 850,440" fill="none" stroke="#c5cec1" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,445 1295,655" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,440 1295,650" fill="none" stroke="#56695b" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,440 1295,650" fill="none" stroke="#c5cec1" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,655 850,880" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,650 850,875" fill="none" stroke="#56695b" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,650 850,875" fill="none" stroke="#c5cec1" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,650 850,875" fill="none" stroke="#e9b850" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,655 160,940 405,1125" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,650 160,935 405,1120" fill="none" stroke="#616657" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,650 160,935 405,1120" fill="none" stroke="#ad956a" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1295,655 1510,940 1295,1125" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1295,650 1510,935 1295,1120" fill="none" stroke="#616657" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1295,650 1510,935 1295,1120" fill="none" stroke="#ad956a" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,1125 850,1125" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,1120 850,1120" fill="none" stroke="#56695b" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="405,1120 850,1120" fill="none" stroke="#c5cec1" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,1125 1295,1125" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,1120 1295,1120" fill="none" stroke="#56695b" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,1120 1295,1120" fill="none" stroke="#c5cec1" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,1125 850,1350" fill="none" stroke="#101613" stroke-width="29" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,1120 850,1345" fill="none" stroke="#56695b" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,1120 850,1345" fill="none" stroke="#c5cec1" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="850,1120 850,1345" fill="none" stroke="#e9b850" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="84.0" y="338" width="182.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="175" y="345" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-01  /  494.8 м</text>
+<rect x="1379.0" y="338" width="182.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="1470" y="345" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-02  /  471.9 м</text>
+<rect x="529.0" y="668" width="182.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="620" y="675" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-03  /  150.0 м</text>
+<rect x="989.0" y="668" width="182.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="1080" y="675" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-04  /  150.0 м</text>
+<rect x="479.0" y="467" width="182.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="570" y="474" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-05  /  219.3 м</text>
+<rect x="1029.0" y="467" width="182.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="1120" y="474" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-06  /  219.3 м</text>
+<rect x="945.0" y="770" width="170.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="1030" y="777" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-07  /  80.0 м</text>
+<rect x="89.0" y="948" width="182.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="180" y="955" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-08  /  379.5 м</text>
+<rect x="1379.0" y="948" width="182.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="1470" y="955" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-09  /  379.5 м</text>
+<rect x="529.0" y="1138" width="182.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="620" y="1145" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-10  /  150.0 м</text>
+<rect x="989.0" y="1138" width="182.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="1080" y="1145" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-11  /  150.0 м</text>
+<rect x="945.0" y="1238" width="170.0" height="41" rx="5" fill="#222a27" stroke="#59615a" stroke-width="2"/>
+<text x="1030" y="1245" fill="#ede8db" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">w-12  /  80.0 м</text>
+<circle cx="405" cy="300" r="17" fill="#88b89a" stroke="#d2ebd9" stroke-width="2"/>
+<text x="405" y="288" fill="#1c3427" font-family="Segoe UI, Arial, sans-serif" font-size="25" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">↑</text>
+<text x="435" y="278" fill="#c7e4cf" font-family="Segoe UI, Arial, sans-serif" font-size="25" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">ВЫХОД A</text>
+<text x="435" y="312" fill="#a6c3af" font-family="Consolas, monospace" font-size="18" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">exit-a · surface-a</text>
+<circle cx="1295" cy="300" r="17" fill="#88b89a" stroke="#d2ebd9" stroke-width="2"/>
+<text x="1295" y="288" fill="#1c3427" font-family="Segoe UI, Arial, sans-serif" font-size="25" font-weight="700" text-anchor="middle" dominant-baseline="text-before-edge">↑</text>
+<text x="1325" y="278" fill="#c7e4cf" font-family="Segoe UI, Arial, sans-serif" font-size="25" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">ВЫХОД B</text>
+<text x="1325" y="312" fill="#a6c3af" font-family="Consolas, monospace" font-size="18" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">exit-b · surface-b</text>
+<circle cx="405" cy="650" r="12" fill="#202924" stroke="#d5dfd1" stroke-width="2"/>
+<text x="385" y="607" fill="#ffffff" font-family="Consolas, monospace" font-size="26" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">a</text>
+<circle cx="850" cy="650" r="12" fill="#202924" stroke="#d5dfd1" stroke-width="2"/>
+<text x="830" y="607" fill="#ffffff" font-family="Consolas, monospace" font-size="26" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">b</text>
+<circle cx="1295" cy="650" r="12" fill="#202924" stroke="#d5dfd1" stroke-width="2"/>
+<text x="1275" y="607" fill="#ffffff" font-family="Consolas, monospace" font-size="26" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">c</text>
+<circle cx="850" cy="440" r="12" fill="#202924" stroke="#d5dfd1" stroke-width="2"/>
+<text x="830" y="397" fill="#ffffff" font-family="Consolas, monospace" font-size="26" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">d</text>
+<polyline points="835,875 865,875" fill="none" stroke="#f0c168" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="823" y="893" fill="#f0c168" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">face-a</text>
+<circle cx="405" cy="1120" r="12" fill="#202924" stroke="#d5dfd1" stroke-width="2"/>
+<text x="385" y="1077" fill="#ffffff" font-family="Consolas, monospace" font-size="26" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">e</text>
+<circle cx="850" cy="1120" r="12" fill="#202924" stroke="#d5dfd1" stroke-width="2"/>
+<text x="830" y="1077" fill="#ffffff" font-family="Consolas, monospace" font-size="26" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">f</text>
+<circle cx="1295" cy="1120" r="12" fill="#202924" stroke="#d5dfd1" stroke-width="2"/>
+<text x="1275" y="1077" fill="#ffffff" font-family="Consolas, monospace" font-size="26" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">g</text>
+<polyline points="835,1345 865,1345" fill="none" stroke="#f0c168" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="823" y="1363" fill="#f0c168" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">face-b</text>
+<circle cx="850" cy="698.25" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="845" y="705.25" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="847,718.25 847,725.25" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="853,718.25 853,725.25" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="850" cy="754.5" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="845" y="761.5" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="847,774.5 847,781.5" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="853,774.5 853,781.5" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="850" cy="810.75" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="845" y="817.75" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="847,830.75 847,837.75" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="853,830.75 853,837.75" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="879,753.5 888,762.5 879,771.5 870,762.5" fill="#7ec8c6" stroke="none" stroke-width="2"/>
+<circle cx="879" cy="762.5" r="3" fill="#253b3c" stroke="none" stroke-width="2"/>
+<polyline points="863,762.5 872,762.5" fill="none" stroke="#7ec8c6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="535" y="847" fill="#edc477" font-family="Segoe UI, Arial, sans-serif" font-size="25" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">УЧАСТОК A</text>
+<text x="535" y="882" fill="#b9c1b4" font-family="Consolas, monospace" font-size="20" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">zone-a</text>
+<circle cx="850" cy="1168.25" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="845" y="1175.25" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="847,1188.25 847,1195.25" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="853,1188.25 853,1195.25" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="850" cy="1224.5" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="845" y="1231.5" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="847,1244.5 847,1251.5" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="853,1244.5 853,1251.5" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="850" cy="1280.75" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="845" y="1287.75" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="847,1300.75 847,1307.75" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="853,1300.75 853,1307.75" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="879,1223.5 888,1232.5 879,1241.5 870,1232.5" fill="#7ec8c6" stroke="none" stroke-width="2"/>
+<circle cx="879" cy="1232.5" r="3" fill="#253b3c" stroke="none" stroke-width="2"/>
+<polyline points="863,1232.5 872,1232.5" fill="none" stroke="#7ec8c6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="535" y="1317" fill="#edc477" font-family="Segoe UI, Arial, sans-serif" font-size="25" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">УЧАСТОК B</text>
+<text x="535" y="1352" fill="#b9c1b4" font-family="Consolas, monospace" font-size="20" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">zone-b</text>
+<text x="630" y="365" fill="#b2c4b6" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">ОБХОД ОСНОВНОЙ ВЫРАБОТКИ</text>
+<text x="595" y="403" fill="#b2c4b6" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">a → d → c</text>
+<text x="300" y="1401" fill="#9daf9f" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Линии — существующие связи. Стрелки маршрута эвакуации здесь не заданы.</text>
+<rect x="1640" y="240" width="695" height="1140" rx="12" fill="#e8e4d7" stroke="none" stroke-width="2"/>
+<text x="1675" y="273" fill="#29372f" font-family="Segoe UI, Arial, sans-serif" font-size="29" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">РЕЕСТР ВЫРАБОТОК</text>
+<text x="1675" y="316" fill="#5f6b61" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">ID и длины взяты из текущего кода</text>
+<text x="1675" y="369" fill="#687365" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">ID</text>
+<text x="1795" y="369" fill="#687365" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">СОЕДИНЕНИЕ</text>
+<text x="2295" y="369" fill="#687365" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700" text-anchor="end" dominant-baseline="text-before-edge">ДЛИНА</text>
+<polyline points="1675,400 2300,400" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="412" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-01</text>
+<text x="1795" y="412" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">a — surface-a</text>
+<text x="2295" y="412" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">494.8 м</text>
+<polyline points="1675,449 2300,449" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="461" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-02</text>
+<text x="1795" y="461" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">c — surface-b</text>
+<text x="2295" y="461" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">471.9 м</text>
+<polyline points="1675,498 2300,498" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="510" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-03</text>
+<text x="1795" y="510" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">a — b</text>
+<text x="2295" y="510" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">150.0 м</text>
+<polyline points="1675,547 2300,547" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="559" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-04</text>
+<text x="1795" y="559" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">b — c</text>
+<text x="2295" y="559" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">150.0 м</text>
+<polyline points="1675,596 2300,596" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="608" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-05</text>
+<text x="1795" y="608" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">a — d</text>
+<text x="2295" y="608" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">219.3 м</text>
+<polyline points="1675,645 2300,645" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="657" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-06</text>
+<text x="1795" y="657" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">d — c</text>
+<text x="2295" y="657" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">219.3 м</text>
+<polyline points="1675,694 2300,694" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="706" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-07</text>
+<text x="1795" y="706" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">b — face-a</text>
+<text x="2295" y="706" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">80.0 м</text>
+<polyline points="1675,743 2300,743" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="755" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-08</text>
+<text x="1795" y="755" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">a — e</text>
+<text x="2295" y="755" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">379.5 м</text>
+<polyline points="1675,792 2300,792" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="804" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-09</text>
+<text x="1795" y="804" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">c — g</text>
+<text x="2295" y="804" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">379.5 м</text>
+<polyline points="1675,841 2300,841" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="853" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-10</text>
+<text x="1795" y="853" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">e — f</text>
+<text x="2295" y="853" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">150.0 м</text>
+<polyline points="1675,890 2300,890" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="902" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-11</text>
+<text x="1795" y="902" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">f — g</text>
+<text x="2295" y="902" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">150.0 м</text>
+<polyline points="1675,939 2300,939" fill="none" stroke="#cbcdbf" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="951" fill="#374737" font-family="Consolas, monospace" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">w-12</text>
+<text x="1795" y="951" fill="#374737" font-family="Consolas, monospace" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">f — face-b</text>
+<text x="2295" y="951" fill="#374737" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">80.0 м</text>
+<polyline points="1675,1010 2300,1010" fill="none" stroke="#b7bcae" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1675" y="1036" fill="#29372f" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">ЧТО ДОЛЖНО СОХРАНИТЬСЯ</text>
+<text x="1675" y="1082" fill="#4c5e50" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Два независимых выхода на поверхность.</text>
+<text x="1675" y="1121" fill="#4c5e50" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Два межгоризонтных съезда: w-08 и w-09.</text>
+<text x="1675" y="1160" fill="#4c5e50" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Обход a — d — c на верхнем горизонте.</text>
+<text x="1675" y="1199" fill="#4c5e50" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Участки А и Б — тупики w-07 и w-12.</text>
+<text x="1675" y="1238" fill="#4c5e50" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Подъёмной клети в расчётной модели нет.</text>
+<text x="1675" y="1277" fill="#4c5e50" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Машины на арт-референсах — декорации.</text>
+<rect x="65" y="1475" width="735" height="270" rx="10" fill="#29312b" stroke="#48564a" stroke-width="2"/>
+<text x="90" y="1497" fill="#ecc16f" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">УЧАСТОК A / НАЧАЛЬНОЕ СОСТОЯНИЕ</text>
+<polyline points="130,1600 710,1600" fill="none" stroke="#d6c89f" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="130" cy="1600" r="7" fill="#26352b" stroke="#b6c6b5" stroke-width="2"/>
+<polyline points="710,1588 710,1612" fill="none" stroke="#edb44e" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="130" y="1563" fill="#ebe8dd" font-family="Consolas, monospace" font-size="20" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">b</text>
+<text x="710" y="1563" fill="#ebe8dd" font-family="Consolas, monospace" font-size="20" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">face-a</text>
+<circle cx="275.0" cy="1583" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="270.0" y="1590" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="272.0,1603 272.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="278.0,1603 278.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="275.0" y="1631" fill="#d5dece" font-family="Consolas, monospace" font-size="16" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">worker-a1</text>
+<text x="275.0" y="1655" fill="#edbb78" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">20 м</text>
+<circle cx="420.0" cy="1583" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="415.0" y="1590" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="417.0,1603 417.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="423.0,1603 423.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="420.0" y="1631" fill="#d5dece" font-family="Consolas, monospace" font-size="16" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">worker-a2</text>
+<text x="420.0" y="1655" fill="#edbb78" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">40 м</text>
+<circle cx="565.0" cy="1583" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="560.0" y="1590" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="562.0,1603 562.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="568.0,1603 568.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="565.0" y="1631" fill="#d5dece" font-family="Consolas, monospace" font-size="16" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">worker-a3</text>
+<text x="565.0" y="1655" fill="#edbb78" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">60 м</text>
+<polygon points="420.0,1543 429.0,1552 420.0,1561 411.0,1552" fill="#7ec8c6" stroke="none" stroke-width="2"/>
+<circle cx="420.0" cy="1552" r="3" fill="#253b3c" stroke="none" stroke-width="2"/>
+<text x="442.0" y="1541" fill="#93cdcb" font-family="Consolas, monospace" font-size="18" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">sens-ext-a · 40 м</text>
+<text x="90" y="1700" fill="#abbfae" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">w-07 · 80 м · отсчёт от узла b</text>
+<rect x="840" y="1475" width="735" height="270" rx="10" fill="#29312b" stroke="#48564a" stroke-width="2"/>
+<text x="865" y="1497" fill="#ecc16f" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">УЧАСТОК B / НАЧАЛЬНОЕ СОСТОЯНИЕ</text>
+<polyline points="905,1600 1485,1600" fill="none" stroke="#d6c89f" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="905" cy="1600" r="7" fill="#26352b" stroke="#b6c6b5" stroke-width="2"/>
+<polyline points="1485,1588 1485,1612" fill="none" stroke="#edb44e" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="905" y="1563" fill="#ebe8dd" font-family="Consolas, monospace" font-size="20" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">f</text>
+<text x="1485" y="1563" fill="#ebe8dd" font-family="Consolas, monospace" font-size="20" font-weight="400" text-anchor="end" dominant-baseline="text-before-edge">face-b</text>
+<circle cx="1050.0" cy="1583" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="1045.0" y="1590" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="1047.0,1603 1047.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1053.0,1603 1053.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1050.0" y="1631" fill="#d5dece" font-family="Consolas, monospace" font-size="16" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">worker-b1</text>
+<text x="1050.0" y="1655" fill="#edbb78" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">20 м</text>
+<circle cx="1195.0" cy="1583" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="1190.0" y="1590" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="1192.0,1603 1192.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1198.0,1603 1198.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1195.0" y="1631" fill="#d5dece" font-family="Consolas, monospace" font-size="16" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">worker-b2</text>
+<text x="1195.0" y="1655" fill="#edbb78" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">40 м</text>
+<circle cx="1340.0" cy="1583" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="1335.0" y="1590" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="1337.0,1603 1337.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1343.0,1603 1343.0,1610" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1340.0" y="1631" fill="#d5dece" font-family="Consolas, monospace" font-size="16" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">worker-b3</text>
+<text x="1340.0" y="1655" fill="#edbb78" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="middle" dominant-baseline="text-before-edge">60 м</text>
+<polygon points="1195.0,1543 1204.0,1552 1195.0,1561 1186.0,1552" fill="#7ec8c6" stroke="none" stroke-width="2"/>
+<circle cx="1195.0" cy="1552" r="3" fill="#253b3c" stroke="none" stroke-width="2"/>
+<text x="1217.0" y="1541" fill="#93cdcb" font-family="Consolas, monospace" font-size="18" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">sens-ext-b · 40 м</text>
+<text x="865" y="1700" fill="#abbfae" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">w-12 · 80 м · отсчёт от узла f</text>
+<text x="1645" y="1485" fill="#ccd8c8" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700" text-anchor="start" dominant-baseline="text-before-edge">УСЛОВНЫЕ ОБОЗНАЧЕНИЯ</text>
+<polyline points="1650,1543 1700,1543" fill="none" stroke="#c5cec1" stroke-width="13" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1720" y="1527" fill="#c6d1c0" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Выработка одного горизонта</text>
+<polyline points="1650,1594 1700,1594" fill="none" stroke="#ad956a" stroke-width="13" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1720" y="1578" fill="#c6d1c0" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Пешеходный съезд</text>
+<polygon points="1668,1635 1677,1644 1668,1653 1659,1644" fill="#7ec8c6" stroke="none" stroke-width="2"/>
+<circle cx="1668" cy="1644" r="3" fill="#253b3c" stroke="none" stroke-width="2"/>
+<text x="1720" y="1628" fill="#c6d1c0" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Датчик деформации</text>
+<circle cx="1668" cy="1682" r="5" fill="#f4b33c" stroke="none" stroke-width="2"/>
+<rect x="1663" y="1689" width="10" height="14" rx="2" fill="#e98a3d" stroke="none" stroke-width="2"/>
+<polyline points="1665,1702 1665,1709" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1671,1702 1671,1709" fill="none" stroke="#f2c18e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1720" y="1678" fill="#c6d1c0" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">Работник, исходная позиция</text>
+<polyline points="65,1780 2335,1780" fill="none" stroke="#455049" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="65" y="1800" fill="#b2c2b3" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="400" text-anchor="start" dominant-baseline="text-before-edge">СХЕМА СВЯЗНОСТИ, НЕ В МАСШТАБЕ · Координаты и изгибы — в topology.json · namespace: team040.mine</text>
+</svg>

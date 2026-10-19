@@ -1,0 +1,15 @@
+{
+  "result": "PASS",
+  "animations": [
+    "walk:worker-a1",
+    "walk:worker-a2",
+    "walk:worker-a3",
+    "walk:worker-b1",
+    "walk:worker-b2",
+    "walk:worker-b3"
+  ],
+  "channels_each": 4,
+  "bytes": 511556,
+  "primitives": 96,
+  "gpu_performance_tested": false
+}

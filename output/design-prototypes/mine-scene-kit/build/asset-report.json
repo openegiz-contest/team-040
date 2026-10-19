@@ -1,0 +1,12 @@
+{
+  "status": "editable art blockout; NOT final reference-quality art; NOT production routing topology",
+  "camera": "fixed orthographic; pan/zoom only",
+  "mesh_objects": 34,
+  "triangles": 8930,
+  "material_slots_total": 96,
+  "glb_bytes": 511556,
+  "runtime_shadow_lights_exported": 0,
+  "worker_objects": 6,
+  "reference_packed_in_blend": true,
+  "gpu_frame_time_measured": false
+}

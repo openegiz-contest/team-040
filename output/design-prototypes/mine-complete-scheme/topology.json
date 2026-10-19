@@ -1,0 +1,601 @@
+{
+  "topology_version": "t1",
+  "namespace": "team040.mine",
+  "source": "team/sim/topology.py",
+  "units": "m",
+  "synthetic": true,
+  "drawing_is_to_scale": false,
+  "nodes": {
+    "surface-a": {
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "level": "surface",
+      "node_kind": "exit"
+    },
+    "surface-b": {
+      "x": 420,
+      "y": 180,
+      "z": 0,
+      "level": "surface",
+      "node_kind": "exit"
+    },
+    "a": {
+      "x": 0,
+      "y": 0,
+      "z": -120,
+      "level": "level-120",
+      "node_kind": "junction"
+    },
+    "b": {
+      "x": 150,
+      "y": 0,
+      "z": -120,
+      "level": "level-120",
+      "node_kind": "junction"
+    },
+    "c": {
+      "x": 300,
+      "y": 0,
+      "z": -120,
+      "level": "level-120",
+      "node_kind": "junction"
+    },
+    "d": {
+      "x": 150,
+      "y": 160,
+      "z": -120,
+      "level": "level-120",
+      "node_kind": "junction"
+    },
+    "face-a": {
+      "x": 150,
+      "y": -80,
+      "z": -120,
+      "level": "level-120",
+      "node_kind": "dead_end"
+    },
+    "e": {
+      "x": 0,
+      "y": 0,
+      "z": -240,
+      "level": "level-240",
+      "node_kind": "junction"
+    },
+    "f": {
+      "x": 150,
+      "y": 0,
+      "z": -240,
+      "level": "level-240",
+      "node_kind": "junction"
+    },
+    "g": {
+      "x": 300,
+      "y": 0,
+      "z": -240,
+      "level": "level-240",
+      "node_kind": "junction"
+    },
+    "face-b": {
+      "x": 150,
+      "y": -80,
+      "z": -240,
+      "level": "level-240",
+      "node_kind": "dead_end"
+    }
+  },
+  "workings": {
+    "w-01": {
+      "kind": "working",
+      "label": "В-01",
+      "synthetic": true,
+      "_parents": "team040.mine:level-120",
+      "from": "a",
+      "to": "surface-a",
+      "length_m": 494.77267507411926,
+      "working_kind": "ramp",
+      "points": [
+        [
+          -240,
+          0,
+          -60
+        ]
+      ],
+      "level": "level-120",
+      "polyline": [
+        [
+          0,
+          0,
+          -120
+        ],
+        [
+          -240,
+          0,
+          -60
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "w-02": {
+      "kind": "working",
+      "label": "В-02",
+      "synthetic": true,
+      "_parents": "team040.mine:level-120",
+      "from": "c",
+      "to": "surface-b",
+      "length_m": 471.8857807434961,
+      "working_kind": "ramp",
+      "points": [
+        [
+          540,
+          0,
+          -60
+        ]
+      ],
+      "level": "level-120",
+      "polyline": [
+        [
+          300,
+          0,
+          -120
+        ],
+        [
+          540,
+          0,
+          -60
+        ],
+        [
+          420,
+          180,
+          0
+        ]
+      ]
+    },
+    "w-03": {
+      "kind": "working",
+      "label": "В-03",
+      "synthetic": true,
+      "_parents": "team040.mine:level-120",
+      "from": "a",
+      "to": "b",
+      "length_m": 150.0,
+      "working_kind": "drift",
+      "points": [],
+      "level": "level-120",
+      "polyline": [
+        [
+          0,
+          0,
+          -120
+        ],
+        [
+          150,
+          0,
+          -120
+        ]
+      ]
+    },
+    "w-04": {
+      "kind": "working",
+      "label": "В-04",
+      "synthetic": true,
+      "_parents": "team040.mine:level-120",
+      "from": "b",
+      "to": "c",
+      "length_m": 150.0,
+      "working_kind": "drift",
+      "points": [],
+      "level": "level-120",
+      "polyline": [
+        [
+          150,
+          0,
+          -120
+        ],
+        [
+          300,
+          0,
+          -120
+        ]
+      ]
+    },
+    "w-05": {
+      "kind": "working",
+      "label": "В-05",
+      "synthetic": true,
+      "_parents": "team040.mine:level-120",
+      "from": "a",
+      "to": "d",
+      "length_m": 219.31712199461307,
+      "working_kind": "crosscut",
+      "points": [],
+      "level": "level-120",
+      "polyline": [
+        [
+          0,
+          0,
+          -120
+        ],
+        [
+          150,
+          160,
+          -120
+        ]
+      ]
+    },
+    "w-06": {
+      "kind": "working",
+      "label": "В-06",
+      "synthetic": true,
+      "_parents": "team040.mine:level-120",
+      "from": "d",
+      "to": "c",
+      "length_m": 219.31712199461307,
+      "working_kind": "crosscut",
+      "points": [],
+      "level": "level-120",
+      "polyline": [
+        [
+          150,
+          160,
+          -120
+        ],
+        [
+          300,
+          0,
+          -120
+        ]
+      ]
+    },
+    "w-07": {
+      "kind": "working",
+      "label": "В-07",
+      "synthetic": true,
+      "_parents": "team040.mine:level-120",
+      "from": "b",
+      "to": "face-a",
+      "length_m": 80.0,
+      "working_kind": "drift",
+      "points": [],
+      "level": "level-120",
+      "zone": "zone-a",
+      "polyline": [
+        [
+          150,
+          0,
+          -120
+        ],
+        [
+          150,
+          -80,
+          -120
+        ]
+      ]
+    },
+    "w-08": {
+      "kind": "working",
+      "label": "В-08",
+      "synthetic": true,
+      "_parents": "team040.mine:level-120",
+      "from": "a",
+      "to": "e",
+      "length_m": 379.4733192202055,
+      "working_kind": "ramp",
+      "points": [
+        [
+          -180,
+          0,
+          -180
+        ]
+      ],
+      "level": "level-120",
+      "polyline": [
+        [
+          0,
+          0,
+          -120
+        ],
+        [
+          -180,
+          0,
+          -180
+        ],
+        [
+          0,
+          0,
+          -240
+        ]
+      ]
+    },
+    "w-09": {
+      "kind": "working",
+      "label": "В-09",
+      "synthetic": true,
+      "_parents": "team040.mine:level-120",
+      "from": "c",
+      "to": "g",
+      "length_m": 379.4733192202055,
+      "working_kind": "ramp",
+      "points": [
+        [
+          480,
+          0,
+          -180
+        ]
+      ],
+      "level": "level-120",
+      "polyline": [
+        [
+          300,
+          0,
+          -120
+        ],
+        [
+          480,
+          0,
+          -180
+        ],
+        [
+          300,
+          0,
+          -240
+        ]
+      ]
+    },
+    "w-10": {
+      "kind": "working",
+      "label": "В-10",
+      "synthetic": true,
+      "_parents": "team040.mine:level-240",
+      "from": "e",
+      "to": "f",
+      "length_m": 150.0,
+      "working_kind": "drift",
+      "points": [],
+      "level": "level-240",
+      "polyline": [
+        [
+          0,
+          0,
+          -240
+        ],
+        [
+          150,
+          0,
+          -240
+        ]
+      ]
+    },
+    "w-11": {
+      "kind": "working",
+      "label": "В-11",
+      "synthetic": true,
+      "_parents": "team040.mine:level-240",
+      "from": "f",
+      "to": "g",
+      "length_m": 150.0,
+      "working_kind": "drift",
+      "points": [],
+      "level": "level-240",
+      "polyline": [
+        [
+          150,
+          0,
+          -240
+        ],
+        [
+          300,
+          0,
+          -240
+        ]
+      ]
+    },
+    "w-12": {
+      "kind": "working",
+      "label": "В-12",
+      "synthetic": true,
+      "_parents": "team040.mine:level-240",
+      "from": "f",
+      "to": "face-b",
+      "length_m": 80.0,
+      "working_kind": "drift",
+      "points": [],
+      "level": "level-240",
+      "zone": "zone-b",
+      "polyline": [
+        [
+          150,
+          0,
+          -240
+        ],
+        [
+          150,
+          -80,
+          -240
+        ]
+      ]
+    }
+  },
+  "workers": {
+    "worker-a1": {
+      "kind": "worker",
+      "label": "Р-A1",
+      "synthetic": true,
+      "_parents": "team040.mine:zone-a",
+      "home_zone": "zone-a",
+      "initial_working": "w-07",
+      "initial_offset_m": 20
+    },
+    "worker-a2": {
+      "kind": "worker",
+      "label": "Р-A2",
+      "synthetic": true,
+      "_parents": "team040.mine:zone-a",
+      "home_zone": "zone-a",
+      "initial_working": "w-07",
+      "initial_offset_m": 40
+    },
+    "worker-a3": {
+      "kind": "worker",
+      "label": "Р-A3",
+      "synthetic": true,
+      "_parents": "team040.mine:zone-a",
+      "home_zone": "zone-a",
+      "initial_working": "w-07",
+      "initial_offset_m": 60
+    },
+    "worker-b1": {
+      "kind": "worker",
+      "label": "Р-B1",
+      "synthetic": true,
+      "_parents": "team040.mine:zone-b",
+      "home_zone": "zone-b",
+      "initial_working": "w-12",
+      "initial_offset_m": 20
+    },
+    "worker-b2": {
+      "kind": "worker",
+      "label": "Р-B2",
+      "synthetic": true,
+      "_parents": "team040.mine:zone-b",
+      "home_zone": "zone-b",
+      "initial_working": "w-12",
+      "initial_offset_m": 40
+    },
+    "worker-b3": {
+      "kind": "worker",
+      "label": "Р-B3",
+      "synthetic": true,
+      "_parents": "team040.mine:zone-b",
+      "home_zone": "zone-b",
+      "initial_working": "w-12",
+      "initial_offset_m": 60
+    }
+  },
+  "sensors": {
+    "sens-ext-a": {
+      "kind": "sensor",
+      "label": "Э-A",
+      "synthetic": true,
+      "_parents": "team040.mine:zone-a",
+      "zone": "zone-a",
+      "sensor_kind": "extensometer",
+      "working": "w-07",
+      "offset_m": 40,
+      "stale_after_s": 15,
+      "lost_after_s": 30
+    },
+    "sens-ext-b": {
+      "kind": "sensor",
+      "label": "Э-B",
+      "synthetic": true,
+      "_parents": "team040.mine:zone-b",
+      "zone": "zone-b",
+      "sensor_kind": "extensometer",
+      "working": "w-12",
+      "offset_m": 40,
+      "stale_after_s": 15,
+      "lost_after_s": 30
+    }
+  },
+  "zones": {
+    "zone-a": {
+      "kind": "zone",
+      "label": "Участок A",
+      "synthetic": true,
+      "_parents": "team040.mine:level-120",
+      "level": "level-120",
+      "workings": [
+        "w-07"
+      ],
+      "sensors": [
+        "sens-ext-a"
+      ],
+      "nominal_production_t_h": 30,
+      "required_workers": 3
+    },
+    "zone-b": {
+      "kind": "zone",
+      "label": "Участок B",
+      "synthetic": true,
+      "_parents": "team040.mine:level-240",
+      "level": "level-240",
+      "workings": [
+        "w-12"
+      ],
+      "sensors": [
+        "sens-ext-b"
+      ],
+      "nominal_production_t_h": 30,
+      "required_workers": 3
+    }
+  },
+  "exits": {
+    "exit-a": {
+      "kind": "exit",
+      "label": "Выход A",
+      "synthetic": true,
+      "_parents": "team040.mine:mine",
+      "exit_kind": "ramp",
+      "node": "surface-a"
+    },
+    "exit-b": {
+      "kind": "exit",
+      "label": "Выход B",
+      "synthetic": true,
+      "_parents": "team040.mine:mine",
+      "exit_kind": "ramp",
+      "node": "surface-b"
+    }
+  },
+  "drawing_nodes_px": {
+    "surface-a": [
+      405,
+      300
+    ],
+    "surface-b": [
+      1295,
+      300
+    ],
+    "a": [
+      405,
+      650
+    ],
+    "b": [
+      850,
+      650
+    ],
+    "c": [
+      1295,
+      650
+    ],
+    "d": [
+      850,
+      440
+    ],
+    "face-a": [
+      850,
+      875
+    ],
+    "e": [
+      405,
+      1120
+    ],
+    "f": [
+      850,
+      1120
+    ],
+    "g": [
+      1295,
+      1120
+    ],
+    "face-b": [
+      850,
+      1345
+    ]
+  }
+}
