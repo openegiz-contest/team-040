@@ -24,32 +24,39 @@ def decision(preset):
 
 def main():
     _, state = decision("p-detour")
-    assert state["option-stop_withdraw_zone"]["forecast_out"] == 3
+    assert state["option-stop_withdraw_zone"]["forecast_out"] == 4
     assert state["option-stop_withdraw_zone"]["forecast_downtime_s"] == 900
-    initial_b = {k: (w["at_working"], w["offset_m"]) for k, w in state.items() if k.startswith("worker-b")}
+    # Crew remain at their workplaces; the fourth worker drives the moving LHD.
+    initial_b = {k: (state[k]["at_working"], state[k]["offset_m"]) for k in
+                 ("worker-b1", "worker-b2", "worker-b3")}
+    production_b = state["zone-b"]["production_rate"]
     send("action.execute_option", "option-stop_withdraw_zone", decision_id=state["incident"]["decision_id"])
-    wait(lambda: values(get("shift"))["workers_out"] == 3, 80)
+    wait(lambda: values(get("shift"))["workers_out"] == 4, 110)
     _, state = scene()
     assert state["zone-a"]["withdrawal_state"] == "done"
-    assert state["zone-b"]["work_state"] == "working" and state["zone-b"]["production_rate"] == 30
+    assert state["zone-b"]["work_state"] == "working" and state["zone-b"]["production_rate"] == production_b > 0
+    assert state["worker-b4"]["status"] == "working"
     for k, position in initial_b.items():
         assert state[k]["status"] == "working"
         assert (state[k]["at_working"], state[k]["offset_m"]) == position
 
     _, state = decision("p-trapped")
     assert state["option-stop_withdraw_zone"]["forecast_out"] == 0
-    assert state["option-withdraw_all"]["forecast_out"] == 3
+    assert state["option-withdraw_all"]["forecast_out"] == 4
+    initial_a = {k: (state[k]["at_working"], state[k]["offset_m"]) for k in
+                 ("worker-a1", "worker-a2", "worker-a3", "worker-a4")}
     send("action.execute_option", "option-stop_withdraw_zone", decision_id=state["incident"]["decision_id"])
     wait(lambda: values(get("shift"))["tick"] >= 90)
     shift, state = scene()
-    assert shift["workers_out"] == 0 and shift["workers_no_route"] == 3
+    assert shift["workers_out"] == 0 and shift["workers_no_route"] == 4
     assert state["zone-a"]["work_state"] == "stopped"
-    assert state["zone-b"]["work_state"] == "working" and state["zone-b"]["production_rate"] == 30
-    for number in range(1, 4):
-        worker = state[f"worker-a{number}"]
-        assert worker["status"] == "waiting" and worker["offset_m"] == 20 * number
+    assert state["zone-b"]["work_state"] == "working" and state["zone-b"]["production_rate"] == production_b
+    for key, position in initial_a.items():
+        worker = state[key]
+        assert worker["status"] == "waiting"
+        assert (worker["at_working"], worker["offset_m"]) == position
     decision("p-detour")
-    print(json.dumps(dict(result="PASS", real_ditto=True, local_detour_out=3,
+    print(json.dumps(dict(result="PASS", real_ditto=True, local_detour_out=4,
         local_trapped_out=0, unaffected_zone_kept_working=True, scope_reasons=True)))
 
 

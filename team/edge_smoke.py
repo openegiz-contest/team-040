@@ -17,7 +17,7 @@ def preset(name):
 def main():
     preset("p-trapped")
     state = scene()
-    assert values(get("shift"))["workers_no_route"] == 3
+    assert values(get("shift"))["workers_no_route"] == 4
     assert state["worker-a1"]["egress_reason"] == "current_working_closed"
     forecast = state["option-withdraw_all"]
     assert forecast["forecast_all_out"] is False
