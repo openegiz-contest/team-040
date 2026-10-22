@@ -62,7 +62,7 @@ import {
   buildLayout, DIMS, levelY, LOADER_SCALE, loaderPlaces as placesForLoaders, pointOnWorking, sceneBounds, sceneLine, silhouette,
   toScene, verticalFactor, zoneEntrances,
 } from './layout.js';
-import {createActors, FIGURE_PX, FIGURE_PX_ART, FIGURE_SCALE, machineLeg, machineLimit, sideOf} from './actors.js';
+import {createActors, FIGURE_PX, FIGURE_PX_ART, FIGURE_SCALE, machineLeg, machineLimit, sideOf, WORK_FPS} from './actors.js';
 import {createLoaders} from './loaders.js';
 import {drawAtlas, spriteGeometry, spriteMaterials, writeSprites} from './markers.js';
 import {TOKEN, TONE} from './palette.js';
@@ -271,6 +271,8 @@ export function createScene(host, options) {
     get camera() { return camera; }, get height() { return height; }, position: (name) => currentPosition(name),
     viewDistance: (point) => viewDistance(point), get figurePx() { return art ? FIGURE_PX_ART : FIGURE_PX; },
     machine: (name) => machinePlace(name), get machineTop() { return machineTop(); },
+    // People at work play a loop on the spot only while motion is allowed (link ok, fresh data, running, shown).
+    get workAllowed() { return motionAllowed(); },
   }});
   world.add(actors.group);
   let view = null;
@@ -283,6 +285,7 @@ export function createScene(host, options) {
   let width = 0;
   let height = 0;
   let rafId = 0;
+  let workTimer = 0;                 // the next frame of a work loop on the spot (at most WORK_FPS a second)
   let disposed = false;
   let lost = false;
   let frames = 0;
@@ -2161,6 +2164,7 @@ export function createScene(host, options) {
 
   function frame(now) {
     rafId = 0;
+    const frameStart = performance.now();
     if (disposed || lost) return;
     let active = false;
     active = stepIntro(now) || active;
@@ -2192,6 +2196,8 @@ export function createScene(host, options) {
     announceView();
     // A walk cycle fading in or out after a person started or stopped (actors.js, FADE_MS).
     const cycles = actors.animating;
+    // People at work on the spot, on the screen and tall enough to be drawn as figures (actors.js `working`).
+    const working = actors.working > 0;
     if (spritesDirty) buildSprites();
     // The far walls of the massif for this camera (no frame of its own).
     // Art mode: the walls are picked for the viewing direction (a far point along it), never for a panned target.
@@ -2216,6 +2222,13 @@ export function createScene(host, options) {
     if (active && !document.hidden) invalidate();
     else {
       if ((people || cycles) && !document.hidden) invalidate(true);
+      // A work loop alone is drawn at most WORK_FPS frames a second, and only while someone works on the screen.
+      else if (working && !document.hidden && !workTimer) {
+        workTimer = setTimeout(() => {
+          workTimer = 0;
+          invalidate(true);
+        }, Math.max(0, 1000 / WORK_FPS - (performance.now() - frameStart)));
+      }
       // A refit waits for the stage to settle: the stage stays busy until it has run.
       if (!settleTimer) root.setAttribute('data-rendering', 'idle');
     }
@@ -4519,6 +4532,8 @@ export function createScene(host, options) {
     disposed = true;
     if (intro) clearTimeout(intro.timer);
     intro = null;
+    clearTimeout(workTimer);
+    workTimer = 0;
     loaders.dispose();
     actors.dispose();
     if (artEnv) artEnv.dispose();

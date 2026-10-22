@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team 040 — кого выводить и чего это стоит</title>
+<link rel="stylesheet" href="../ui/public/fonts/fonts.css">
+<link rel="stylesheet" href="css/deck.css">
+<script type="importmap">{"imports": {"three": "../ui/public/vendor/three/three.module.min.js", "three/addons/": "../ui/public/vendor/three/addons/"}}</script>
+</head>
+<body data-boot="loading" data-mine="none">
+<noscript><p class="noscript">Презентации нужен JavaScript для навигации; PDF-версия — presentation.pdf в корне репозитория.</p></noscript>
+
+<div class="viewport">
+<div class="stage" id="stage" data-dir="down">
+
+  <!-- the live mine (three.js) behind the hero slides, its still in print -->
+  <canvas class="mine" id="mine" aria-hidden="true"></canvas>
+  <img class="mine-still" id="mine-still" alt="" aria-hidden="true">
+  <div class="mine-fallback" aria-hidden="true"></div>
+  <div class="veil" aria-hidden="true"></div>
+
+  <!-- the borehole log: strata lines and depth marks that scroll up as the deck descends -->
+  <div class="strata" id="strata" aria-hidden="true"></div>
+
+  <header class="top">
+    <p class="brand"><span class="tick"></span>Team 040 · цифровой двойник смены · OpenEgiz</p>
+    <p class="synthetic">Синтетические данные · расчёт модели, не сведения о реальной шахте</p>
+    <p class="count"><span id="count-now">01</span> / <span id="count-all">14</span></p>
+  </header>
+
+  <nav class="rail" id="rail" aria-label="Слайды по глубине">
+    <p class="rail__head">Глубина, м</p>
+    <div class="rail__track" id="rail-track"></div>
+    <div class="rail__probe" id="rail-probe"><span class="rail__readout" id="rail-readout">0 м</span></div>
+  </nav>
+
+  <main class="slides" id="slides">
+
+    <!-- 01 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-title" data-depth="0" data-view="overview" data-hero data-label="Титул">
+      <p class="kicker" data-in="0"><span class="tick"></span>Конкурс «Цифровой рудник на OpenEgiz» · 2026</p>
+      <h1 class="title title--xl" data-split>Кого выводить — и&nbsp;чего это стоит</h1>
+      <p class="lead" data-in="5">Цифровой двойник смены подземного рудника для горного диспетчера: три варианта действий, прогноз на&nbsp;15&nbsp;минут, люди и&nbsp;добыча — рядом.</p>
+      <p class="hint" data-in="7"><kbd>→</kbd> <kbd>пробел</kbd> или колесо — вниз, горизонт за&nbsp;горизонтом</p>
+      <p class="caption caption--mine" data-in="8">Живой three.js: тот же env.glb, что в&nbsp;пульте диспетчера. Условный рудник: горизонты 0 / −120 / −240&nbsp;м, вертикаль ×1,35.</p>
+    </section>
+
+    <!-- 02 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-problem" data-depth="-18" data-label="Проблема">
+      <p class="kicker" data-in="0"><span class="tick"></span>01 · Проблема</p>
+      <h2 class="title" data-split>Под землёй нет GPS. Есть минуты.</h2>
+      <div class="problem">
+        <div class="problem__figure" data-in="4">
+          <p class="fig fig--huge"><span data-count="4">4</span>–<span data-count="5">5</span><small>мин</small></p>
+          <p class="fig__label">на индивидуальное оповещение каждого, кто под&nbsp;землёй: так требуют Правила РК № 352, п.&nbsp;54</p>
+          <p class="body">Обзора нет, выходов мало, путь отрезается за&nbsp;минуты. Положение человека — это выработка и&nbsp;отметка, и&nbsp;только если их&nbsp;даёт система позиционирования рудника.</p>
+        </div>
+        <ol class="cases">
+          <li class="case" data-in="5">
+            <p class="case__date">24.08.2018</p>
+            <p class="case__where">Тишинский рудник · Казцинк</p>
+            <p class="case__what">Выработка обрушилась, машинист ПДМ остался под&nbsp;завалом вместе с&nbsp;машиной. В спасательных работах — 40 человек и&nbsp;5&nbsp;машин.</p>
+            <p class="src">informburo.kz, 26.08.2018 · newtimes.kz, 06.09.2018</p>
+          </li>
+          <li class="case" data-in="6">
+            <p class="case__date">05.01.2020</p>
+            <p class="case__where">Риддер-Сокольный · Казцинк · 16-й горизонт</p>
+            <p class="case__what">Рабочий участок перекрыт массивом, бурильщик отрезан. Весь подземный персонал выведен на&nbsp;поверхность по&nbsp;аварийному порядку.</p>
+            <p class="src">inbusiness.kz, 06.01.2020</p>
+          </li>
+          <li class="case" data-in="7">
+            <p class="case__date">17.02.2025</p>
+            <p class="case__where">Жомарт · Казахмыс · 640 м</p>
+            <p class="case__what">Семеро погибших. Сначала сообщали об&nbsp;обрушении; предварительная причина по&nbsp;данным комиссии — воспламенение метана, не&nbsp;обрушение.</p>
+            <p class="src">bes.media · kt.kz</p>
+          </li>
+        </ol>
+      </div>
+      <p class="note" data-in="9">Источники, даты и пометки достоверности: team/research/kz-open-sources.md (разделы 3a, 4)</p>
+    </section>
+
+    <!-- 03 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-decision" data-depth="-37" data-view="zoneA" data-hero data-tone="danger" data-label="Решение диспетчера">
+      <p class="kicker" data-in="0"><span class="tick"></span>02 · Решение диспетчера</p>
+      <h2 class="title title--hl" data-split>Участок А — <em class="tone-danger">опасно</em></h2>
+      <ul class="hl-lines">
+        <li class="hl-line hl-line--danger" data-in="4"><span class="sign"></span>4 человека в опасной зоне · горизонт −120 м</li>
+        <li class="hl-line hl-line--accent" data-in="5"><span class="sign"></span>Модель на паузе — ждёт выбора</li>
+      </ul>
+      <ol class="options">
+        <li data-in="6"><span class="opt__n">1</span><span class="opt__t">Наблюдать</span></li>
+        <li data-in="7"><span class="opt__n">2</span><span class="opt__t">Остановить участок&nbsp;А и вывести людей</span></li>
+        <li data-in="8"><span class="opt__n">3</span><span class="opt__t">Вывести всех</span></li>
+      </ol>
+      <p class="lead lead--s" data-in="9">Модель не&nbsp;рекомендует вариант — она показывает последствия каждого. Выбор за&nbsp;диспетчером.</p>
+      <p class="caption caption--mine" data-in="10">Сценарий «Рост нестабильности»: синтетический датчик смещения на&nbsp;участке А, решение на&nbsp;60-й модельной секунде. Мятный пунктир — расчётный маршрут к&nbsp;выходу&nbsp;А.</p>
+    </section>
+
+    <!-- 04 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-chain" data-depth="-55" data-label="Роль диспетчера">
+      <p class="kicker" data-in="0"><span class="tick"></span>03 · Роль диспетчера</p>
+      <h2 class="title" data-split>Двойник не&nbsp;оповещает. Он&nbsp;сокращает самый трудный шаг.</h2>
+      <ol class="chain">
+        <li class="link" data-in="4"><span class="link__n">1</span><p class="link__t">Двойник</p><p class="link__d">кто в&nbsp;опасной зоне, без расчётного маршрута, в&nbsp;неизвестном состоянии</p></li>
+        <li class="link link--key" data-in="5"><span class="link__n">2</span><p class="link__t">Диспетчер</p><p class="link__d">сравнивает три варианта: людей, время выхода, тонны, встречи с&nbsp;ПДМ — и&nbsp;выбирает</p></li>
+        <li class="link" data-in="6"><span class="link__n">3</span><p class="link__t">Адресный список</p><p class="link__d">кого выводить, каким маршрутом, к&nbsp;какому выходу</p></li>
+        <li class="link link--future" data-in="7"><span class="link__n">4</span><p class="link__t">Оповещение рудника</p><p class="link__d">светильники и&nbsp;пейджеры, излучающий кабель, громкая связь, рация</p><p class="link__badge">будущая интеграция — в&nbsp;прототипе нет</p></li>
+        <li class="link" data-in="8"><span class="link__n">5</span><p class="link__t">Контроль выхода</p><p class="link__d">кто вышел, кто идёт, кто без маршрута, о&nbsp;ком данных нет</p></li>
+      </ol>
+      <p class="body body--wide" data-in="9">Горный диспетчер — дежурное лицо смены: при аварии он вводит в&nbsp;действие план ликвидации аварий — оповещение, вызов горноспасателей, команда на&nbsp;вывод. Самый трудный шаг между тревогой и&nbsp;оповещением — понять, кого и&nbsp;куда выводить и&nbsp;чего это стоит.</p>
+      <p class="note" data-in="10">Правила РК № 352: п. 3–4 (ПЛА), п. 54 (оповещение 4–5 мин). Жомарт: позиционирование и аварийное оповещение по 58 км излучающего кабеля (bizmedia.kz, 18.09.2026). team/research/kz-open-sources.md</p>
+    </section>
+
+    <!-- 05 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-twin" data-depth="-74" data-label="Двойник на OpenEgiz">
+      <p class="kicker" data-in="0"><span class="tick"></span>04 · Двойник на OpenEgiz</p>
+      <h2 class="title" data-split>Шахта живёт в&nbsp;двойниках Eclipse&nbsp;Ditto</h2>
+      <div class="flow" data-in="4">
+        <div class="node">
+          <p class="node__k">team/sim · Python</p>
+          <p class="node__t">Симулятор</p>
+          <p class="node__d">12 выработок, 2 горизонта, 2 выхода, 2 участка, 2 датчика, 8 человек, 2 ПДМ. Шаг — 1 модельная секунда</p>
+        </div>
+        <div class="pipe"><span>MQTT</span><i></i></div>
+        <div class="node node--key">
+          <p class="node__k">OpenEgiz · Eclipse Ditto</p>
+          <p class="node__t"><span data-count="38">38</span> двойников</p>
+          <p class="node__d">шахта, смена, горизонты, выработки, участки, выходы, датчики, работники, ПДМ, варианты; 33 — в&nbsp;одном согласованном снимке смены</p>
+        </div>
+        <div class="pipe"><span>HTTP</span><i></i></div>
+        <div class="node">
+          <p class="node__k">team/ui · без сборки</p>
+          <p class="node__t">Пульт диспетчера</p>
+          <p class="node__d">3D-разрез и&nbsp;схема; читает только снимок смены через ограниченный прокси</p>
+        </div>
+      </div>
+      <p class="flow__back" data-in="5"><span class="arrow-back"></span>Команда обратно: live-сообщение Ditto → MQTT → симулятор. HTTP 202 — ещё не&nbsp;исполнение: подтверждение приходит в&nbsp;состоянии смены.</p>
+      <ul class="facts">
+        <li data-in="6"><p class="facts__t">Прогноз считает копия состояния симулятора</p><p class="facts__d">Интерфейс ничего не&nbsp;досчитывает и&nbsp;не&nbsp;подставляет чисел.</p></li>
+        <li data-in="7"><p class="facts__t">Параметры с&nbsp;источниками</p><p class="facts__d">parameter_registry в&nbsp;атрибутах шахты, calibrated=false; team/research/parameters.md.</p></li>
+        <li data-in="8"><p class="facts__t">Неизвестное — неизвестно</p><p class="facts__d">Потерянный датчик хранит последнее «опасно»; данные стареют на&nbsp;экране, а&nbsp;не&nbsp;исчезают.</p></li>
+      </ul>
+      <p class="note" data-in="9">team/CONTRACT.md, раздел 9: manifest — 38 объектов, scene — 33. Публикация — цель 1 раз в секунду, 10 модельных секунд за цикл.</p>
+    </section>
+
+    <!-- 06 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-options" data-depth="-92" data-label="Польза и цена">
+      <p class="kicker" data-in="0"><span class="tick"></span>05 · Польза и цена</p>
+      <h2 class="title" data-split>Один снимок — три будущих</h2>
+      <div class="cmp" data-in="3">
+        <div class="cmp__head"></div>
+        <div class="cmp__head"><span class="cmp__n">1</span>Наблюдать</div>
+        <div class="cmp__head"><span class="cmp__n">2</span>Вывести участок&nbsp;А</div>
+        <div class="cmp__head"><span class="cmp__n">3</span>Вывести всех</div>
+
+        <div class="cmp__row">Вышли из 8</div>
+        <div class="cmp__v"><span data-count="0">0</span></div>
+        <div class="cmp__v"><span data-count="4">4</span></div>
+        <div class="cmp__v cmp__v--accent"><span data-count="8">8</span><small>за 866 с</small></div>
+
+        <div class="cmp__row">В опасной зоне, чел·с</div>
+        <div class="cmp__v cmp__v--danger"><span data-count="2717">2 717</span></div>
+        <div class="cmp__v"><span data-count="152">152</span></div>
+        <div class="cmp__v"><span data-count="152">152</span></div>
+
+        <div class="cmp__row">Недовывезено руды, т из&nbsp;140</div>
+        <div class="cmp__v"><span data-count="56">56</span></div>
+        <div class="cmp__v"><span data-count="56">56</span></div>
+        <div class="cmp__v"><span data-count="112">112</span></div>
+
+        <div class="cmp__row">Встречи ПДМ с&nbsp;идущими людьми</div>
+        <div class="cmp__v cmp__v--s"><span data-count="0">0</span></div>
+        <div class="cmp__v cmp__v--s"><span data-count="2">2</span><small>уступала 47 маш·с</small></div>
+        <div class="cmp__v cmp__v--s"><span data-count="4">4</span><small>уступала 94 маш·с</small></div>
+
+        <div class="cmp__row">Простой участков, участок·с</div>
+        <div class="cmp__v cmp__v--s"><span data-count="833">833</span></div>
+        <div class="cmp__v cmp__v--s"><span data-count="900">900</span></div>
+        <div class="cmp__v cmp__v--s"><span data-count="1800">1 800</span></div>
+      </div>
+      <p class="lead lead--s takeaway" data-in="6">Вывод участка&nbsp;А сокращает пребывание людей в&nbsp;опасной зоне почти в&nbsp;18&nbsp;раз при той&nbsp;же потере добычи, что и&nbsp;наблюдение. Полный вывод даёт тот&nbsp;же эффект на&nbsp;А, но&nbsp;останавливает B: 112&nbsp;т вместо 56.</p>
+      <p class="note" data-in="7">Сценарий «Нестабильность», окно 900 с после решения, модель 0.2, топология t2. Модель не ранжирует варианты; убыток в деньгах не оценивается. team/research/comparison.md</p>
+    </section>
+
+    <!-- 07 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-whatif" data-depth="-111" data-label="Что если">
+      <p class="kicker" data-in="0"><span class="tick"></span>06 · Что если</p>
+      <h2 class="title" data-split>4 сценария × 3 действия</h2>
+      <div class="grid12" data-in="3">
+        <div class="g__h"></div><div class="g__h">Наблюдать</div><div class="g__h">Вывести участок</div><div class="g__h">Вывести всех</div>
+
+        <div class="g__s">Рост нестабильности</div>
+        <div class="g__c" data-out="0" data-stuck="0"><b>0</b>/8<span>−56 т</span></div>
+        <div class="g__c" data-out="4" data-stuck="0"><b>4</b>/8<span>−56 т</span></div>
+        <div class="g__c" data-out="8" data-stuck="0"><b>8</b>/8<span>866 с · −112 т</span></div>
+
+        <div class="g__s">Закрыт основной проход</div>
+        <div class="g__c" data-out="0" data-stuck="0"><b>0</b>/8<span>0 т</span></div>
+        <div class="g__c" data-out="4" data-stuck="0"><b>4</b>/8<span>−56 т</span></div>
+        <div class="g__c" data-out="8" data-stuck="0"><b>8</b>/8<span>866 с · −112 т</span></div>
+
+        <div class="g__s">Закрыт выход с&nbsp;участка</div>
+        <div class="g__c" data-out="0" data-stuck="4"><b>0</b>/8<span>4 без пути · −70 т</span></div>
+        <div class="g__c" data-out="0" data-stuck="4"><b>0</b>/8<span>4 без пути · −70 т</span></div>
+        <div class="g__c" data-out="4" data-stuck="4"><b>4</b>/8<span>4 без пути · −126 т</span></div>
+
+        <div class="g__s">Потерян датчик</div>
+        <div class="g__c" data-out="0" data-stuck="0" data-unknown><b>0</b>/8<span>−56 т · неизв. 2 703 чел·с</span></div>
+        <div class="g__c" data-out="4" data-stuck="0" data-unknown><b>4</b>/8<span>−56 т · неизв. 99 чел·с</span></div>
+        <div class="g__c" data-out="8" data-stuck="0" data-unknown><b>8</b>/8<span>850 с · −112 т</span></div>
+      </div>
+      <div class="whatif__side">
+        <p class="body" data-in="5">Условия меняются на&nbsp;стенде без изменения кода: пресет, затем выбор варианта; отмена — снять условие или начать новый прогон.</p>
+        <p class="body" data-in="6">Закрытый выход честно остаётся закрытым: локальный приказ не&nbsp;создаёт отсутствующий маршрут, четверо ждут без пути, и&nbsp;это видно на&nbsp;экране.</p>
+        <p class="legend" data-in="7"><i class="p p--out"></i>вышел <i class="p p--in"></i>под землёй <i class="p p--stuck"></i>без расчётного маршрута</p>
+      </div>
+      <p class="note" data-in="8">12 автономных исполнений, окно 900 с. Воспроизведение: python -m team.sim.comparison --check team/research/comparison.json</p>
+    </section>
+
+    <!-- 08 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-proof" data-depth="-129" data-label="Прогноз = факт">
+      <p class="kicker" data-in="0"><span class="tick"></span>07 · Проверка</p>
+      <h2 class="title title--xl" data-split>Прогноз <em class="tone-accent">=</em> факт</h2>
+      <div class="proof">
+        <div class="proof__figs">
+          <p class="lead lead--s" data-in="3">Сквозной прогон на&nbsp;платформе, 16 октября 2026: «Вывести всех» в&nbsp;сценарии «Нестабильность».</p>
+          <dl class="figs">
+            <div data-in="4"><dt>вышли</dt><dd><span data-count="8">8</span><small>из 8</small></dd></div>
+            <div data-in="5"><dt>время выхода всех</dt><dd><span data-count="866">866</span><small>с</small></dd></div>
+            <div data-in="6"><dt>в опасной зоне</dt><dd><span data-count="152">152</span><small>чел·с</small></dd></div>
+            <div data-in="7"><dt>недовывезено</dt><dd><span data-count="112">112</span><small>т</small></dd></div>
+            <div data-in="8"><dt>встречи ПДМ с людьми</dt><dd><span data-count="4">4</span></dd></div>
+            <div data-in="9"><dt>совпало с прогнозом</dt><dd><span data-count="12">12</span><small>из 12 сочетаний</small></dd></div>
+          </dl>
+          <p class="body" data-in="10">Все восемь метрик цены совпали с&nbsp;прогнозом. Прогноз и&nbsp;факт считает один код: это проверка согласованности двойника, не&nbsp;физическая валидация. Калибровка — на&nbsp;учебных тревогах пилота.</p>
+        </div>
+        <figure class="shot shot--table" data-in="6">
+          <img src="img/ui-proof-table.jpg" alt="Пульт: факт прогона рядом с прогнозом модели, все строки совпадают" width="510" height="750">
+          <figcaption>Пульт после прогона: прогноз модели и&nbsp;факт — построчно</figcaption>
+        </figure>
+      </div>
+      <p class="note" data-in="11">SUBMISSION.md, «What works and what does not»; team/research/comparison.md (12 из 12)</p>
+    </section>
+
+    <!-- 09 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-mine" data-depth="-148" data-view="level240" data-hero data-label="Своя 3D-шахта">
+      <p class="kicker" data-in="0"><span class="tick"></span>08 · Визуализация</p>
+      <h2 class="title title--hl" data-split>Своя шахта, не&nbsp;шаблон</h2>
+      <ul class="hl-lines hl-lines--wide">
+        <li class="hl-line" data-in="4"><span class="sign"></span>Собрана скриптом Blender из&nbsp;той&nbsp;же топологии t2, что и&nbsp;симулятор: 12 выработок, горизонты 0 / −120 / −240&nbsp;м</li>
+        <li class="hl-line" data-in="5"><span class="sign"></span>Свет запечён в&nbsp;текстуры; одна ортографическая камера — только сдвиг и&nbsp;масштаб</li>
+        <li class="hl-line" data-in="6"><span class="sign"></span>Арт включается, только если подпись топологии совпала с&nbsp;живыми двойниками</li>
+        <li class="hl-line" data-in="7"><span class="sign"></span>Вертикаль ×1,35; ширина выработок и&nbsp;фигуры — условные, и&nbsp;это подписано на&nbsp;экране</li>
+      </ul>
+      <p class="caption caption--mine" data-in="8">Камера только что спустилась с&nbsp;горизонта −120 на&nbsp;−240: участок B, его ПДМ и&nbsp;смена. Это живой рендер, не&nbsp;видео.</p>
+    </section>
+
+    <!-- 10 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-ui" data-depth="-166" data-label="Пульт диспетчера">
+      <p class="kicker" data-in="0"><span class="tick"></span>09 · Пульт диспетчера</p>
+      <h2 class="title" data-split>Глубина читается с&nbsp;одного взгляда</h2>
+      <div class="ui-shots">
+        <figure class="shot shot--main" data-in="3">
+          <img src="img/ui-decision.jpg" alt="Пульт диспетчера: участок А опасно, четыре человека в опасной зоне, три варианта решения" width="1600" height="900">
+          <figcaption>Инцидент: заголовок говорит, что случилось; справа — три варианта с&nbsp;ценой</figcaption>
+        </figure>
+        <figure class="shot shot--rail" data-in="5">
+          <img src="img/ui-rail.jpg" alt="Шкала глубины: горизонты 0, −120, −240 м, люди на своих горизонтах, отметка −168 м" width="620" height="850">
+          <figcaption>Шкала глубины: люди и&nbsp;ПДМ на&nbsp;своих горизонтах; наведение ведёт по&nbsp;массиву линию отметки</figcaption>
+        </figure>
+      </div>
+      <ul class="roles" data-in="6">
+        <li><i class="role role--accent"></i>мятный — маршруты и выходы</li>
+        <li><i class="role role--danger"></i>красный — только опасность</li>
+        <li><i class="role role--unknown"></i>штриховка «?» — неизвестно, никогда не похоже на норму</li>
+        <li><i class="role role--noroute"></i>перечёркнутый квадрат — нет расчётного маршрута</li>
+      </ul>
+    </section>
+
+    <!-- 11 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-lhd" data-depth="-185" data-label="ПДМ и цена">
+      <p class="kicker" data-in="0"><span class="tick"></span>10 · Техника</p>
+      <h2 class="title" data-split>Цена решения — в&nbsp;тоннах</h2>
+      <div class="lhd">
+        <dl class="lhd__figs">
+          <div data-in="3"><dd><span data-count="14">14</span><small>т</small></dd><dt>ковш Sandvik LH514 — паспорт производителя</dt></div>
+          <div data-in="4"><dd><span data-count="179">179</span><small>с</small></dd><dt>цикл ПДМ: погрузка, рейс, разгрузка, возврат</dt></div>
+          <div data-in="5"><dd><span data-count="140">140</span><small>т</small></dd><dt>план вывоза за окно 15 мин: 5 ковшей × 14 т × 2 ПДМ</dt></div>
+          <div data-in="6"><dd><span data-count="4">4</span></dd><dt>встречи ПДМ с идущими людьми при выводе всех: машина уступает дорогу, 94 маш·с</dt></div>
+        </dl>
+        <div class="lhd__shots">
+          <figure class="shot" data-in="5">
+            <img src="img/ui-lhd.jpg" alt="ПДМ-А в забое участка А, оператор Р-А4 на борту" width="680" height="410">
+            <figcaption>ПДМ-А движется по&nbsp;опубликованному положению; оператор на&nbsp;борту — часть машины</figcaption>
+          </figure>
+          <figure class="shot shot--cost" data-in="7">
+            <img src="img/ui-cost-table.jpg" alt="Таблица вариантов: люди и цена — тонны, встречи, уступание, простой" width="500" height="750">
+          </figure>
+        </div>
+      </div>
+      <p class="note" data-in="8">Скорости, времена операций, интервал до человека и положение кармана — допущения TBD-source: team/research/equipment.md. Номинал 14 × 3600 / 179 = 281,6 т/ч на участок.</p>
+    </section>
+
+    <!-- 12 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-qa" data-depth="-203" data-label="Неудобные вопросы">
+      <p class="kicker" data-in="0"><span class="tick"></span>11 · Неудобные вопросы</p>
+      <h2 class="title" data-split>Честные ответы</h2>
+      <dl class="qa">
+        <div data-in="3"><dt>Зачем, если есть позиционирование и&nbsp;диспетчерская?</dt><dd>Данные есть, сравнения нет: ни одна система не&nbsp;отвечает, что будет, если остановить участок&nbsp;А, а&nbsp;не&nbsp;выводить всех, — с&nbsp;прогнозом и&nbsp;ценой. Подтверждено только на&nbsp;синтетике.</dd></div>
+        <div data-in="4"><dt>Модель ошибётся?</dt><dd>Она синтетическая и&nbsp;не&nbsp;откалибрована. Поэтому не&nbsp;рекомендует вариант, а&nbsp;неизвестное показывает неизвестным. Механизм «прогноз против факта» уже есть.</dd></div>
+        <div data-in="5"><dt>Под землёй нет GPS?</dt><dd>Точность равна точности системы рудника: излучающий кабель или RFID — выработка и&nbsp;участок, UWB — точнее. Пропал сигнал — «состояние неизвестно». В&nbsp;прототипе позиции идеальные.</dd></div>
+        <div data-in="6"><dt>Откуда карта выработок?</dt><dd>Из маркшейдерской модели (Micromine, Surpac, Deswik, Datamine) как граф узлов, выработок и&nbsp;выходов. Импорта нет — топология задана в&nbsp;коде.</dd></div>
+        <div data-in="7"><dt>Кто отвечает за решение?</dt><dd>Диспетчер. Система вспомогательная и&nbsp;ничем не&nbsp;управляет: устаревшие данные показывает устаревшими, при потере связи замирает, без 3D остаётся схема.</dd></div>
+        <div data-in="8"><dt>Чем вы лучше команды, которая сделает за месяц?</dt><dd>Технологически ничем уникальным. Отличие — один вопрос диспетчера, проверяемый прогноз, цена рядом с&nbsp;пользой, привязка к&nbsp;Правилам РК.</dd></div>
+      </dl>
+    </section>
+
+    <!-- 13 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-pilot" data-depth="-222" data-label="Путь к пилоту">
+      <p class="kicker" data-in="0"><span class="tick"></span>12 · Ограничения и путь к внедрению</p>
+      <h2 class="title" data-split>Чего нет — и&nbsp;как дойти до&nbsp;пилота</h2>
+      <div class="pilot">
+        <div class="pilot__col">
+          <p class="col__h" data-in="3">Ограничения сегодня</p>
+          <ul class="limits">
+            <li data-in="4">Нет физического прогноза обрушений; индекс нестабильности — не&nbsp;вероятность аварии</li>
+            <li data-in="5">Параметры из&nbsp;литературы и&nbsp;допущений, calibrated=false</li>
+            <li data-in="6">8 человек и&nbsp;2 ПДМ: масштаб в&nbsp;сотни людей не&nbsp;проверен</li>
+            <li data-in="7">Позиции идеальные: нет теста с&nbsp;«грязными» данными позиционирования</li>
+            <li data-in="8">Нет пропускной способности путей, очередей, уклона, подъёмников</li>
+          </ul>
+        </div>
+        <div class="pilot__col pilot__col--steps">
+          <p class="col__h" data-in="3">Пилот на&nbsp;руднике</p>
+          <ol class="steps">
+            <li data-in="5"><b>Импорт</b> графа выработок из&nbsp;маркшейдерской модели — первая разработка</li>
+            <li data-in="6"><b>Позиционирование</b> рудника вместо идеальных позиций, «неизвестно» при потере</li>
+            <li data-in="7"><b>Учебные тревоги:</b> прогноз против факта, калибровка скоростей и&nbsp;времён</li>
+            <li data-in="8"><b>Адресный список</b> → штатное оповещение рудника; согласование с&nbsp;промбезопасностью</li>
+          </ol>
+          <p class="col__h col__h--s" data-in="9">Что измерить на&nbsp;пилоте</p>
+          <p class="body" data-in="10">время от тревоги до решения · чел·с в&nbsp;опасной зоне · лишние потери добычи · оповещение не&nbsp;дольше 4–5&nbsp;мин (п.&nbsp;54)</p>
+        </div>
+      </div>
+      <p class="note" data-in="11">SUBMISSION.md, «Роль диспетчера, ограничения и путь к внедрению» и «Limitations»</p>
+    </section>
+
+    <!-- 14 ─────────────────────────────────────────────────────────────── -->
+    <section class="slide s-team" data-depth="-240" data-label="Команда и запуск">
+      <p class="kicker" data-in="0"><span class="tick"></span>13 · Команда и запуск</p>
+      <h2 class="title title--xl" data-split>Team 040</h2>
+      <div class="team">
+        <ul class="people" data-in="3">
+          <li class="person person--todo"><p class="person__name">[Имя Фамилия]</p><p class="person__gh">@github-handle · роль</p></li>
+          <li class="person person--todo"><p class="person__name">[Имя Фамилия]</p><p class="person__gh">@github-handle · роль</p></li>
+          <li class="person person--todo"><p class="person__name">[Имя Фамилия]</p><p class="person__gh">@github-handle · роль</p></li>
+        </ul>
+        <div class="run" data-in="5">
+          <p class="col__h">Запуск на стенде</p>
+          <pre class="cmd"><span class="cmd__p">$</span> make up
+<span class="cmd__c"># пульт диспетчера</span>
+http://127.0.0.1:8088/
+<span class="cmd__c"># Стенд → «Рост нестабильности» → на 60-й модельной секунде выбрать вариант</span>
+<span class="cmd__p">$</span> python3 -m team.sim.comparison --check team/research/comparison.json</pre>
+          <p class="body">Презентация: team/presentation/index.html · PDF: presentation.pdf · замысел, проверки и&nbsp;ограничения: SUBMISSION.md</p>
+        </div>
+      </div>
+      <p class="note" data-in="7">Платформа OpenEgiz v1.0.4 · синтетические данные, условный рудник · дно презентации: горизонт −240 м</p>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <p class="foot__label" id="foot-label">Титул</p>
+    <p class="foot__keys"><kbd>←</kbd><kbd>→</kbd> слайды · колесо — глубже · <kbd>Home</kbd> наверх</p>
+    <div class="foot__bar"><i id="foot-bar"></i></div>
+  </footer>
+</div>
+</div>
+
+<script type="module" src="js/deck.js"></script>
+</body>
+</html>

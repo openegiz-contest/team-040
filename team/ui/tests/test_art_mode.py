@@ -11,7 +11,9 @@ two published places along the path (one working by offset_m; across workings on
 the earlier place, else at once), never beyond the newest one, ends exactly on it, stops at once on a pause, a
 failed read or old data, the buffer is cleared on a new run, a hidden page costs no frames and takes the newest
 state when shown again. A figure model with a clip `walk` plays it only while its person walks, at the rate that
-makes its stride match the ground speed, and fades out when the person stops (actors.js).
+makes its stride match the ground speed, and fades out when the person stops (actors.js). A person published
+`working` who stands plays a work loop of worker.glb (picked by name) only while motion is allowed; the loop alone is
+drawn at most 20 frames a second and only while a working figure is on the screen (ArtWorkTest).
 
 Loaders (CONTRACT.md §9, the recorded simulation): the art's lhd.glb is drawn for each published loader at its published
 place, turned towards its `toward_node`, its lamps by its published state, rock in the bucket only while `loaded`; the
@@ -1544,3 +1546,141 @@ class ArtLoaderTest(ArtEnvCase):
                 self.assertEqual(drawn[:2], published[:2], f"{name}: drawn where published")
             moved += sample["drawn"] != samples[0]["drawn"]
         self.assertGreater(moved, 0, "the loaders did change place, at once")
+
+
+# ---- work on the spot: people published `working` play a work loop of worker.glb (actors.js) --------------------
+
+WORKS = """(async () => {
+  const app = (await import('/js/main.js')).app;
+  const i = app.ctx.stage.info();
+  const s = app.store.getState();
+  return {f: i.actors.figures, glides: i.actors.glides, walking: i.walk ? i.walk.moving.length : 0,
+    runState: document.body.dataset.runState, link: document.body.dataset.link, tick: Number(document.body.dataset.tick),
+    status: Object.fromEntries(s.model.byKind.worker.map((w) => [w.name, w.values.status])),
+    aboard: s.model.byKind.worker.filter((w) => w.values.aboard).map((w) => w.name)};
+})()"""
+
+
+def name_hash(name):
+    """actors.js nameHash: FNV-1a, 32 bit, over the UTF-16 code units (ASCII names here)."""
+    h = 0x811C9DC5
+    for ch in name:
+        h ^= ord(ch)
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+class ArtWorkTest(ArtEnvCase):
+    """People published `working` who stand play one work loop of worker.glb on the spot, picked by name; never while
+    paused, on a failed read or old data, or under reduced motion; drawn at most 20 frames a second and only while a
+    working figure is on the screen."""
+
+    def works(self):
+        return self.page.evaluate(WORKS)
+
+    def settled_run(self, size=(1920, 1080)):
+        """The opening run of sim_instability (state `initial`): it runs, and after tick 50 the last publication repeats,
+        so nothing walks or glides any more while the crews stay `working`. Without the equipment twins: a loader's
+        publication asks for a frame of its own, which is not the work loop's."""
+        if not getattr(self.page, "_strip_equipment", False):
+            self.page.add_init_script(STRIP_EQUIPMENT)
+            self.page._strip_equipment = True
+        self.open_art(size=size)
+        self.page.wait_for("Number(document.body.dataset.tick) >= 50 && document.body.dataset.runState === 'running'",
+                           timeout=30.0, message="the opening run reached its last publication")
+        time.sleep(1.5)
+        sample = self.works()
+        self.assertEqual((sample["glides"], sample["walking"]), (0, 0), "nothing moves between publications any more")
+        return sample
+
+    def frames_in(self, seconds):
+        """(frames, their times, seconds, publications) over `seconds`. A publication whose view differs (the opening
+        run repeats its last frame with a new tick) is drawn once, as before the work loops: those frames are not the
+        loop's."""
+        seq = int(self.body()["seq"])
+        self.page.evaluate("window.__probe.raf = 0; window.__probe.times = []")
+        start = time.time()
+        time.sleep(seconds)
+        probe = self.page.evaluate("({raf: window.__probe.raf, times: window.__probe.times.slice()})")
+        return probe["raf"], probe["times"], time.time() - start, int(self.body()["seq"]) - seq + 1
+
+    def assert_no_work(self, sample, what):
+        for name, (clip, weight) in (sample["f"].get("works") or {}).items():
+            self.assertEqual(weight, 0, f"{what}: {name} plays no {clip}")
+        self.assertEqual(sample["f"]["working"], 0, what)
+
+    def test_working_people_play_their_loop_at_most_20_frames_a_second(self):
+        sample = self.settled_run()
+        figures = sample["f"]
+        clips = figures["rig"]["work"]
+        self.assertEqual(clips, ["work_drill", "work_inspect", "work_scale"], "the work loops of worker.glb")
+        working = [name for name, status in sample["status"].items() if status == "working" and name in figures["works"]]
+        self.assertTrue(working, f"people at work are drawn: {sample['status']}")
+        for name, (clip, weight) in figures["works"].items():
+            self.assertEqual(clip, clips[name_hash(name) % len(clips)], f"{name}: the loop is picked by the name")
+            if sample["status"][name] == "working":
+                self.assertEqual(weight, 1, f"{name} works on the spot")
+            else:
+                self.assertEqual(weight, 0, f"{name} ({sample['status'][name]}) plays no work loop")
+        for name in sample["aboard"]:
+            self.assertNotIn(name, figures["works"], f"{name} rides a loader: no figure, no loop")
+        self.assertGreater(figures["working"], 0, "working figures on the screen")
+        raf, times, seconds, published = self.frames_in(3.0)
+        self.assertGreater(raf, 10 + published, "the work loop is drawn")
+        self.assertLessEqual(raf, 20 * seconds + published + 2, f"at most 20 frames a second: {raf} in {seconds:.2f} s, {published} publications")
+        gaps = sorted(b - a for a, b in zip(times, times[1:]))
+        self.assertGreaterEqual(gaps[len(gaps) // 2], 48, f"the loop's frames 50 ms apart: median {gaps[len(gaps) // 2]:.1f} ms")
+        self.assertGreaterEqual(gaps[published + 1], 30, f"only a publication's frame comes closer: {gaps[:published + 3]}")
+        self.assertEqual(self.stage()["rendering"], "idle", "the work loop leaves the stage idle for what waits on it")
+        # The same loop for the same person on the next page.
+        self.page.reload()
+        self.page.wait_for("(() => { const s = document.querySelector('#stage-3d .s3'); return s && s.dataset.artFigure === 'worker.glb'; })()",
+                           timeout=40.0)
+        self.page.wait_for(f"(async () => Object.keys({APP}.ctx.stage.info().actors.figures.works || {{}}).length > 0)()", timeout=20.0)
+        again = self.works()["f"]["works"]
+        for name in again:
+            self.assertEqual(again[name][0], figures["works"][name][0], f"{name}: the same loop after a reload")
+
+    def test_no_frame_when_no_working_figure_is_on_the_screen(self):
+        # At 960x540 the overview draws the 8 m worker under 9 px: no figures, only the markers; nothing to animate.
+        sample = self.settled_run(size=(960, 540))
+        self.assertTrue(any(status == "working" for status in sample["status"].values()))
+        self.assertEqual(sample["f"]["shown"], 0, f"no figure at this size: {sample['f']['px']} px")
+        self.wait_idle()
+        raf, _, _, published = self.frames_in(2.0)
+        self.assertLessEqual(raf, published, "no frame while no working figure is on the screen (one per publication, as before)")
+
+    def test_the_work_stops_on_a_pause_a_failed_read_and_under_reduced_motion(self):
+        # A failed read: the data grow old, the figures stand still, no frame.
+        self.settled_run()
+        self.assertGreater(self.works()["f"]["working"], 0)
+        self.mock.fault("http_502")
+        try:
+            self.page.wait_for("document.querySelector('#stage-3d .s3').hasAttribute('data-old')", timeout=15.0)
+            self.wait_stage_size_settled()
+            self.wait_idle(timeout=5.0)
+            time.sleep(0.4)
+            self.assert_no_work(self.works(), "old data")
+            raf, _, _, _ = self.frames_in(2.0)
+            self.assertEqual(raf, 0, "no frame while the reads fail")
+        finally:
+            self.mock.fault("none")
+        # Paused at the decision: the crews are still published `working`, the figures stand still.
+        self.decision_art()
+        sample = self.works()
+        self.assertEqual(sample["runState"], "paused")
+        self.assertTrue(any(status == "working" for status in sample["status"].values()))
+        self.assert_no_work(sample, "paused")
+        raf, _, _, _ = self.frames_in(2.0)
+        self.assertEqual(raf, 0, "no frame while paused")
+        # Reduced motion: never a work loop.
+        self.page.send("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+        try:
+            sample = self.settled_run()
+            self.assertTrue(any(status == "working" for status in sample["status"].values()))
+            self.assert_no_work(sample, "reduced motion")
+            self.wait_idle()
+            raf, _, _, published = self.frames_in(2.0)
+            self.assertLessEqual(raf, published, "no frame under reduced motion (one per publication, as before)")
+        finally:
+            self.page.send("Emulation.setEmulatedMedia", {"features": []})

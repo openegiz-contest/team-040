@@ -7,7 +7,14 @@ Builds team/ui/public/models/mine-art/actors/worker.glb (SPEC section 6):
                         upperarm/forearm per side); the root never moves
         worker_body     one skinned mesh, one unlit material, one 512 px baked texture
     clips: walk (1.0 s loop, root fixed, the feet cover extras.strideM metres per
-    cycle), idle (4.0 s breath loop, barely visible).
+    cycle), idle (4.0 s breath loop, barely visible) and three work loops on the spot
+    (work_drill 2.0 s, work_scale 2.4 s, work_inspect 3.0 s; root fixed).
+Props of the work loops (a jackleg rock drill, a scaling bar, a geologist's hammer) are
+part of the one skinned mesh, each on its own bone (prop_drill, prop_bar, prop_hammer,
+children of root): the bind pose holds them small inside the pelvis, and every clip keys
+their scale, PROP_REST_S^-1 in the clip that uses the prop, PROP_HIDDEN_S (a speck inside
+the body) in all others, so a prop shows only while its clip plays (a cross-fade grows or
+shrinks it).
 A stylised figure 5 m tall in scene metres (SPEC section 3): orange coveralls with
 reflective bands, a yellow-white helmet with a cap lamp, dark boots and gloves,
 a belt with the lamp battery. Chunky proportions so it reads at 40 px.
@@ -38,6 +45,14 @@ WALK_FRAMES = 30          # 1.0 s per cycle
 IDLE_FRAMES = 120         # 4.0 s
 STRIDE = 3.0              # metres per walk cycle (two steps), scene metres
 STANCE = 0.60             # fraction of the cycle a foot is on the floor
+# work loops: name -> frames (30 fps); each a loop on the spot, the root fixed
+WORK_FRAMES = {"work_drill": 60, "work_scale": 72, "work_inspect": 90}
+WORK_PROP = {"work_drill": "prop_drill", "work_scale": "prop_bar", "work_inspect": "prop_hammer"}
+PROP_BONES = ("prop_drill", "prop_bar", "prop_hammer")
+PROP_REST = Vector((-0.10, 0.0, 2.60))   # bind pose of every prop: its origin here, inside the pelvis
+PROP_REST_S = 0.15                      # ... drawn at this scale (keeps the bounding box of the figure)
+PROP_HIDDEN_S = 0.001                   # a prop's bone scale in the clips that do not use it
+HAND_REACH = 0.20                       # wrist to the middle of the mitten, along the forearm
 
 # skeleton (armature space = Blender object space, metres)
 HIP_Y = 0.25
@@ -62,6 +77,8 @@ for _s, _n in ((1, "L"), (-1, "R")):
         (f"upperarm.{_n}", (SHOULDER[0], _s * SHOULDER[1], SHOULDER[2]), (ELBOW[0], _s * ELBOW[1], ELBOW[2]), "spine"),
         (f"forearm.{_n}", (ELBOW[0], _s * ELBOW[1], ELBOW[2]), (WRIST[0], _s * WRIST[1], WRIST[2]), f"upperarm.{_n}"),
     ]
+for _p in ("prop_drill", "prop_bar", "prop_hammer"):
+    BONES.append((_p, (-0.10, 0.0, 2.60), (-0.10, 0.0, 3.00), "root"))
 BONE_NAMES = [b[0] for b in BONES]
 
 # foot (boot) geometry relative to the ankle, in the sagittal plane (x fwd, z up)
@@ -250,6 +267,44 @@ def build_pieces(mats):
     return pieces
 
 
+# props of the work loops, in their own frame: origin at the right (rear) hand's grip,
+# +X along the tool, Z up; LEFT_GRIP is where the left hand holds it
+DRILL_P0 = Vector((0.73, -0.22, 2.54))          # mean place of the drill grip in the work_drill clip
+DRILL_FOOT = Vector((-0.25, -1.05, 0.02))       # the feed leg's foot on the floor (armature space)
+LEFT_GRIP = {"prop_drill": Vector((0.55, 0.10, 0.15)), "prop_bar": Vector((1.0, 0.0, 0.0)), "prop_hammer": None}
+
+
+def drill_rot(t=None):
+    """World rotation of the drill (the mean one without t)."""
+    tau = 2 * math.pi
+    jit = 0.0 if t is None else math.radians(1.2) * math.sin(tau * 15 * t + 0.4)
+    return Rz(math.radians(-4.0)) @ Ry(-(math.radians(5.0) + jit))
+
+
+def build_props(mats):
+    """The three props (pieces rigid to their bones), placed small at the bind pose (PROP_REST, PROP_REST_S)."""
+    out = []
+    drill = Piece("prop_drill", mats)
+    drill.box((-0.06, -0.12, -0.13), (0.85, 0.12, 0.15), "steel_dk")       # rock drill body with the handle
+    drill.cylinder((0.85, 0, 0.0), (2.70, 0, 0.0), 0.045, 4, "steel", caps=False)  # drill steel
+    leg_end = drill_rot().inverted() @ (DRILL_FOOT - DRILL_P0)
+    drill.cylinder((0.45, 0, -0.12), tuple(leg_end), 0.06, 4, "chassis", caps=False)  # feed leg (jackleg)
+    out.append(drill)
+    bar = Piece("prop_bar", mats)
+    bar.cylinder((-0.40, 0, 0), (3.80, 0, 0), 0.07, 4, "steel", caps=True)  # scaling bar
+    out.append(bar)
+    hammer = Piece("prop_hammer", mats)
+    hammer.cylinder((-0.08, 0, 0), (0.62, 0, 0), 0.05, 4, "rim", caps=False)  # handle
+    hammer.box((0.50, -0.07, -0.20), (0.66, 0.07, 0.15), "steel_dk")         # head
+    out.append(hammer)
+    pieces = []
+    for piece in out:
+        for v in piece.bm.verts:
+            v.co = PROP_REST + PROP_REST_S * v.co
+        pieces.append((piece, lambda co, n=piece.name: {n: 1.0}))
+    return pieces
+
+
 # --------------------------------------------------------------------------- rig
 
 
@@ -383,8 +438,30 @@ class Rig:
         d_foot = Ry(-pitch)
         return d_thigh, d_shin, d_foot
 
-    def apply(self, D, H, frame):
-        """D: bone -> world delta rotation (3x3); H: explicit head positions (hips)."""
+    def shoulder(self, side, D, H):
+        """World head of the upper arm for the rotations D of hips and spine and the hips head H['hips']."""
+        sp = H["hips"] + D["hips"] @ (self.head["spine"] - self.head["hips"])
+        return sp + D["spine"] @ (self.head[f"upperarm.{side}"] - self.head["spine"])
+
+    def arm_ik(self, side, D, H, grip, pole):
+        """Two-bone IK: the middle of the mitten on `grip`, the elbow toward `pole`. Sets D of upper arm and forearm."""
+        n = side
+        sh = self.shoulder(side, D, H)
+        l1, l2 = self.length(f"upperarm.{n}"), self.length(f"forearm.{n}") + HAND_REACH
+        d = grip - sh
+        dist = d.length
+        self.arm_reach = max(getattr(self, "arm_reach", 0.0), dist / (l1 + l2))
+        dist = max(min(dist, (l1 + l2) * 0.999), abs(l1 - l2) + 0.02)
+        u = d.normalized()
+        a = math.acos(max(-1.0, min(1.0, (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist))))
+        w = (pole - u * pole.dot(u)).normalized()
+        elbow = sh + l1 * (math.cos(a) * u + math.sin(a) * w)
+        D[f"upperarm.{n}"] = align(self.rest_dir(f"upperarm.{n}"), (elbow - sh).normalized())
+        D[f"forearm.{n}"] = align(self.rest_dir(f"forearm.{n}"), (sh + u * dist - elbow).normalized())
+
+    def apply(self, D, H, frame, scales=None):
+        """D: bone -> world delta rotation (3x3); H: explicit head positions (hips, props); scales: prop bone -> scale
+        (a prop not named is hidden)."""
         M = {}
         heads = {}
         for name in BONE_NAMES:
@@ -408,6 +485,10 @@ class Rig:
             pb.matrix_basis = basis
             pb.keyframe_insert("location", frame=frame)
             pb.keyframe_insert("rotation_quaternion", frame=frame)
+            if name in PROP_BONES:
+                s = (scales or {}).get(name, PROP_HIDDEN_S)
+                pb.scale = (s, s, s)
+                pb.keyframe_insert("scale", frame=frame)
         return heads
 
 
@@ -455,14 +536,96 @@ def idle_pose(rig, t):
     return D, {"hips": hips_h}
 
 
+def stand(rig, D, H, feet):
+    """Legs by IK to flat feet at feet = {(side): (x, y)} on the floor."""
+    for side in ("L", "R"):
+        hip = H["hips"] + D["hips"] @ (rig.head[f"thigh.{side}"] - rig.head["hips"])
+        x, y = feet[side]
+        D[f"thigh.{side}"], D[f"shin.{side}"], D[f"foot.{side}"] = rig.leg_ik(side, hip, Vector((x, y, ANKLE_Z)), 0.0, 0.0)
+
+
+def hold(rig, D, H, prop, P, R, right_grip=Vector((0, 0, 0)), poles=None):
+    """The prop's bone at P turned by R (world); the right hand on right_grip, the left on LEFT_GRIP (prop frame)."""
+    H[prop] = P
+    D[prop] = R
+    poles = poles or {"R": Vector((-0.35, -0.80, -0.50)), "L": Vector((-0.30, 0.80, -0.60))}
+    rig.arm_ik("R", D, H, P + R @ right_grip, poles["R"])
+    if LEFT_GRIP[prop] is not None:
+        rig.arm_ik("L", D, H, P + R @ LEFT_GRIP[prop], poles["L"])
+    return {prop: 1.0 / PROP_REST_S}
+
+
+def drill_pose(rig, t):
+    """Jackleg drilling: a lunge behind the drill, the feed pushing it forward and easing back once a loop, the
+    machine shaking (7.5 Hz and 4.5 Hz) through the hands, shoulders and head."""
+    tau = 2 * math.pi
+    feed = 0.5 - 0.5 * math.cos(tau * t)
+    vx = 0.05 * math.sin(tau * 15 * t)
+    vz = 0.035 * math.sin(tau * 9 * t + 0.7)
+    vy = 0.02 * math.sin(tau * 12 * t + 1.9)
+    P = DRILL_P0 + Vector((-0.11 + 0.22 * feed + vx, vy, -0.02 + 0.04 * feed + vz))
+    H = {"hips": Vector((-0.10 + 0.10 * feed + 0.3 * vx, 0.0, 2.50 - 0.24 + 0.25 * vz))}
+    D = {"hips": Rz(math.radians(-12.0))}
+    D["spine"] = Rz(math.radians(-10.0)) @ Ry(math.radians(14.0 + 4.0 * feed)) @ Rx(math.radians(0.8) * math.sin(tau * 12 * t))
+    D["head"] = Ry(math.radians(-10.0 + 1.5 * math.sin(tau * 15 * t + 0.5))) @ Rz(math.radians(-6.0))
+    stand(rig, D, H, {"L": (0.55, 0.36), "R": (-0.55, -0.34)})
+    return D, H, hold(rig, D, H, "prop_drill", P, drill_rot(t))
+
+
+def scale_pose(rig, t):
+    """Scaling: the bar thrust up at the back, a short pry, then drawn back slowly; the head follows the tip."""
+    s = smooth(0.08, 0.30, t) * (1 - smooth(0.52, 0.92, t))
+    pry = math.sin(math.pi * clamp01((t - 0.30) / 0.22)) if 0.30 < t < 0.52 else 0.0
+    pitch = math.radians(48.0 + 6.0 * s - 4.0 * pry)
+    R = Rz(math.radians(-3.0)) @ Ry(-pitch)
+    along = R @ Vector((1.0, 0.0, 0.0))
+    P = Vector((0.22, -0.12, 2.55)) + along * (0.50 * s) + Vector((0.05 * s, 0.0, 0.10 * s))
+    H = {"hips": Vector((-0.05 + 0.10 * s, 0.0, 2.50 - 0.12 - 0.04 * s))}
+    D = {"hips": Rz(math.radians(-8.0))}
+    D["spine"] = Rz(math.radians(-6.0)) @ Ry(math.radians(-2.0 + 6.0 * s + 2.0 * pry))
+    D["head"] = Ry(math.radians(-18.0 - 6.0 * s))
+    stand(rig, D, H, {"L": (0.40, 0.34), "R": (-0.50, -0.30)})
+    return D, H, hold(rig, D, H, "prop_bar", P, R)
+
+
+def inspect_pose(rig, t):
+    """Inspecting the rock: three taps of the hammer at the face, the left hand on the rock; then the hammer down,
+    the hand sliding up the face and the eyes following it, and back."""
+    tau = 2 * math.pi
+    if t < 0.5:
+        u = (t * 6.0) % 1.0
+        k = 1 - smooth(0.0, 0.6, u) ** 1.6 if u < 0.6 else smooth(0.6, 1.0, u)   # 1 raised, 0 at the strike
+    else:
+        k = 1.0
+    hit = max(0.0, 1 - abs((t * 6.0) % 1.0 - 0.62) / 0.08) if t < 0.5 else 0.0
+    w = smooth(0.50, 0.62, t) * (1 - smooth(0.86, 1.0, t))
+    tap_p = math.radians(78.0 + 52.0 * k)
+    tap_g = Vector((0.92 - 0.16 * k, -0.34, 3.20 + 0.14 * k))
+    rest_g = Vector((0.50, -0.62, 2.30))
+    G = tap_g.lerp(rest_g, w)
+    pitch = tap_p + (math.radians(100.0) - tap_p) * w
+    R = Rz(math.radians(-6.0)) @ Ry(-pitch)
+    H = {"hips": Vector((0.05, 0.02 * w, 2.50 - 0.04))}
+    D = {"hips": Rz(math.radians(-4.0 + 4.0 * w))}
+    D["spine"] = Rz(math.radians(-6.0 + 6.0 * w)) @ Ry(math.radians(8.0 + 1.5 * hit - 3.0 * w))
+    D["head"] = Ry(math.radians(4.0 - 22.0 * w + 2.0 * math.sin(tau * t))) @ Rz(math.radians(-8.0 + 20.0 * w))
+    stand(rig, D, H, {"L": (0.25, 0.32), "R": (-0.20, -0.30)})
+    scales = hold(rig, D, H, "prop_hammer", G, R)
+    rig.arm_ik("L", D, H, Vector((1.22, 0.30, 3.50 + 0.35 * w)), Vector((-0.4, 0.8, -0.5)))
+    return D, H, scales
+
+
+WORK_POSES = {"work_drill": drill_pose, "work_scale": scale_pose, "work_inspect": inspect_pose}
+
+
 def make_clip(rig, name, frames, pose_fn):
     ob = rig.ob
     ob.animation_data_create()
     act = bpy.data.actions.new(name)
     ob.animation_data.action = act
     for f in range(frames + 1):
-        D, H = pose_fn(rig, (f % frames) / frames)
-        rig.apply(D, H, f)
+        D, H, *rest = pose_fn(rig, (f % frames) / frames)
+        rig.apply(D, H, f, rest[0] if rest else None)
     # linear keys (the clip is sampled every frame anyway)
     try:
         curves = act.fcurves
@@ -558,6 +721,34 @@ def render_worker_previews(glb):
     p = os.path.join(S.PREVIEW_DIR, "worker_walk_contact_sheet.png")
     S.compose_grid(rows, p)
     out.append(p)
+    # work loops: two rows per clip (side view E, then facing south as at the zones' faces), 8 frames over the
+    # loop; and the frames 0 and 3 at 40 px (x4)
+    rows = []
+    small = []
+    for clip, frames in [(c, f) for c, f in WORK_FRAMES.items() for _ in (0, 1)]:
+        deg = 0.0 if len(rows) % 2 == 0 else -90.0
+        root.rotation_euler = (0, 0, math.radians(deg))
+        act = next(a for n, a in acts.items() if n.startswith(clip))
+        use(act)
+        row = []
+        for i in range(8):
+            f = i * frames / 8
+            scene.frame_set(int(f), subframe=f - int(f))
+            pth = os.path.join(tmp, f"worker_{clip}_{int(-deg)}_{i}.png")
+            ppm = 24.0
+            S.render_tile(meshes, ppm, pth, centre=Vector((1.0, 0, 2.9)), size=(int(5.6 * ppm), int(6.6 * ppm)))
+            row.append(pth)
+            if i in (0, 3) and deg != 0.0:
+                pth = os.path.join(tmp, f"worker_{clip}_{i}_40.png")
+                S.render_tile(meshes, PPM_40, pth, centre=Vector((1.0, 0, 2.9)), size=(int(5.6 * PPM_40), int(6.6 * PPM_40)))
+                small.append(pth)
+        rows.append(row)
+    p = os.path.join(S.PREVIEW_DIR, "worker_work_contact_sheet.png")
+    S.compose_grid(rows, p)
+    out.append(p)
+    q = os.path.join(S.PREVIEW_DIR, "worker_work_40px_x4.png")
+    S.compose_row(small, q, upscale=4)
+    out.append(q)
     return out
 
 
@@ -576,7 +767,8 @@ def main():
     rig_ob = build_rig(root)
 
     objs = []
-    for piece, wfn in build_pieces(mats):
+    props = []
+    for piece, wfn in build_pieces(mats) + build_props(mats):
         ob = piece.to_object(None, smooth_angle=50.0)
         for b in BONE_NAMES:
             ob.vertex_groups.new(name=b)
@@ -587,20 +779,31 @@ def main():
                 if x > 1e-4:
                     ob.vertex_groups[b].add([v.index], x / tot, "REPLACE")
         objs.append(ob)
+        if piece.name in PROP_BONES:
+            props.append(ob)
     S.unwrap(objs, margin=0.008, angle=55.0)
+    # the props bake away from the body (no shared occlusion), at their full size
+    for ob in props:
+        ob.location = (40.0, 0.0, 0.0)
     img = S.bake_emit(objs, "worker_paint", 512, margin=3)
+    for ob in props:
+        ob.location = (0.0, 0.0, 0.0)
     S.save_image(img, os.path.join(S.HERE, "textures", "worker_paint.png"))
 
     if S.DO_RENDER:
         S.make_world(S.FLOOR_HEX)
         S.setup_cycles(48)
         tmp_root = S.empty("_src")
+        for o in props:
+            o.hide_render = True
         for o in objs:
             o.parent = tmp_root
         S.render_headings(tmp_root, objs, PPM_150, "150px", "worker_source")
         for o in objs:
             o.parent = None
         bpy.data.objects.remove(tmp_root, do_unlink=True)
+        for o in props:
+            o.hide_render = False
 
     body = S.join(objs, "worker_body")
     paint = S.unlit_texture_material("worker_paint", img)
@@ -618,7 +821,10 @@ def main():
     make_clip(rig, "walk", WALK_FRAMES, walk_pose)
     reach_walk = rig.max_reach
     make_clip(rig, "idle", IDLE_FRAMES, idle_pose)
-    S.log(f"max leg reach: walk {reach_walk:.3f}, all {rig.max_reach:.3f} of the leg length")
+    for clip, frames in WORK_FRAMES.items():
+        make_clip(rig, clip, frames, WORK_POSES[clip])
+    S.log(f"max leg reach: walk {reach_walk:.3f}, all {rig.max_reach:.3f} of the leg length;"
+          f" max arm reach (work) {rig.arm_reach:.3f} of the arm")
     S.log("lowest boot points over the cycle: toe %.3f m, heel %.3f m (0 = floor)" % lowest_boot_points())
 
     scene.frame_set(0)
@@ -632,13 +838,17 @@ def main():
     root["walkSpeedAtRate1"] = STRIDE / (WALK_FRAMES / FPS)
     root["walkRate"] = "timeScale = groundSpeed / walkSpeedAtRate1"
     root["idleCycleS"] = IDLE_FRAMES / FPS
-    root["clips"] = ["walk", "idle"]
+    root["clips"] = ["walk", "idle"] + list(WORK_FRAMES)
+    root["workClips"] = list(WORK_FRAMES)
+    root["workCycleS"] = {k: v / FPS for k, v in WORK_FRAMES.items()}
+    root["props"] = "bones prop_*: scale 1/%g in the clip that uses the prop, %g in the others" % (PROP_REST_S, PROP_HIDDEN_S)
 
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(S.HERE, "worker.blend"), compress=True)
     glb = os.path.join(S.OUT_DIR, "worker.glb")
     S.export_glb(root, glb, animations=True)
     S.patch_glb(glb, scene_extras={"mineArtActor": NAME, "strideM": STRIDE},
-                anim_extras={"walk": {"strideM": STRIDE, "loop": True}, "idle": {"loop": True}})
+                anim_extras={"walk": {"strideM": STRIDE, "loop": True}, "idle": {"loop": True},
+                             **{k: {"loop": True, "work": True, "prop": WORK_PROP[k]} for k in WORK_FRAMES}})
     S.log("exported", glb, os.path.getsize(glb))
     if S.DO_RENDER:
         for p in render_worker_previews(glb):

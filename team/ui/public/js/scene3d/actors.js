@@ -38,6 +38,17 @@
 // pose (held still) within FADE_MS when the person stops. Never under reduced
 // motion. A model without the clip (miner.glb) is merged and glides as before.
 //
+// Work on the spot. A figure model with clips `work_*` (worker.glb: work_drill,
+// work_scale, work_inspect; each a loop with the root fixed, its prop shown only
+// by its own clip) plays one of them for a person whose published status is
+// `working` and who stands (not moving between two drawn places): the clip is
+// picked by the person's name (stable across reloads), cross-faded over FADE_MS
+// with the walk and with the still idle pose. Only while motion is allowed
+// (source.workAllowed: link ok, data fresh, the model running, reduced motion
+// off, the page shown) and the position is fresh; otherwise the still pose.
+// The loop costs frames: the scene draws it at most WORK_FPS frames a second and
+// only while at least one such figure is on the screen (`working`); else none.
+//
 // Pure three.js and the layout; no DOM, no words.
 
 import * as THREE from 'three';
@@ -82,6 +93,8 @@ const OVER_HELMET = 3.5;
 const DEG = Math.PI / 180;
 /** The walk cycle fades in and out over this time (ms). */
 export const FADE_MS = 200;
+/** A work loop on the spot is drawn at most this many frames a second (scene.js). */
+export const WORK_FPS = 20;
 
 const LOOKS = new Set(['working', 'parked', 'stopped']);
 
@@ -168,6 +181,16 @@ function painted(geometry, colour) {
 }
 
 /** The low-poly miner: about 180 triangles, the lens of the cap lamp apart (it is drawn unlit). */
+/** A stable hash of a name (FNV-1a, 32 bit): the same person gets the same work loop on every page. */
+export function nameHash(name) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < name.length; i += 1) {
+    h ^= name.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
 function figureGeometry() {
   const overalls = '#3B444E';
   const band = '#DAD5CB';
@@ -327,10 +350,12 @@ export function createActors({low, source, reducedMotion = () => false}) {
   // ---- the walk cycle of a figure model with a `walk` clip (rig) -------------------------------------------------
   /** {template, walk, idle, strideM, scale, top} of the rigged figure, or null (the merged figure, instanced). */
   let rig = null;
-  /** person -> {root, mixer, walk, idle, materials, weight, last, speed} */
+  /** person -> {root, mixer, walk, idle, work, materials, weight, workWeight, last, speed} */
   const riggedPeople = new Map();
   let fading = false;
+  let workingOnScreen = 0;
   let lastDraw = null;
+  const projected = new THREE.Vector3();
 
   /** A clone of the rigged figure for one person, with its own mixer: the walk at weight 0, the idle pose held. */
   function riggedPerson(name) {
@@ -360,8 +385,18 @@ export function createActors({low, source, reducedMotion = () => false}) {
       idle.timeScale = 0;
       idle.play();
     }
+    // The work loop of this person: picked by the name (stable across reloads), started at a phase of its own.
+    let work = null;
+    if (rig.work.length) {
+      const h = nameHash(name);
+      work = mixer.clipAction(rig.work[h % rig.work.length]);
+      work.time = (((h >>> 8) % 1000) / 1000) * work.getClip().duration;
+      work.setEffectiveWeight(0);
+      work.timeScale = 0;
+      work.play();
+    }
     mixer.update(0);
-    const entry = {root, mixer, walk, idle, materials, weight: 0, last: null, speed: 0, rate: 0};
+    const entry = {root, mixer, walk, idle, work, materials, weight: 0, workWeight: 0, last: null, speed: 0, rate: 0};
     riggedPeople.set(name, entry);
     group.add(root);
     return entry;
@@ -379,9 +414,10 @@ export function createActors({low, source, reducedMotion = () => false}) {
 
   /**
    * One frame of a rigged person at `point` (scene metres): the walk while the person moves between two different
-   * drawn places, at the rate that makes the stride cover the ground speed; a fade to the idle pose when it stops.
+   * drawn places, at the rate that makes the stride cover the ground speed; the work loop while `working` (published
+   * status working, standing, motion allowed); a fade to the idle pose held still otherwise.
    */
-  function animateRigged(entry, moving, dtMs) {
+  function animateRigged(entry, moving, working, dtMs) {
     const p = entry.root.position;
     if (entry.last && dtMs > 0 && dtMs < 250) {
       const metresPerS = (p.distanceTo(entry.last) * 1000) / dtMs;
@@ -394,21 +430,26 @@ export function createActors({low, source, reducedMotion = () => false}) {
     entry.last = entry.last ? entry.last.copy(p) : p.clone();
     const walking = moving && !reducedMotion();
     const goal = walking ? 1 : 0;
+    const toward = (value, target) => (value === target ? value
+      : target > value ? Math.min(value + dtMs / FADE_MS, target) : Math.max(value - dtMs / FADE_MS, target));
     if (reducedMotion()) entry.weight = goal;
-    else if (entry.weight !== goal) {
-      const stepW = dtMs / FADE_MS;
-      entry.weight = goal > entry.weight ? Math.min(entry.weight + stepW, 1) : Math.max(entry.weight - stepW, 0);
-    }
+    else entry.weight = toward(entry.weight, goal);
+    const workGoal = entry.work && working && !walking ? 1 : 0;
+    entry.workWeight = reducedMotion() || !entry.work ? 0 : toward(entry.workWeight, workGoal);
     // One stride (strideM of the model, times its scale) per cycle of the clip: the feet keep to the ground. At most
     // rig.maxCycles cycles a second (a faster honest rate looks frantic; above it the feet slide a little).
     const stride = rig.strideM * rig.scale;
     entry.rate = walking && stride > 0 ? Math.min((entry.speed * rig.walk.duration) / stride, rig.maxCycles * rig.walk.duration) : 0;
     entry.walk.timeScale = entry.weight > 0 ? entry.rate : 0;
     entry.walk.setEffectiveWeight(entry.weight);
-    if (entry.idle) entry.idle.setEffectiveWeight(1 - entry.weight);
-    if (entry.weight > 0 || walking) entry.mixer.update(Math.max(dtMs, 0) / 1000);
+    if (entry.work) {
+      entry.work.timeScale = entry.workWeight > 0 ? 1 : 0;
+      entry.work.setEffectiveWeight(entry.workWeight);
+    }
+    if (entry.idle) entry.idle.setEffectiveWeight(Math.max(1 - entry.weight - entry.workWeight, 0));
+    if (entry.weight > 0 || walking || entry.workWeight > 0) entry.mixer.update(Math.max(dtMs, 0) / 1000);
     else entry.mixer.update(0);
-    return entry.weight > 0 && entry.weight < 1;
+    return (entry.weight > 0 && entry.weight < 1) || (entry.workWeight > 0 && entry.workWeight < 1);
   }
 
   /**
@@ -515,7 +556,8 @@ export function createActors({low, source, reducedMotion = () => false}) {
       const tall = Math.max(box.max.y - box.min.y, 1e-3);
       const declared = [walkClip.userData && walkClip.userData.strideM, template.userData && template.userData.strideM]
         .find((value) => Number.isFinite(value) && value > 0);
-      rig = {template, walk: walkClip, idle: (gltf.animations || []).find((clip) => clip.name === 'idle') || null,
+      const work = (gltf.animations || []).filter((clip) => /^work_/.test(clip.name)).sort((a, b) => (a.name < b.name ? -1 : 1));
+      rig = {template, walk: walkClip, idle: (gltf.animations || []).find((clip) => clip.name === 'idle') || null, work,
         strideM: declared || tall * 0.8, strideDeclared: Boolean(declared), scale, top: tall * scale, maxCycles, merged: figureSource};
       figureSource = source;
       if (bodies) bodies.visible = lenses.visible = false;
@@ -598,9 +640,13 @@ export function createActors({low, source, reducedMotion = () => false}) {
     get figurePx() {
       return figureInfo.px || 0;
     },
-    /** True while a walk cycle fades in or out (frames are needed although nobody moves). */
+    /** True while a walk cycle or a work loop fades in or out (frames are needed although nobody moves). */
     get animating() {
       return fading;
+    },
+    /** How many figures on the screen played a work loop in the last frame (the scene then draws at most WORK_FPS). */
+    get working() {
+      return workingOnScreen;
     },
 
     /**
@@ -614,6 +660,7 @@ export function createActors({low, source, reducedMotion = () => false}) {
       const dtMs = lastDraw === null ? 0 : Math.min(Math.max(now - lastDraw, 0), 250);
       lastDraw = now;
       fading = false;
+      workingOnScreen = 0;
       if (!layout || !view || !groups) {
         if (bodies) bodies.visible = lenses.visible = false;
         for (const name of [...riggedPeople.keys()]) dropRigged(name);
@@ -630,7 +677,10 @@ export function createActors({low, source, reducedMotion = () => false}) {
       let largest = 0;
       const placed = {};
       const walks = {};
+      const works = {};
       const feet = {};
+      const workAllowed = Boolean(source.workAllowed) && !reducedMotion();
+      if (rig) camera.updateMatrixWorld();
       const shown = new Set();
       for (const entry of groups) {
         const spread = spreadOf(entry, layout, k);
@@ -659,8 +709,16 @@ export function createActors({low, source, reducedMotion = () => false}) {
             for (const material of one.materials) {
               if (material.userData.baseColor) material.color.copy(material.userData.baseColor).multiply(colour.set(look.body));
             }
-            if (animateRigged(one, Boolean(position.moving), dtMs)) fading = true;
+            // Work on the spot: published `working`, standing, a fresh position, motion allowed.
+            const working = workAllowed && person.status === 'working' && !position.moving && look === FRESH;
+            if (animateRigged(one, Boolean(position.moving), working, dtMs)) fading = true;
             walks[name] = [Math.round(one.weight * 1000) / 1000, Math.round(one.walk.timeScale * 1000) / 1000, Math.round(one.speed * 100) / 100];
+            if (one.work) {
+              works[name] = [one.work.getClip().name, Math.round(one.workWeight * 1000) / 1000];
+              // On the screen: the middle of the figure inside the view (a little margin for the body).
+              projected.set(where.x, where.y + rig.top / 2, where.z).project(camera);
+              if (working && one.workWeight > 0 && Math.abs(projected.x) <= 1.02 && Math.abs(projected.y) <= 1.05) workingOnScreen += 1;
+            }
             shown.add(name);
           } else {
             matrix.compose(where, rotation, scaleVector);
@@ -694,7 +752,9 @@ export function createActors({low, source, reducedMotion = () => false}) {
       }
       figureInfo = {shown: n, people, riding, px: Math.round(largest * 10) / 10, groups: [...figured].sort(), at: placed,
         // The walk cycle per person drawn: [weight of the walk, playback rate of the clip, ground speed scene m/s].
-        walks: rig ? walks : null, feet};
+        walks: rig ? walks : null, feet,
+        // The work loop per person drawn: [clip, weight]; and how many of them work on the screen.
+        works: rig ? works : null, working: workingOnScreen};
       return [...figured].join() !== before;
     },
 
@@ -710,7 +770,7 @@ export function createActors({low, source, reducedMotion = () => false}) {
         figures: {...figureInfo, threshold: source.figurePx || FIGURE_PX, scale: rig ? rig.scale : FIGURE_SCALE,
           triangles: rig ? null : triangleCount(shapes.body) + triangleCount(shapes.lens), source: figureSource,
           rig: rig ? {strideM: rig.strideM, strideDeclared: rig.strideDeclared, walkS: rig.walk.duration, idle: Boolean(rig.idle), top: rig.top,
-            maxCycles: rig.maxCycles} : null},
+            maxCycles: rig.maxCycles, work: rig.work.map((clip) => clip.name)} : null},
       };
     },
 

@@ -228,6 +228,12 @@ def checks(name, rep):
         ok("height ~ 5 m", 4.8 <= h <= 5.2, round(h, 3))
         ok("facing +X (longer forward than back: nose, toes)", hi[0] > -lo[0], (lo[0], hi[0]))
         ok("skinned", rep["skins"] == 1, rep["skins"])
+        work = {n: a for n, a in an.items() if n.startswith("work_")}
+        ok("work loops work_* (>= 2, loop, extras.prop a node)", len(work) >= 2 and all(
+            (a["extras"] or {}).get("loop") and (a["extras"] or {}).get("prop") in rep["nodes"] for a in work.values()),
+           {n: (a["duration_s"], (a["extras"] or {}).get("prop")) for n, a in sorted(work.items())})
+        ok("work loops 1..4 s, as many channels as walk", all(1.0 <= a["duration_s"] <= 4.0 and a["channels"] == an["walk"]["channels"]
+                                                              for a in work.values()))
     else:
         ok("LAMPS node", rep["lamps"] == ["LAMPS"], rep["lamps"])
         ok("WHEELS group + %d WHEEL_*" % b["wheels"], rep["wheels_group"] and len(rep["wheels"]) == b["wheels"],
