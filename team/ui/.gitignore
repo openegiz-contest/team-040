@@ -1,3 +1,8 @@
 test-output/
 __pycache__/
 *.pyc
+
+# Blender backups, logs and intermediate renders produced by the asset scripts
+*.blend1
+*.log
+assets/**/previews/_*

@@ -71,11 +71,11 @@
 | `blender/lhd_v2.blend` | сохранённая сцена (полная модель; LOD скрыт; свет и камеры превью) | 253 КБ |
 | `public/models/lhd_v2.glb` | полная модель | 515 824 байт (≈ 504 КБ) |
 | `public/models/lhd_v2_lod.glb` | LOD — **отдельный файл** | 130 288 байт (≈ 127 КБ) |
-| `blender/previews/lhd_v2_three_quarter.png` | 1200×800, три четверти спереди | |
-| `blender/previews/lhd_v2_rear_quarter.png` | 1200×800, три четверти сзади справа | |
-| `blender/previews/lhd_v2_side.png`, `lhd_v2_top.png` | 1200×800, ортогональные виды слева и сверху | |
+| `blender/previews/lhd_v2_three_quarter.jpg` | 1200×800, три четверти спереди | |
+| `blender/previews/lhd_v2_rear_quarter.jpg` | 1200×800, три четверти сзади справа | |
+| `blender/previews/lhd_v2_side.jpg`, `lhd_v2_top.jpg` | 1200×800, ортогональные виды слева и сверху | |
 | `blender/previews/lhd_v2_mid_zoom_320.png` | 320×214, проверка силуэта на среднем плане | |
-| `blender/previews/lhd_v2_lod_three_quarter.png`, `lhd_v2_lod_mid_zoom_320.png` | то же для LOD | |
+| `blender/previews/lhd_v2_lod_three_quarter.jpg`, `lhd_v2_lod_mid_zoom_320.png` | то же для LOD | |
 
 ### Бюджет и проверенные значения
 
@@ -140,8 +140,8 @@ LOD: `lhd_v2_lod` → `lhd_v2_lod_front` (`lhd_v2_lod_front_frame` — рама 
 | `blender/miner.py` | генератор: фигура, материалы, экспорт, проверка бюджета, превью | 23 КБ |
 | `blender/miner.blend` | сохранённая сцена | 117 КБ |
 | `public/models/miner.glb` | модель | 43 532 байт (≈ 43 КБ) |
-| `blender/previews/miner_three_quarter.png` | 700×900, три четверти | |
-| `blender/previews/miner_front_side.png` | 1200×800, сбоку и спереди, ортогонально | |
+| `blender/previews/miner_three_quarter.jpg` | 700×900, три четверти | |
+| `blender/previews/miner_front_side.jpg` | 1200×800, сбоку и спереди, ортогонально | |
 | `blender/previews/miner_small_96.png` | 96×128, проверка силуэта в малом размере | |
 
 ### Бюджет и проверенные значения
@@ -209,10 +209,13 @@ LOD: `lhd_v2_lod` → `lhd_v2_lod_front` (`lhd_v2_lod_front_frame` — рама 
 | `team/ui/assets/blender/lhd_mcp_pass.py` | проход доработки (диски колёс, гидрошланги), выполненный через Blender MCP | 8 КБ |
 | `team/ui/assets/blender/lhd.blend` | сохранённая исходная сцена (модель + свет и камеры превью) | 183 КБ |
 | `team/ui/public/models/lhd.glb` | экспорт для браузера (glTF 2.0 binary) | 298 712 байт (≈ 292 КБ) |
-| `team/ui/assets/blender/previews/lhd_three_quarter.png` | превью 1200×800, три четверти спереди | 0,8 МБ |
-| `team/ui/assets/blender/previews/lhd_side.png` | превью 1200×800, вид слева, ортогональный | 0,6 МБ |
-| `team/ui/assets/blender/previews/lhd_top.png` | превью 1200×800, вид сверху, ортогональный | 0,8 МБ |
+| `team/ui/assets/blender/previews/lhd_three_quarter.jpg` | превью 1200×800, три четверти спереди | 40 КБ |
+| `team/ui/assets/blender/previews/lhd_side.jpg` | превью 1200×800, вид слева, ортогональный | 27 КБ |
+| `team/ui/assets/blender/previews/lhd_top.jpg` | превью 1200×800, вид сверху, ортогональный | 26 КБ |
 | `team/ui/assets/blender/previews/lhd_small_300.png` | проверка силуэта в малом размере, 300×200 | 63 КБ |
+
+Скрипты пишут превью в PNG; в репозитории PNG крупнее 400 КБ заменены JPEG
+(качество 85, те же имена с расширением `.jpg`).
 
 Превью рендерятся Cycles на CPU (64 сэмпла, денойзер OpenImageDenoise), фон —
 графитовый `#111316`, мягкий тёплый ключевой свет `#FFD7A1` и нейтральная заливка.

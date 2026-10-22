@@ -1,4 +1,4 @@
-"""Acceptance tests: the checklist of team/CLAUDE_NEXT_TASK.md, section «Проверка», read end to end.
+"""Acceptance tests: the checklist of team/handoffs/CLAUDE_NEXT_TASK.md, section «Проверка», read end to end.
 
 One test (or a small group) per item of the checklist, named after the item. Each drives the
 production page served by the mock server through its real controls, wherever a control exists,

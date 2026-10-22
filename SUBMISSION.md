@@ -275,7 +275,7 @@ A, но его четверо остаются без пути, а B продо�
 версии командой `python team/presentation/tools/render_pdf.py`). Интерактивная
 версия с живой 3D-шахтой — `team/presentation/index.html`; открывать через
 локальный сервер из корня репозитория, например `python -m http.server 8000` и
-http://127.0.0.1:8000/team/presentation/index.html. Video (optional): `team/presentation/presentation.mp4` (75 с, 1280×720, запись интерактивной версии).
+http://127.0.0.1:8000/team/presentation/index.html. Видеозапись прохода по слайдам (75 с) в репозиторий не входит; она доступна у Команды по запросу.
 
 ---
 

@@ -29,7 +29,7 @@ python rebuild.py --samples 128   # quicker, noisier
 
 `build_env.py -- --stage geo [--quick]` stops after the geometry (quick preview);
 `render_debug.py` renders any zoom/focus from `build/env_scene.blend`; `compare.py` makes the
-side-by-side sheet `previews/compare_prev_new_ref.png` (previous pass | this pass | reference).
+side-by-side sheet `previews/compare_prev_new_ref.jpg` (previous pass | this pass | reference).
 
 | file | role |
 |---|---|
@@ -168,11 +168,14 @@ the portal frame).
 
 ## Previews
 
-`previews/overview.png`, `zone_a_3x.png`, `zone_b_3x.png`: Cycles renders of the lit scene from
-MainView at 1920×1080. `previews/unlit_*.png`: `env.glb` re-imported into an empty scene,
-emission-only materials, no lights (what three.js shows): `unlit_overview.png` (16:9),
-`unlit_zone_a_3x.png`, `unlit_zone_b_3x.png`, and the 1× overview on a 1920 px wide 21:9 stage
-(`unlit_overview_21x9.png`) and 4:3 stage (`unlit_overview_4x3.png`).
-`previews/compare_prev_new_ref.png`: previous pass (c33b22f) | this pass | reference, overview
-row and zone-A-at-3× row, all 600 px high. `previews/compare_smooth.png`: before | after the
+`previews/overview.jpg`, `zone_a_3x.jpg`, `zone_b_3x.jpg`: Cycles renders of the lit scene from
+MainView at 1920×1080. `previews/unlit_*.jpg`: `env.glb` re-imported into an empty scene,
+emission-only materials, no lights (what three.js shows): `unlit_overview.jpg` (16:9),
+`unlit_zone_a_3x.jpg`, `unlit_zone_b_3x.jpg`, and the 1× overview on a 1920 px wide 21:9 stage
+(`unlit_overview_21x9.jpg`) and 4:3 stage (`unlit_overview_4x3.jpg`).
+`previews/compare_prev_new_ref.jpg`: previous pass (c33b22f) | this pass | reference, overview
+row and zone-A-at-3× row, all 600 px high. `previews/compare_smooth.jpg`: before | after the
 smoothing pass (unlit overview and zone A at 3×).
+
+The scripts write these previews as PNG; the repository keeps them as JPEG, quality 85
+(same names, `.jpg`; the PNGs were 1.7-4 MB each).

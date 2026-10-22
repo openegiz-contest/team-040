@@ -176,7 +176,7 @@ is separately recorded, including the LHD initially inside the dangerous zone.
 ## Claude integration
 
 Cherry-pick the delivery commit when ready; re-record `team/ui/fixtures/sim_*.json.gz`
-with `team/ui/tools/sim_fixtures.py` in Claude's branch, then implement LHD_UI_PLAN.
+with `team/ui/tools/sim_fixtures.py` in Claude's branch, then implement team/handoffs/LHD_UI_PLAN.md.
 Use two real LHDs and eight people, hide a separate walking glyph while aboard,
 read activity/loaded/hold_reason, and show cost next to benefit without ranking.
 Map tramming/yielding and the new units. Reload attributes for t2. Geometry art
