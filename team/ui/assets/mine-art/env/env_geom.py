@@ -52,7 +52,12 @@ ISL = 7.0           # the bench (island) of the bay above level -120
 CC_FRONT = 12.0     # the bay's north-west wall: 12 m on the island side of the a-d line
 CC_OPEN = 4.0       # open floor in front of that wall
 CHAMBER_N = 19.0    # zone face chambers reach 19 m north of the face (8 m beyond it), 46 m west
-EXT_BEND = 12.0     # landing beyond a hairpin bend
+EXT_LAND = 12.0     # landing beyond a hairpin bend: its rounded (elliptical) end ...
+FLARE = 9.0         # ... plus a fillet where that end meets the rock face (no sharp vertical edge)
+EXT_BEND = EXT_LAND + FLARE
+F_SMOOTH = 7.0      # floor fronts: opened (min, then mean) over +-7 m, so they flow in curves
+R_TIP = 18.0        # crosscut-loop island corners
+R_MOUTH = 9.0       # zone drift mouths and the drift/chamber corners
 RING = 2.0          # loft ring spacing of the slots (drip width)
 TOP_Y = 900.0
 X_MIN, X_MAX = -780.0, 780.0
@@ -411,40 +416,80 @@ def _fmax(mine, s):
     return F_DRIFT if kind_of(mine, s) == "drift_up" else F_RAMP
 
 
-def seg_F(mine, s, x):
-    """Front edge of segment s's floor at x when another gallery lies below it: as deep as
-    the lower gallery's visibility allows (its band must clear the sight line), then
-    slope-limited along the gallery (F_SLOPE) so the section face never steps."""
-    key = id(s)
-    tab = mine.__dict__.setdefault("_ftab", {}).get(key)
+def _raw_F(mine, s, x):
+    """The deepest front the gallery below allows at x (or the face front for the lowest)."""
+    gs = raw_groups(mine, x)
+    i = next(k for k, g in enumerate(gs) if any(t is s for t in g["segs"]))
+    if i == 0:
+        return f_face(x)
+    gap = gs[i]["z"] - gs[i - 1]["z"]
+    return max(F_MIN, min(_fmax(mine, s), (gap - SLAB - 3.5) / RISE_S))
+
+
+def _slope_limit(xs, v, fixed=()):
+    v = list(v)
+    for k, val in fixed:
+        v[k] = min(v[k], val)
+    for k in range(1, len(xs)):
+        v[k] = min(v[k], v[k - 1] + F_SLOPE * (xs[k] - xs[k - 1]))
+    for k in range(len(xs) - 2, -1, -1):
+        v[k] = min(v[k], v[k + 1] + F_SLOPE * (xs[k + 1] - xs[k]))
+    return v
+
+
+def _seg_xs(s):
+    lo, hi = s["x0"], s["x1"]        # the true range: the junction ends are merged floors
+    return [lo + i * 1.0 for i in range(int((hi - lo) // 1.0) + 1)] + [hi]
+
+
+def _sm_F(mine, s):
+    tab = mine.__dict__.setdefault("_smtab", {}).get(id(s))
     if tab is None:
-        lo, hi = s["x0"], s["x1"]        # the true range: the junction ends are merged floors
-        xs = [lo + i * 1.0 for i in range(int((hi - lo) // 1.0) + 1)] + [hi]
-        raw = []
-        for xx in xs:
-            gs = raw_groups(mine, xx)
-            i = next(k for k, g in enumerate(gs) if any(t is s for t in g["segs"]))
-            if i == 0:
-                raw.append(f_face(xx))
-            else:
-                gap = gs[i]["z"] - gs[i - 1]["z"]
-                raw.append(max(F_MIN, min(_fmax(mine, s), (gap - SLAB - 3.5) / RISE_S)))
-        sm = list(raw)
-        for k in range(1, len(xs)):
-            sm[k] = min(sm[k], sm[k - 1] + F_SLOPE * (xs[k] - xs[k - 1]))
-        for k in range(len(xs) - 2, -1, -1):
-            sm[k] = min(sm[k], sm[k + 1] + F_SLOPE * (xs[k + 1] - xs[k]))
-        tab = mine._ftab[key] = (xs, sm)
-    xs, sm = tab
+        xs = _seg_xs(s)
+        tab = mine._smtab[id(s)] = (xs, _slope_limit(xs, [_raw_F(mine, s, x) for x in xs]))
+    return tab
+
+
+def _interp(xs, v, x):
     if x <= xs[0]:
-        return sm[0]
+        return v[0]
     if x >= xs[-1]:
-        return sm[-1]
+        return v[-1]
     k = max(0, min(len(xs) - 2, int(x - xs[0])))
     while xs[k + 1] < x:
         k += 1
     t = (x - xs[k]) / max(1e-9, xs[k + 1] - xs[k])
-    return sm[k] + (sm[k + 1] - sm[k]) * t
+    return v[k] + (v[k + 1] - v[k]) * t
+
+
+def seg_F(mine, s, x):
+    """Front edge of segment s's floor at x when another gallery lies below it: as deep as
+    the lower gallery's visibility allows (its band must clear the sight line), then
+    slope-limited along the gallery (F_SLOPE) so the section face never steps. At a junction
+    every floor meeting there ends at the shallowest of their fronts (one continuous edge
+    through the junction, no step where a ramp meets a drift), and the whole profile is
+    opened (running min, then running mean over F_SMOOTH): kinks become curves and the
+    result never exceeds the visibility limit."""
+    key = id(s)
+    tab = mine.__dict__.setdefault("_ftab", {}).get(key)
+    if tab is None:
+        xs, sm = _sm_F(mine, s)
+        fixed = []
+        for end in ("a", "b"):
+            name = s["n" + end]
+            if name is None or mine.topo["nodes"][name]["node_kind"] == "exit":
+                continue
+            xn = s[end].x
+            others = [t for t in mine.segments if (t["na"] == name or t["nb"] == name)]
+            vn = min(_interp(*_sm_F(mine, t), xn) for t in others)
+            fixed.append((0 if abs(xn - xs[0]) < abs(xn - xs[-1]) else len(xs) - 1, vn))
+        sm = _slope_limit(xs, sm, fixed)
+        n, w = len(xs), int(F_SMOOTH)
+        er = [min(sm[max(0, k - w):k + w + 1]) for k in range(n)]
+        op = [sum(er[max(0, k - w):k + w + 1]) / len(er[max(0, k - w):k + w + 1]) for k in range(n)]
+        op = _slope_limit(xs, op, fixed)
+        tab = mine._ftab[key] = (xs, op)
+    return _interp(*tab, x)
 
 
 class Stack:
@@ -519,6 +564,17 @@ def slot_cutters(mine, slope, mats, coll):
     for si, s in enumerate(mine.segments):
         lo, hi = mine.seg_range(s)
         xs = _xs(lo, hi, RING)
+        # finer rings over the rounded landing ends
+        fine = []
+        for x in xs:
+            if mine.seg_bend_beyond(s, x) > EXT_LAND - 4.0:
+                continue
+            fine.append(x)
+        for x0_, sg in ((lo, -1.0), (hi, 1.0)):
+            e0 = mine.seg_bend_beyond(s, x0_)
+            if e0 > 0.0:
+                fine += [x0_ - sg * (e0 - (EXT_LAND - 4.0)) * (1.0 - k / 16.0) for k in range(17)]
+        xs = sorted(set(round(x, 4) for x in fine))
         rings, vb = [], []
         for k, x in enumerate(xs):
             st = Stack(mine, slope, x)
@@ -527,13 +583,24 @@ def slot_cutters(mine, slope, mats, coll):
             yf = FY - g["Feff"] - 2.0
             yb = FY + B_BACK
             e = mine.seg_bend_beyond(s, x)
-            if e > 0.0:
-                yb = yf + max(2.0, (yb - yf) * math.sqrt(max(0.0, 1.0 - (e / (EXT_BEND + 0.6)) ** 2)))
             hc = g["Hc"]
-            if e > 0.0 and not g["open"]:
-                hc = max(min(hc, 6.0), hc * math.sqrt(max(0.0, 1.0 - (e / (EXT_BEND + 0.6)) ** 2)))
+            if e > 0.0:
+                # the landing ends in a half ellipse (back wall) that turns into the rock face
+                # through a fillet of radius FLARE (no sharp vertical edge); the ceiling arcs
+                # down to the floor over the whole landing
+                face = yf + 2.0
+                D = max(1e-3, yb - face)
+                e_st = EXT_LAND * math.sqrt(max(0.0, 1.0 - (FLARE / D) ** 2)) if D > FLARE else 0.0
+                ell = face + D * math.sqrt(max(0.0, 1.0 - (e / EXT_LAND) ** 2))
+                q = max(0.0, e - e_st)
+                flare = face + FLARE - math.sqrt(max(0.0, FLARE * FLARE - (FLARE - q) ** 2)) if q < FLARE else face - 1.0
+                yb = max(yf + 1.0, min(yb, max(ell, flare)))
+                if not g["open"]:
+                    e_end = e_st + FLARE + 0.3
+                    hc = max(0.8, hc * math.sqrt(max(0.0, 1.0 - (e / e_end) ** 2)))
             zc = z + hc
-            d = 0.0 if g["open"] or hc < 6.0 else min(drip(si + 1, x, k), hc * 0.35)
+            # drips fade out where the ceiling gets low (the wedges where ramps part at a junction)
+            d = 0.0 if g["open"] or hc < 6.0 else min(drip(si + 1, x, k), hc * 0.35) * smooth((hc - 6.0) / 10.0)
             r = min(4.0, hc * 0.25, (yb - yf) * 0.3)
             y3 = yb - r
             y4 = max(yf + 0.4, min(g["yc"] + 3.0, y3 - 0.3))
@@ -594,7 +661,12 @@ def air_cutters(mine, slope, mats, coll):
             deep = r[0][2] <= Z_BOT + 1.0
             e0 = 14.0 if deep and VB.x < 0 else 3.0
             e1 = 14.0 if deep and VB.x > 0 else 3.0
-            ext.append([(r[0][0] - e0,) + r[0][1:]] + r + [(r[-1][0] + e1,) + r[-1][1:]])
+            # the overlap rises away from the run's end faster than any neighbouring front can
+            # (F_SLOPE): the neighbour's front wins there, so no thin recess opens in the face
+            # below a junction
+            sh0 = 0.0 if deep else 0.6 + F_SLOPE * e0
+            sh1 = 0.0 if deep else 0.6 + F_SLOPE * e1
+            ext.append([(r[0][0] - e0, r[0][1] + sh0) + r[0][2:]] + r + [(r[-1][0] + e1, r[-1][1] + sh1) + r[-1][2:]])
         runs = ext
         for ri, run in enumerate(runs):
             nf = max(1, int(math.ceil(max(min(zt, 60.0) - max(zb, -700.0) for x, F, zb, zt in run) / GRID)))
@@ -726,13 +798,14 @@ def crosscut_cutters(mine, mats, coll):
     out.append(line_loft("CUT_cc_w-05", (a, d), (CC_FRONT + CC_OPEN, -B_BACK), lambda f: z,
                          lambda f: z + HC_RAMP, mats, coll,
                          [M_FLOOR, M_WALL, M_WALL, M_CEIL, M_CEIL, M_CEIL, M_WALL],
-                         {1: lambda f: z + HC_RAMP, 2: lambda f: z + HC_RAMP}, ext=(6.0, 3.0),
+                         {1: lambda f: z + HC_RAMP, 2: lambda f: z + HC_RAMP}, ext=(6.0, 0.0),
                          drips=(CC_FRONT, 51)))
     # d-c: an open trench at the foot of the bay's north-east wall (its back wall 0.5 m
     # behind the bay wall, 20 m of wall band, then the cut face)
     out.append(line_loft("CUT_cc_w-06", (d, c), (HALF + 0.5, -(B_BACK + 0.5)), lambda f: z,
                          lambda f: z + 20.0, mats, coll, [M_FLOOR, M_WALL, M_CEIL, M_WALL],
-                         {1: lambda f: z + 20.0, 3: lambda f: z + ISL}, ext=(8.0, 3.0)))
+                         {1: lambda f: z + 20.0, 3: lambda f: z + ISL}, ext=(0.0, 3.0)))
+    out.append(loop_corner(mine, mats, coll))
     return out
 
 
@@ -746,9 +819,23 @@ def zone_cutters(mine, wid, level_z, mats, coll):
     out.append(line_loft(f"CUT_zone_{wid}", (start, end), (-HALF - 0.5, HALF), lambda f: level_z,
                          lambda f: level_z + 60.0, mats, coll, [M_FLOOR, M_WALL, M_CEIL, M_WALL],
                          {1: lambda f: zone_top(level_z, -HALF), 3: lambda f: level_z + ZONE_RIM_E}))
-    ch = rounded_rect(face.x - 46.0, face.x + 4.0, face.y - 8.0, face.y + CHAMBER_N, 11.0)
+    ch = rounded_rect(face.x - 46.0, face.x + 4.0, face.y - 8.0, face.y + CHAMBER_N, 13.4, seg=10)
     out.append(prism(f"CUT_chamber_{wid}", ch, level_z, level_z + 60.0, mats, coll, bottom_mat=M_FLOOR,
                      side_mat=M_WALL, top_mat=M_CEIL, wall_top=zone_top(level_z, -46.0)))
+    # fillets: the drift mouth (the trench walls meet the drift floor's front edge) and the
+    # corners where the trench's west wall meets the chamber's north and south walls
+    seg = next(s for s in mine.segments if s["kind"] == "drift" and abs(s["a"].z - level_z) < 0.5
+               and abs(s["b"].x - root.x) < 0.5)
+    y_lip = mine.face_y - Stack(mine, EastSlope(mine), root.x).of(seg)[1]["Feff"] - 2.0
+    x_e, x_w = root.x + HALF + 0.5, root.x - HALF
+    fil = [((x_e, y_lip), (1.0, 0.0), (0.0, -1.0), R_MOUTH, level_z + ZONE_RIM_E),
+           ((x_w, y_lip), (-1.0, 0.0), (0.0, -1.0), R_MOUTH, level_z + ZONE_RIM_W),
+           ((x_w, face.y + CHAMBER_N), (-1.0, 0.0), (0.0, 1.0), R_MOUTH, zone_top(level_z, -HALF)),
+           ((x_w, face.y - 8.0), (-1.0, 0.0), (0.0, -1.0), 5.0, level_z + 3.0)]
+    for k, (tip, ua, ub, R, wt) in enumerate(fil):
+        poly = fillet_poly(Vector(tip), ua, ub, R, back=3.0, n=8)
+        out.append(prism(f"CUT_zfil_{wid}_{k}", poly, level_z, level_z + 60.0, mats, coll, bottom_mat=M_FLOOR,
+                         side_mat=M_WALL, top_mat=M_CEIL, wall_top=wt))
     return out
 
 
@@ -862,7 +949,73 @@ def zone_top(level, x):
     return level + ZONE_RIM_E + 0.4 + (ZONE_RIM_W - ZONE_RIM_E - 0.4) * (xm - x) / (xm - ZONE_X0)
 
 
-def island_tips(mine, mats, coll, R=11.0):
+def fillet_poly(tip, ua, ub, R, back=4.0, n=10):
+    """Plan polygon (counter-clockwise) that rounds the rock corner at `tip` whose two edges
+    leave along the unit directions ua and ub (into the rock): the region between both
+    edges and the arc of radius R tangent to them, plus `back` metres on the open side so
+    the cutter overlaps the void it widens."""
+    ua, ub = Vector(ua).normalized(), Vector(ub).normalized()
+    tip = Vector(tip)
+    half = math.acos(max(-1.0, min(1.0, ua.dot(ub)))) / 2.0
+    dist = R / math.tan(half)
+    pa, pb = tip + ua * dist, tip + ub * dist
+    bis = (ua + ub).normalized()
+    cen = tip + bis * (R / math.sin(half))
+
+    def norm(v):
+        while v < -math.pi:
+            v += 2 * math.pi
+        while v > math.pi:
+            v -= 2 * math.pi
+        return v
+    a0 = math.atan2(pa.y - cen.y, pa.x - cen.x)
+    a1 = math.atan2(pb.y - cen.y, pb.x - cen.x)
+    dt = math.atan2(tip.y - cen.y, tip.x - cen.x)
+    span = norm(a1 - a0)
+    if not (min(0.0, span) <= norm(dt - a0) <= max(0.0, span)):
+        span = span - 2 * math.pi if span > 0 else span + 2 * math.pi
+    arc = [(cen.x + R * math.cos(a0 + span * i / n), cen.y + R * math.sin(a0 + span * i / n)) for i in range(n + 1)]
+    poly = [tuple(tip - bis * back)] + arc
+    area = sum(poly[i][0] * poly[(i + 1) % len(poly)][1] - poly[(i + 1) % len(poly)][0] * poly[i][1]
+               for i in range(len(poly)))
+    return poly[::-1] if area < 0 else poly
+
+
+def column_prism(name, poly, zf, zt, mats, coll, wall_top=None, top_mat=M_CEIL):
+    """A prism over a counter-clockwise plan polygon whose floor and top heights may vary
+    per vertex (zf(x, y), zt(x, y)): fan-triangulated floor and top, quads up the sides."""
+    n = len(poly)
+    verts = [Vector((x, y, zf(x, y))) for x, y in poly] + [Vector((x, y, zt(x, y))) for x, y in poly]
+    cx_ = sum(p[0] for p in poly) / n
+    cy_ = sum(p[1] for p in poly) / n
+    verts += [Vector((cx_, cy_, zf(cx_, cy_))), Vector((cx_, cy_, zt(cx_, cy_)))]
+    cb, ct = 2 * n, 2 * n + 1
+    faces, fm, fuv = [], [], []
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append((cb, j, i))
+        fm.append(M_FLOOR)
+        fuv.append(((cx_, cy_), poly[j], poly[i]))
+        faces.append((ct, n + i, n + j))
+        fm.append(top_mat)
+        fuv.append(((cx_, cy_), poly[i], poly[j]))
+    s_ = 0.0
+    for i in range(n):
+        j = (i + 1) % n
+        L = (Vector(poly[j]) - Vector(poly[i])).length
+        faces.append((i, j, j + n, i + n))
+        fm.append(M_WALL)
+        if wall_top is not None:
+            ti, tj = wall_top(*poly[i]), wall_top(*poly[j])
+        else:
+            ti, tj = verts[i + n].z, verts[j + n].z
+        fuv.append(((s_, ti - verts[i].z), (s_ + L, tj - verts[j].z), (s_ + L, tj - verts[j + n].z),
+                    (s_, ti - verts[i + n].z)))
+        s_ += L
+    return make_mesh(name, verts, faces, fm, fuv, mats, coll)
+
+
+def island_tips(mine, mats, coll, R=R_TIP):
     """Round the three corners of the island inside the crosscut loop."""
     FY = mine.face_y
     a, d, c = mine.nodes["a"].xy, mine.nodes["d"].xy, mine.nodes["c"].xy
@@ -883,35 +1036,77 @@ def island_tips(mine, mats, coll, R=11.0):
         tip = meet(P, Q)
         ua = P[1] if P[1].dot(centroid - tip) > 0 else -P[1]
         ub = Q[1] if Q[1].dot(centroid - tip) > 0 else -Q[1]
-        half = math.acos(max(-1.0, min(1.0, ua.dot(ub)))) / 2.0
-        dist = R / math.tan(half)
-        pa, pb = tip + ua * dist, tip + ub * dist
-        bis = (ua + ub).normalized()
-        cen = tip + bis * (R / math.sin(half))
-        a0 = math.atan2(pa.y - cen.y, pa.x - cen.x)
-        a1 = math.atan2(pb.y - cen.y, pb.x - cen.x)
-
-        def norm(v):
-            while v < -math.pi:
-                v += 2 * math.pi
-            while v > math.pi:
-                v -= 2 * math.pi
-            return v
-        # the arc facing the tip: it passes the direction from the centre to the tip
-        dt = math.atan2(tip.y - cen.y, tip.x - cen.x)
-        span = norm(a1 - a0)
-        if not (min(0.0, span) <= norm(dt - a0) <= max(0.0, span)):
-            span = span - 2 * math.pi if span > 0 else span + 2 * math.pi
-        arc = [(cen.x + R * math.cos(a0 + span * i / 8), cen.y + R * math.sin(a0 + span * i / 8)) for i in range(9)]
-        out_tip = tip - bis * 4.0
-        poly = [tuple(out_tip)] + arc
-        area = sum(poly[i][0] * poly[(i + 1) % len(poly)][1] - poly[(i + 1) % len(poly)][0] * poly[i][1]
-                   for i in range(len(poly)))
-        if area < 0:
-            poly = poly[::-1]
+        poly = fillet_poly(tip, ua, ub, R, n=12)
         out.append(prism(f"CUT_tip_{k}", poly, mine.z120, mine.z120 + ISL + 1.0, mats, coll, bottom_mat=M_FLOOR,
                          side_mat=M_WALL, top_mat=M_CEIL, wall_top=mine.z120 + ISL))
     return out
+
+
+def loop_corner(mine, mats, coll):
+    """The outer corner of the crosscut loop at d: both crosscuts end at d and a sector of
+    radius B_BACK..B_BACK + 0.5 around d joins their back walls (the round offset of the
+    polyline: d keeps its full floor around it)."""
+    d = mine.nodes["d"]
+    z = mine.z120
+    t1, n1 = _line_frame(mine.nodes["a"], d)
+    t2, n2 = _line_frame(d, mine.nodes["c"])
+    a0 = math.atan2(-n1.y, -n1.x)
+    a1 = math.atan2(-n2.y, -n2.x)
+    while a1 > a0:
+        a1 -= 2 * math.pi
+    pts = [tuple(d.xy + (n1 + n2).normalized() * 4.0)]
+    k = 12
+    for i in range(k + 1):
+        u = i / k
+        ang = a0 + (a1 - a0) * u
+        r = B_BACK + 0.5 * smooth(u)
+        pts.append((d.x + r * math.cos(ang), d.y + r * math.sin(ang)))
+    area = sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1]
+               for i in range(len(pts)))
+    if area < 0:
+        pts = pts[::-1]
+    return prism("CUT_loop_corner", pts, z, z + 20.0, mats, coll, bottom_mat=M_FLOOR, side_mat=M_WALL,
+                 top_mat=M_CEIL, wall_top=z + 20.0)
+
+
+def ramp_bend_nose(mine, slope, mats, coll, R=16.0):
+    """w-02 turns from the face plane (leg 1) into its trench to portal B (leg 2): round the
+    rock nose between leg 1's back wall and the trench's west wall. The floor of the cut
+    blends from leg 1's floor at its wall to the trench floor at the other."""
+    w = mine.workings["w-02"]
+    B, S = w["pts"][1], w["pts"][2]
+    seg = next(s for s in mine.segments if s["wid"] == "w-02" and s["idx"] == 0)
+    t2 = (S.xy - B.xy).normalized()
+    n2 = Vector((t2.y, -t2.x))                      # right-hand normal: east of the trench
+    Ltr = (S.xy - B.xy).length
+    yb = mine.back_y
+    west = B.xy - n2 * (HALF + 0.5)                 # a point on the trench's west wall
+    tip = west + t2 * ((yb - west.y) / t2.y)        # the west wall meets leg 1's back wall
+    poly = fillet_poly(tip, Vector((-1.0, 0.0)), t2, R, back=3.0, n=12)
+
+    def z1(x, y):
+        return mine.seg_h(seg, x)
+
+    def z2(x, y):
+        tt = max(0.0, min(1.0, (Vector((x, y)) - B.xy).dot(t2) / Ltr))
+        return lerp(B.z, S.z, tt)
+
+    def zf(x, y):
+        p = Vector((x, y))
+        d1 = max(0.0, p.y - yb)                     # beyond leg 1's back wall
+        d2 = max(0.0, (p - west).dot(-n2))          # beyond the trench's west wall
+        if d1 + d2 < 1e-6:
+            return min(z1(x, y), z2(x, y))
+        return lerp(z1(x, y), z2(x, y), d1 / (d1 + d2)) - 0.02
+
+    def zt(x, y):
+        try:
+            g = Stack(mine, slope, x).of(seg)[1]
+            top = 60.0 if g["open"] else g["Hc"]
+        except KeyError:
+            top = 60.0
+        return zf(x, y) + top
+    return column_prism("CUT_bend_w-02", poly, zf, zt, mats, coll, wall_top=lambda x, y: zf(x, y) + 9.0)
 
 
 def mark_kinds(ob):

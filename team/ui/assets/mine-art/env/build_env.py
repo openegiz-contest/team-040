@@ -101,7 +101,8 @@ def build_geometry(mine, mats):
     pen_cut = copies(by_wid["w-10"] + by_wid["w-11"]) + G.zone_cutters(mine, "w-12", mine.z240, mats, c_tmp)
     block_cut = (G.air_cutters(mine, slope, mats, c_tmp) + [G.bay_cutter(mine, mats, c_tmp)] + slots +
                  G.crosscut_cutters(mine, mats, c_tmp) + [G.ramp_trench_cutter(mine, slope, mats, c_tmp)] +
-                 G.pocket_cutters(mine, mats, c_tmp) + G.island_tips(mine, mats, c_tmp))
+                 G.pocket_cutters(mine, mats, c_tmp) + G.island_tips(mine, mats, c_tmp) +
+                 [G.ramp_bend_nose(mine, slope, mats, c_tmp)])
     cut(prom, prom_cut, "prom")
     cut(pen, pen_cut, "pen")
     cut(block, block_cut, "block")

@@ -65,23 +65,30 @@ All dimensions in scene metres; `RISE_S` = sight rise per metre toward the camer
   above) whose front edge hangs down in a calm wavy line with a jag now and then (0–5.5 m).
   `F` of each floor is as deep as the visibility of the gallery below allows
   (`(gap − 2.5 − 3.5) / RISE_S`, 8–22 m), then slope-limited along the gallery (0.5 m/m), so the
-  section face never steps; floors meeting at a junction take the deepest front. The lowest floor
+  section face never steps; every floor meeting at a junction ends at the shallowest of their
+  fronts (one continuous edge through a and c, no step where a ramp meets a drift), and each
+  profile is opened (running min, then running mean over ±7 m): the floor edges flow in curves
+  and never exceed the visibility limit. The lowest floor
   at each x reaches 22 m (30 m under the level −240 drifts, 40 m on the drill terrace). Clear
   heights 38 m (42 m on the level −240 drifts) where the stack allows. Hairpin landings extend
-  12 m beyond the bend with a rounded end (back wall and ceiling). A landing on the side the lines
+  beyond the bend in a half ellipse (12 m) that turns into the rock face through a 9 m fillet;
+  the ceiling arcs down to the floor over the whole landing (no vertical end edge). A landing on the side the lines
   of sight run to (east) stays as shallow as the upper leg, with a recess in the face below it.
 - **Air cutters**: in front of every gallery with another below, from the lower floor up to its own
   ceiling (the sky for the top-most), so lower floors stick out as open terraces.
 - **Bay** above level −120 between a and c: cut down to a 7 m bench (the island). Crosscut a–d is
   a slot in the bay's north-west wall (open floor 4 m in front of its drip edge); d–c an open
-  trench at the foot of the north-east wall; the island's corners are rounded (11 m).
+  trench at the foot of the north-east wall; both end at d, where a sector of 10–10.5 m around d
+  rounds the loop's outer corner; the island's corners are rounded (18 m).
 - **Zone drifts** run toward the viewer on a promontory (w-07) and a peninsula (w-12): a trench to
-  a rounded face chamber (46 m west of the drift, 8 m beyond the face, 19 m north of it). The
+  a rounded face chamber (46 m west of the drift, 8 m beyond the face, 19 m north of it, corner
+  radius 13.4 m); 9 m fillets round the drift mouth and the trench's corners with the chamber. The
   bench is 5.5 m east of the drift (the walking line shows over it), rising to 16 m in the west and
   dropping to a 2.5 m lip at the south end (the face end and its rubble show). The promontory's
   underside rises toward the viewer as the lines of sight from level −240 do.
 - **Surface**: dark plateau at 0 m; w-02's second leg climbs to portal B in a trench through a
-  hillside descending with the road (`EastSlope`, 5 m / 9 m walls). Portal frames and lamp rooms
+  hillside descending with the road (`EastSlope`, 5 m / 9 m walls); a 16 m fillet with a blended
+  floor rounds the rock nose between the first leg's back wall and the trench. Portal frames and lamp rooms
   at both exits. No shaft, rails, trains, crushers or conveyors.
 - **Sculpted rock (render only)**: every visible rock face is built from ~12 m quads; the skin
   pushes every inner vertex of the cut faces and tops into the rock by a piecewise-planar field
@@ -146,17 +153,17 @@ is its orthographic projection into its texture's window (pan and zoom only, no 
 
 | item | value | budget (SPEC §8) |
 |---|---|---|
-| visible triangles | 41 918 (+192 invisible pick) | ≤ 100 k, aim ≤ 60 k |
+| visible triangles | 42 526 (+192 invisible pick) | ≤ 100 k, aim ≤ 60 k |
 | primitives / draw calls | 2 visible (+12 pick, hidden by the browser) | ≤ 80 |
 | materials | 3 (`env_far`, `env_near`, `pick`) | |
 | textures | 2 × 2048² JPEG | light maps ≤ 2 × 2048² |
-| env.glb + textures | 1.64 MiB | whole `models/mine-art/` ≤ 8 MiB (2.66 MiB with the actors) |
+| env.glb + textures | 1.66 MiB | whole `models/mine-art/` ≤ 8 MiB (2.86 MiB with the actors) |
 
 Walking-line visibility from MainView (`build/visibility.json` against the GLB geometry, a
 person's mid-body 2.5 m sampled every 2 m): drifts w-03/w-04/w-10/w-11, crosscuts w-05/w-06 and
 both zone drifts 0 % hidden. Hidden stretches are where the topology stacks ramps in one vertical
 plane: the lower ramp passes under the upper ramp's floor for 8–12 m after junctions a and c and
-at the hairpin bends — w-09 6.1 %, w-08 4.6 %, w-01 3.2 % (longest 14 m), w-02 0.8 % (2 m under
+at the hairpin bends — w-09 5.1 %, w-08 3.6 %, w-01 2.8 % (longest 10 m), w-02 0.8 % (2 m under
 the portal frame).
 
 ## Previews
@@ -167,4 +174,5 @@ emission-only materials, no lights (what three.js shows): `unlit_overview.png` (
 `unlit_zone_a_3x.png`, `unlit_zone_b_3x.png`, and the 1× overview on a 1920 px wide 21:9 stage
 (`unlit_overview_21x9.png`) and 4:3 stage (`unlit_overview_4x3.png`).
 `previews/compare_prev_new_ref.png`: previous pass (c33b22f) | this pass | reference, overview
-row and zone-A-at-3× row, all 600 px high.
+row and zone-A-at-3× row, all 600 px high. `previews/compare_smooth.png`: before | after the
+smoothing pass (unlit overview and zone A at 3×).
