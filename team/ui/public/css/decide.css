@@ -225,6 +225,13 @@
 .dp-details__title:focus-visible { outline: var(--ring); outline-offset: 2px; }
 .dp-details__lead { margin: 0 0 var(--sp-2); color: var(--dust-2); font-size: var(--fs-caption); }
 
+/* One quiet explanation for the selected option; details stay collapsed. */
+.dp-explanation { margin-top: var(--sp-3); color: var(--dust-2); font-size: var(--fs-caption); line-height: 1.5; }
+.dp-explanation[hidden] { display: none; }
+.dp-explanation p { margin: 0 0 var(--sp-2); }
+.dp-explanation .dp-explanation__short { color: var(--dust-1); margin-bottom: 0; }
+.dp-explanation .dp-details { margin-top: 0; }
+
 .dp-table { font-size: var(--fs-caption); }
 .dp-table th, .dp-table td { padding: 5px 4px; line-height: 1.3; }
 .dp-table th { overflow-wrap: break-word; hyphens: auto; }

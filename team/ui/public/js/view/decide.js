@@ -30,6 +30,7 @@ import {costFacts, costLine, decisionOf, hasCost, headline, launchOption, metric
   scopeText, secondaryFacts} from './decision.js';
 import {blockNote, commandButton, guard, showBlock, standing} from './pending.js';
 import {executingView, incidentSentence, resultView, showThing, updateWho, whoButton, workerFigure} from './progress.js';
+import {optionExplanation} from './explanation.js';
 
 const PANEL_MODES = new Set(['decision', 'executing', 'done']);
 const CODES_LIMIT = 6;
@@ -76,7 +77,21 @@ function decisionView(ctx) {
       people: text.UI.decision.people, prefix: 'pbp', barWidth: 112});
   const details = h('details', {class: 'dp-details', 'data-testid': 'decide-details'},
     h('summary', {class: 'dp-details__title', text: P.details}), h('p', {class: 'dp-details__lead', text: P.detailsTitle}), table.table);
-  const step3 = step(3, [caption, keysDiffer, noForecast, cards, details]);
+  const explainShort = h('p', {class: 'dp-explanation__short'});
+  const explainReasons = h('p');
+  const explainDifference = h('p');
+  const explainDetails = h('details', {class: 'dp-details'},
+    h('summary', {class: 'dp-details__title', text: 'Почему так и в чём разница'}), explainReasons, explainDifference);
+  const explanation = h('div', {class: 'dp-explanation', 'data-testid': 'option-explanation', hidden: true},
+    explainShort, explainDetails);
+  explainDetails.addEventListener('toggle', () => {
+    const scroller = explanation.closest('.dp__body');
+    if (!explainDetails.open || !scroller) return;
+    const overflow = explainDetails.getBoundingClientRect().bottom - scroller.getBoundingClientRect().bottom;
+    if (overflow > 0) scroller.scrollTop += overflow + 12;
+  });
+  let explanationKey = null;
+  const step3 = step(3, [caption, keysDiffer, noForecast, cards, explanation, details]);
   // The table opens below the cards: bring it into sight inside the panel (no smooth scroll: no motion of our own).
   details.addEventListener('toggle', () => {
     const scroller = details.closest('.dp__body');
@@ -386,6 +401,16 @@ function decisionView(ctx) {
 
     // The launch.
     const chosenOption = chosen ? thingByName(model, chosen) : null;
+    explanation.hidden = !chosenOption;
+    const nextExplanationKey = chosenOption ? `${chosenOption.values.decision_id}|${chosenOption.name}` : null;
+    if (nextExplanationKey !== explanationKey) explainDetails.open = false;
+    explanationKey = nextExplanationKey;
+    if (chosenOption) {
+      const words = optionExplanation(model, chosenOption, options);
+      setText(explainShort, words.short);
+      setText(explainReasons, words.reasons);
+      setText(explainDifference, words.difference);
+    }
     const blocked = showBlock(block, text, state);
     const own = standing(text, state, 'action.execute_option', chosen);
     let reason = '';
